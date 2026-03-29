@@ -41,4 +41,8 @@ jobs:
     needs: [check, migrate]
     steps:
       - uses: actions/checkout@v4
+      - name: Skip deploy when Vercel token is missing
+        if: ${{ secrets.VERCEL_TOKEN == '' }}
+        run: echo "Skipping Vercel deploy because VERCEL_TOKEN is not set."
       - run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }}
+        if: ${{ secrets.VERCEL_TOKEN != '' }}
