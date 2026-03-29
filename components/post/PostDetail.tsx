@@ -1,0 +1,128 @@
+import Link from 'next/link';
+import { Bookmark, ExternalLink, Share2 } from 'lucide-react';
+import { CommentEditor } from '@/components/comments/CommentEditor';
+import { CommentThread } from '@/components/comments/CommentThread';
+import { PostTypeBadge } from '@/components/post/PostTypeBadge';
+import { ReportIdeaButton } from '@/components/startup-ideas/ReportIdeaButton';
+import { ValidationScoreBadge } from '@/components/startup-ideas/ValidationScoreBadge';
+import { VoteButtons } from '@/components/voting/VoteButtons';
+import type { CommentSummary, PostSummary } from '@/lib/types';
+import { formatRelativeTime } from '@/lib/utils/format';
+
+export interface PostDetailProps {
+  post: PostSummary;
+  comments: CommentSummary[];
+}
+
+export function PostDetail({ post, comments }: PostDetailProps) {
+  return (
+    <div className="mx-auto max-w-4xl space-y-8">
+      <header className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
+          <Link href={`/c/${post.community.slug}`} className="text-accent">
+            {post.community.name}
+          </Link>
+          <span>/</span>
+          <PostTypeBadge type={post.postType} />
+          <span>{formatRelativeTime(post.createdAt)}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-balance text-4xl font-semibold">{post.title}</h1>
+          {post.startupIdea ? (
+            <ValidationScoreBadge score={post.startupIdea.validationScore} />
+          ) : null}
+        </div>
+        <p className="max-w-3xl text-base leading-7 text-text-secondary">{post.body}</p>
+        {post.startupIdea ? (
+          <div className="grid gap-4 rounded-3xl border border-border-subtle bg-bg-surface p-5 md:grid-cols-2">
+            <div>
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Problem</div>
+              <p className="mt-2 text-sm leading-6 text-text-secondary">{post.startupIdea.problem}</p>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Target Audience</div>
+              <p className="mt-2 text-sm leading-6 text-text-secondary">{post.startupIdea.targetAudience}</p>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Solution</div>
+              <p className="mt-2 text-sm leading-6 text-text-secondary">{post.startupIdea.solution}</p>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Stage</div>
+                <p className="mt-2 text-sm leading-6 text-text-secondary">
+                  {post.startupIdea.stage.replaceAll('_', ' ')}
+                </p>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Market Category</div>
+                <p className="mt-2 text-sm leading-6 text-text-secondary">{post.startupIdea.marketCategory}</p>
+              </div>
+              {post.startupIdea.monetizationModel ? (
+                <div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Monetization</div>
+                  <p className="mt-2 text-sm leading-6 text-text-secondary">
+                    {post.startupIdea.monetizationModel}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        {post.startupIdea ? (
+          <div className="rounded-2xl border border-border-subtle bg-bg-base px-4 py-3 text-sm text-text-secondary">
+            Startup ideas are immutable in this MVP. Add clarifications, pivots, and updates in the
+            comments so feedback stays transparent.
+          </div>
+        ) : null}
+      </header>
+
+      <div className="flex flex-col gap-6 rounded-3xl border border-border-subtle bg-bg-surface p-5 sm:flex-row">
+        <VoteButtons
+          score={post.voteScore}
+          endpoint={`/api/v1/posts/${post.id}/vote`}
+          orientation="vertical"
+        />
+        <div className="min-w-0 flex-1">
+          {post.externalUrl ? (
+            <a
+              href={post.externalUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mb-5 flex items-center justify-between rounded-2xl border border-border-subtle bg-bg-base px-4 py-4 text-sm text-text-primary"
+            >
+              <span>Open attached project or resource</span>
+              <ExternalLink className="h-4 w-4 text-accent" />
+            </a>
+          ) : null}
+
+          <div className="grid gap-2 text-sm text-text-secondary sm:flex sm:flex-wrap sm:items-center">
+            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-border-subtle px-4 py-2">
+              <Bookmark className="h-4 w-4" />
+              Save
+            </button>
+            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-border-subtle px-4 py-2">
+              <Share2 className="h-4 w-4" />
+              Share
+            </button>
+            <ReportIdeaButton postId={post.id} />
+          </div>
+        </div>
+      </div>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-semibold">Comments</h2>
+          <div className="text-sm text-text-secondary">Sort: Top</div>
+        </div>
+        <CommentEditor postId={post.id} />
+        {comments.length === 0 ? (
+          <div className="surface-panel p-5 text-sm text-text-secondary">
+            No feedback yet. Be the first person to pressure-test this idea with concrete, constructive input.
+          </div>
+        ) : null}
+        <CommentThread comments={comments} />
+      </section>
+    </div>
+  );
+}
