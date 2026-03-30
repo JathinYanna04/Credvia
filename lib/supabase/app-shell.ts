@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 export interface AppShellData {
   currentUser: UserSummary | null;
+  onboardingComplete: boolean;
   joinedCommunities: Array<{
     id: string;
     name: string;
@@ -27,12 +28,13 @@ export async function getAppShellData(): Promise<AppShellData> {
   if (!user) {
     return {
       currentUser: null,
+      onboardingComplete: true,
       joinedCommunities: [],
       unreadNotifications: 0,
     };
   }
 
-  const [profileResult, membershipsResult, unreadResult] = await Promise.all([
+  const [profileResult, membershipsResult, unreadResult, reputationResult] = await Promise.all([
     supabase
       .from('profiles')
       .select('*')
@@ -48,9 +50,25 @@ export async function getAppShellData(): Promise<AppShellData> {
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
       .is('read_at', null),
+    supabase
+      .from('community_reputation')
+      .select('community_id, score')
+      .eq('user_id', user.id)
+      .order('score', { ascending: false })
+      .limit(3),
   ]);
 
   const profile = profileResult.data;
+  const reputationCommunityIds = (reputationResult.data ?? []).map((entry) => entry.community_id);
+  const communitiesForReputation = reputationCommunityIds.length
+    ? await supabase
+        .from('communities')
+        .select('id, name, slug')
+        .in('id', reputationCommunityIds)
+    : { data: [], error: null };
+  const communitiesMap = new Map(
+    (communitiesForReputation.data ?? []).map((community) => [community.id, community]),
+  );
   const currentUser: UserSummary = {
     id: user.id,
     username: profile?.username ?? `user_${user.id.slice(0, 8)}`,
@@ -60,7 +78,22 @@ export async function getAppShellData(): Promise<AppShellData> {
     skills: [],
     location: profile?.location ?? undefined,
     currentCompany: profile?.current_company ?? undefined,
-    reputation: [],
+    reputation: (reputationResult.data ?? [])
+      .map((entry) => {
+        const community = communitiesMap.get(entry.community_id);
+
+        if (!community) {
+          return null;
+        }
+
+        return {
+          communityId: entry.community_id,
+          communityName: community.name,
+          communitySlug: community.slug,
+          score: entry.score,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
   };
 
   const joinedCommunities = ((membershipsResult.data ?? []) as Array<{
@@ -86,6 +119,7 @@ export async function getAppShellData(): Promise<AppShellData> {
 
   return {
     currentUser,
+    onboardingComplete: profile?.onboarding_complete ?? false,
     joinedCommunities,
     unreadNotifications: unreadResult.count ?? 0,
   };

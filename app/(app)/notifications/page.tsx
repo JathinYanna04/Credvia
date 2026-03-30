@@ -20,11 +20,12 @@ export default async function NotificationsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="surface-panel flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold">Notifications</h1>
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Signals</div>
+          <h1 className="mt-2 text-3xl font-semibold">Notifications</h1>
           <p className="mt-2 text-sm text-text-secondary">
-            Useful updates when your work gets a response or traction.
+            Replies, votes, and reputation movement tied to your actual contribution.
           </p>
         </div>
         <MarkAllReadButton />
@@ -32,8 +33,10 @@ export default async function NotificationsPage() {
 
       <section className="space-y-3">
         {notifications.length === 0 ? (
-          <div className="surface-panel p-5 text-sm text-text-secondary">
-            No notifications yet. Votes and replies to your posts and startup ideas will show up here.
+          <div className="surface-panel space-y-3 p-5 text-sm text-text-secondary">
+            <p>No notifications yet.</p>
+            <p>Votes, replies, and reputation movement will show up here once you start asking or answering.</p>
+            <p>Try responding to a question in your strongest community to start the loop.</p>
           </div>
         ) : null}
         {notifications.map((notification) => (

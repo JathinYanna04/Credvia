@@ -9,9 +9,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'border-transparent bg-accent px-4 text-bg-base shadow-[0_0_0_1px_rgba(34,211,238,0.15)] hover:bg-accent-dim hover:text-text-primary',
+          'border-transparent bg-accent px-4 text-white shadow-[0_10px_24px_rgba(79,70,229,0.22)] hover:bg-accent-dim',
         secondary:
-          'border-border-subtle bg-bg-surface text-text-primary hover:border-border-default hover:bg-bg-overlay',
+          'border-border-subtle bg-bg-surface text-text-primary shadow-sm hover:border-border-default hover:bg-bg-overlay',
         outline:
           'border-border-default bg-transparent text-text-primary hover:border-accent hover:bg-bg-overlay',
         ghost: 'border-transparent bg-transparent text-text-secondary hover:bg-bg-overlay hover:text-text-primary',

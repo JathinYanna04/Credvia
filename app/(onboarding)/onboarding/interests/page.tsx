@@ -6,11 +6,11 @@ export default function InterestsPage() {
   return (
     <OnboardingShell
       step={1}
-      title="Choose the domains you want to be known for"
-      description="These interests shape discovery, recommended communities, and the people Credvia surfaces first."
+      title="Pick a few domains you care about"
+      description="Optional, quick, and useful. A few interests help Credvia put better questions and communities in front of you."
     >
       <InterestPicker />
-      <Link href="/onboarding/communities" className="mt-4 inline-block text-sm text-accent">
+      <Link href="/onboarding/communities" className="mt-4 inline-block text-sm font-medium text-accent">
         Continue to communities
       </Link>
     </OnboardingShell>

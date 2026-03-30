@@ -1,4 +1,4 @@
-import { resend } from '@/lib/email/resend';
+import { getResendClient } from '@/lib/email/resend';
 
 interface SendResumeAnalysisEmailInput {
   to: string;
@@ -11,9 +11,10 @@ export async function sendResumeAnalysisEmail({
 }: SendResumeAnalysisEmailInput) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
   const firstName = name?.trim() || 'there';
+  const resend = getResendClient();
 
   try {
-    if (!process.env.RESEND_API_KEY) {
+    if (!resend) {
       return { sent: false as const, reason: 'missing_api_key' };
     }
 

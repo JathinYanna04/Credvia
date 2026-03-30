@@ -11,7 +11,7 @@ export interface FeedTabsProps {
 export function FeedTabs({ value, onValueChange }: FeedTabsProps) {
   return (
     <Tabs value={value} onValueChange={(next) => onValueChange(next as FeedTab)}>
-      <TabsList className="w-full justify-start rounded-none border-b border-border-subtle bg-transparent p-0">
+      <TabsList className="w-full justify-start gap-2 rounded-2xl bg-transparent p-0">
         <TabsTrigger value="for-you">For You</TabsTrigger>
         <TabsTrigger value="communities">Communities</TabsTrigger>
       </TabsList>

@@ -24,6 +24,8 @@ export interface PostDetailProps {
 }
 
 export function PostDetail({ post, comments, startupIdeaContext }: PostDetailProps) {
+  const topRep = post.author.reputation[0];
+
   return (
     <div className="mx-auto max-w-4xl space-y-8">
       <header className="space-y-4">
@@ -36,12 +38,31 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
           <span>{formatRelativeTime(post.createdAt)}</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-balance text-4xl font-semibold">{post.title}</h1>
+          <h1 className="text-balance text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl">
+            {post.title}
+          </h1>
           {post.startupIdea ? (
             <ValidationScoreBadge score={post.startupIdea.validationScore} />
           ) : null}
         </div>
-        <p className="max-w-3xl text-base leading-7 text-text-secondary">{post.body}</p>
+        <div className="surface-panel flex flex-col gap-4 p-4 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="font-medium text-text-primary">@{post.author.username}</div>
+          {topRep ? (
+            <div className="rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+              {topRep.score} rep in {topRep.communityName}
+            </div>
+          ) : (
+            <div className="rounded-full bg-bg-overlay px-3 py-1 text-xs">
+              Reputation grows when people upvote useful work
+            </div>
+          )}
+          </div>
+          <div className="rounded-full bg-bg-base px-3 py-1.5 text-xs font-medium text-text-secondary">
+            {post.commentCount} replies
+          </div>
+        </div>
+        <p className="max-w-3xl text-base leading-8 text-text-secondary">{post.body}</p>
         {post.startupIdea ? (
           <div className="grid gap-4 rounded-3xl border border-border-subtle bg-bg-surface p-5 md:grid-cols-2">
             <div>
@@ -157,14 +178,20 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
       ) : null}
 
       <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-semibold">Comments</h2>
-          <div className="text-sm text-text-secondary">Sort: Top</div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold">Answers and discussion</h2>
+            <p className="mt-1 text-sm text-text-secondary">
+              Add a concrete answer, useful context, or a sharper follow-up.
+            </p>
+          </div>
+          <div className="rounded-full bg-bg-overlay px-3 py-1.5 text-sm text-text-secondary">Answer this</div>
         </div>
         <CommentEditor postId={post.id} />
         {comments.length === 0 ? (
-          <div className="surface-panel p-5 text-sm text-text-secondary">
-            No feedback yet. Be the first person to pressure-test this idea with concrete, constructive input.
+          <div className="surface-panel space-y-3 p-5 text-sm text-text-secondary">
+            <p>No feedback yet.</p>
+            <p>Be the first person to pressure-test this with a concrete answer or a useful follow-up question.</p>
           </div>
         ) : null}
         <CommentThread comments={comments} />

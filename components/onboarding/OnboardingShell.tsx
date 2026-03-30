@@ -16,8 +16,27 @@ export function OnboardingShell({
   children,
 }: OnboardingShellProps) {
   return (
-    <div className={cn('mx-auto flex min-h-screen max-w-4xl flex-col px-4 py-10', className)}>
-      <div className="mb-10 flex justify-center gap-2">
+    <div className={cn('mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-6 sm:px-6 sm:py-8', className)}>
+      <div className="mb-6 flex items-center justify-between">
+        <a href="/feed" className="text-sm font-medium text-accent">
+          Back to feed
+        </a>
+        <div className="text-sm text-text-tertiary">Optional setup</div>
+      </div>
+      <div className="mb-8 rounded-3xl border border-border-subtle bg-bg-surface px-4 py-4 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Value first</div>
+            <p className="mt-1 text-sm text-text-secondary">
+              You can already browse, read, and contribute. This setup just helps Credvia feel more relevant faster.
+            </p>
+          </div>
+          <a href="/feed" className="text-sm font-medium text-accent">
+            Start using Credvia now
+          </a>
+        </div>
+      </div>
+      <div className="mb-6 flex justify-center gap-2">
         {[1, 2, 3].map((dot) => (
           <div
             key={dot}

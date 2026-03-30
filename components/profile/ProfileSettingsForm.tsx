@@ -107,9 +107,10 @@ export function ProfileSettingsForm() {
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <section className="surface-panel space-y-6 p-6">
         <div>
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Identity</div>
           <h1 className="text-3xl font-semibold">Profile settings</h1>
           <p className="mt-2 text-sm text-text-secondary">
-            Keep your public profile accurate so your posts, Startup Ideas, and reputation all point to the same identity.
+            Keep your public profile sharp enough for people to trust your work and understand what you are growing into.
           </p>
         </div>
 
@@ -264,14 +265,14 @@ export function ProfileSettingsForm() {
 
       <aside className="space-y-4">
         <div className="surface-panel p-5">
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Account</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Profile health</div>
           <div className="mt-3 space-y-3 text-sm text-text-secondary">
             <div>
               <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Email</div>
               <div className="mt-1 text-text-primary">{email ?? 'Unknown'}</div>
             </div>
             <div>
-              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Onboarding</div>
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Setup status</div>
               <div className="mt-1 text-text-primary">
                 {onboardingComplete ? 'Complete' : 'Still incomplete'}
               </div>
@@ -281,7 +282,18 @@ export function ProfileSettingsForm() {
                 Continue onboarding
               </Link>
             ) : null}
+            <p className="text-sm text-text-secondary">
+              Strong profiles do not need to be polished. A clear headline, a few skills, and consistent contribution are enough.
+            </p>
           </div>
+        </div>
+        <div className="surface-panel p-5">
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">What people notice first</div>
+          <ul className="mt-3 space-y-3 text-sm text-text-secondary">
+            <li>A clear full name and username.</li>
+            <li>A headline that signals what you build or want to grow into.</li>
+            <li>Consistent public contribution across the right communities.</li>
+          </ul>
         </div>
       </aside>
     </div>

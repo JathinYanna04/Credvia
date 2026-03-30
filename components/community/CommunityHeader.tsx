@@ -12,12 +12,12 @@ export function CommunityHeader({
   initialJoined = false,
 }: CommunityHeaderProps) {
   return (
-    <header className="overflow-hidden rounded-3xl border border-border-subtle bg-bg-surface">
-      <div className="h-36 bg-[linear-gradient(135deg,rgba(34,211,238,0.22),rgba(17,17,19,1))]" />
+    <header className="overflow-hidden rounded-3xl border border-border-subtle bg-bg-surface shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+      <div className="h-32 bg-[linear-gradient(135deg,rgba(79,70,229,0.18),rgba(238,242,255,1))] dark:bg-[linear-gradient(135deg,rgba(129,140,248,0.26),rgba(29,33,43,1))]" />
       <div className="px-6 pb-6">
         <div className="-mt-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-border-default bg-bg-base text-2xl font-semibold text-accent">
+            <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-border-subtle bg-bg-surface text-2xl font-semibold text-accent shadow-sm">
               {community.icon}
             </div>
             <h1 className="mt-4 text-3xl font-semibold">{community.name}</h1>

@@ -6,11 +6,11 @@ export default function OnboardingCommunitiesPage() {
   return (
     <OnboardingShell
       step={2}
-      title="Join a few communities"
-      description="Pick the environments where you want to ask sharper questions, publish work, and earn domain-specific reputation."
+      title="Join communities that match your goals"
+      description="These spaces shape your home feed and give your reputation a clearer context, but you can always change them later."
     >
       <CommunityPicker />
-      <Link href="/onboarding/profile" className="mt-4 inline-block text-sm text-accent">
+      <Link href="/onboarding/profile" className="mt-4 inline-block text-sm font-medium text-accent">
         Continue to profile
       </Link>
     </OnboardingShell>

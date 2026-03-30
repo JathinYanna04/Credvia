@@ -46,11 +46,11 @@ export async function POST(request: Request) {
       }
     }
 
-    const profile = await ensureProfileRecord(supabase, user);
+    await ensureProfileRecord(supabase, user);
 
     return ok({
       id: user.id,
-      redirectTo: profile.onboarding_complete ? '/feed' : '/onboarding/interests',
+      redirectTo: '/feed',
     });
   } catch (error) {
     return handleApiError(error);

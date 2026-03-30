@@ -61,7 +61,7 @@ export function SignupForm() {
       }
 
       if (data.session) {
-        router.push('/onboarding/interests');
+        router.push('/feed');
         router.refresh();
       } else {
         setMessage('Check your email to confirm your account, then continue through the callback link.');

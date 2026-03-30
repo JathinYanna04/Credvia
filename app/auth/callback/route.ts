@@ -194,7 +194,7 @@ export async function GET(request: Request) {
     return redirectWithError(origin, message);
   }
 
-  const redirectPath = profile.onboarding_complete ? '/feed' : '/onboarding/interests';
+  const redirectPath = '/feed';
   await captureServerEvent({
     event: 'oauth_google_completed',
     distinctId: data.user.id,
