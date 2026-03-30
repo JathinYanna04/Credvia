@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
+import { sendWelcomeEmail } from '@/lib/email/send-welcome-email';
 import { getSupabaseEnvDebug } from '@/lib/supabase/env';
 import { ensureProfileRecord } from '@/lib/supabase/helpers';
 import { createServiceRoleClient } from '@/lib/supabase/service';
@@ -101,6 +102,7 @@ export async function GET(request: Request) {
   }
 
   const serviceRoleClient = createServiceRoleClient();
+  let profileExistsBeforeEnsure = false;
 
   if (serviceRoleClient) {
     const [adminUserResult, publicUserResult, profileResult] = await Promise.all([
@@ -112,6 +114,8 @@ export async function GET(request: Request) {
         .eq('user_id', data.user.id)
         .maybeSingle(),
     ]);
+
+    profileExistsBeforeEnsure = Boolean(profileResult.data);
 
     logInfo('auth-callback', 'Post-exchange user bootstrap inspection', {
       requestId,
@@ -127,6 +131,14 @@ export async function GET(request: Request) {
     logError('auth-callback', 'Service role client unavailable; cannot inspect auth.users/public.users/profiles', {
       requestId,
     });
+
+    const profileResult = await supabase
+      .from('profiles')
+      .select('user_id')
+      .eq('user_id', data.user.id)
+      .maybeSingle();
+
+    profileExistsBeforeEnsure = Boolean(profileResult.data);
   }
 
   let profile;
@@ -192,6 +204,18 @@ export async function GET(request: Request) {
       onboardingComplete: profile.onboarding_complete,
     },
   });
+
+  if (!profileExistsBeforeEnsure && data.user.email) {
+    await sendWelcomeEmail({
+      to: data.user.email,
+      name:
+        profile.full_name ??
+        (typeof data.user.user_metadata?.full_name === 'string'
+          ? data.user.user_metadata.full_name
+          : null),
+    });
+  }
+
   logInfo('auth-callback', 'Callback completed successfully', {
     requestId,
     redirectPath,

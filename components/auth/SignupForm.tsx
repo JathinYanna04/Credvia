@@ -55,6 +55,12 @@ export function SignupForm() {
       });
 
       if (data.session) {
+        void fetch('/api/v1/email/welcome', {
+          method: 'POST',
+        }).catch(() => undefined);
+      }
+
+      if (data.session) {
         router.push('/onboarding/interests');
         router.refresh();
       } else {

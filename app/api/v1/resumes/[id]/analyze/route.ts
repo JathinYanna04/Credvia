@@ -1,6 +1,7 @@
 import { fail, handleApiError, ok, parseJson } from '@/lib/api';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { getActiveResume, getOwnedResume } from '@/lib/career-match/queries';
+import { sendResumeAnalysisEmail } from '@/lib/email/send-resume-analysis-email';
 import { recomputeMatchesForResume } from '@/lib/matching/service';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { ResumeExtractionError } from '@/lib/resume/extract';
@@ -75,6 +76,31 @@ export async function POST(
           usedOcr: extractionMeta?.usedOcr ?? false,
         },
       });
+
+      if (user.email) {
+        try {
+          const profileResult = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (profileResult.error) {
+            throw new Error(profileResult.error.message);
+          }
+
+          await sendResumeAnalysisEmail({
+            to: user.email,
+            name:
+              profileResult.data?.full_name ??
+              (typeof user.user_metadata?.full_name === 'string'
+                ? user.user_metadata.full_name
+                : null),
+          });
+        } catch (emailError) {
+          console.error('[email] failed:', emailError);
+        }
+      }
     } catch (analysisError) {
       await supabase
         .from('resumes')
