@@ -9,6 +9,7 @@ export interface ParsedResumeInsightsProps {
 export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
   const profile = detail.profile;
   const skills = detail.skills;
+  const extractionMeta = profile?.raw_sections?.__meta;
 
   return (
     <section className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
@@ -18,6 +19,11 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
           <p className="mt-2 text-sm text-text-secondary">
             This is the structured profile Credvia is currently using for match scoring.
           </p>
+          {extractionMeta?.usedOcr ? (
+            <p className="mt-2 text-xs text-text-tertiary">
+              OCR fallback was used for this extraction because native PDF text quality was too low.
+            </p>
+          ) : null}
         </div>
 
         {profile ? (

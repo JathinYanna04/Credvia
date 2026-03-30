@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/supabase/types';
+import type { Json } from '@/lib/supabase/types';
 import { getSkillEntryBySlug } from '@/lib/resume/skill-taxonomy';
-import { extractResumeText } from '@/lib/resume/extract';
+import { extractResumeText, ResumeExtractionError } from '@/lib/resume/extract';
 import { parseResumeText } from '@/lib/resume/parse';
 
 type TypedSupabaseClient = SupabaseClient<Database>;
@@ -18,7 +19,7 @@ export async function analyzeStoredResume(
       user_id: resume.user_id,
       status: 'running',
       started_at: new Date().toISOString(),
-      parser_version: 'deterministic-v1',
+      parser_version: 'deterministic-v2',
     })
     .select('id')
     .single();
@@ -28,13 +29,14 @@ export async function analyzeStoredResume(
   }
 
   try {
-    const rawText = (await extractResumeText(fileBuffer, resume.mime_type, resume.file_name)).trim();
-
-    if (!rawText) {
-      throw new Error('Could not extract text from this resume.');
-    }
-
-    const parsed = parseResumeText(rawText);
+    const extraction = await extractResumeText(fileBuffer, resume.mime_type, resume.file_name);
+    const rawText = extraction.text.trim();
+    const parsed = parseResumeText(rawText, {
+      extractionMethod: extraction.method,
+      extractionQuality: extraction.quality as unknown as Record<string, unknown>,
+      usedOcr: extraction.usedOcr,
+      ocrConfidence: extraction.ocrConfidence,
+    });
     const matchedSkillRows = [
       ...parsed.directSkillSlugs.map((slug) => ({ slug, source: 'direct' as const, confidence: 1 })),
       ...parsed.inferredSkillSlugs.map((slug) => ({ slug, source: 'inferred' as const, confidence: 0.7 })),
@@ -49,16 +51,20 @@ export async function analyzeStoredResume(
       supabase.from('resume_profiles').upsert({
         resume_id: resume.id,
         user_id: resume.user_id,
+        full_name: parsed.fullName,
+        email: parsed.email,
+        phone: parsed.phone,
+        current_title: parsed.currentTitle,
         summary: parsed.summary,
         location: parsed.locationText,
         years_experience: parsed.experienceYears,
         projects: parsed.projects,
         experience: parsed.experience,
         education: parsed.education,
-        raw_sections: parsed.parsedSections,
+        raw_sections: parsed.parsedSections as unknown as Json,
         parsed_text: rawText,
         parsed_at: new Date().toISOString(),
-      }),
+      }, { onConflict: 'resume_id' }),
       supabase.from('resume_skills').delete().eq('resume_id', resume.id),
     ]);
 
@@ -93,6 +99,8 @@ export async function analyzeStoredResume(
       .update({
         status: 'completed',
         completed_at: new Date().toISOString(),
+        parser_version: `deterministic-v2:${extraction.method}${extraction.usedOcr ? ':ocr' : ''}`,
+        error_message: null,
       })
       .eq('id', insertAnalysisRun.data.id);
 
@@ -121,7 +129,12 @@ export async function analyzeStoredResume(
       .update({
         status: 'failed',
         completed_at: new Date().toISOString(),
-        error_message: error instanceof Error ? error.message : 'Resume analysis failed.',
+        error_message:
+          error instanceof ResumeExtractionError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : 'Resume analysis failed.',
       })
       .eq('id', insertAnalysisRun.data.id);
     throw error;

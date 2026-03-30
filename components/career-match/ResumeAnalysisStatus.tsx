@@ -2,7 +2,12 @@
 
 import { Loader2, RefreshCcw } from 'lucide-react';
 import type { CareerAnalysisRun, CareerResumeSummary } from '@/components/career-match/types';
-import { formatDateTime, humanizeParseStatus, parseStatusVariant } from '@/components/career-match/utils';
+import {
+  describeAnalysisMethod,
+  formatDateTime,
+  humanizeParseStatus,
+  parseStatusVariant,
+} from '@/components/career-match/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -19,6 +24,9 @@ export function ResumeAnalysisStatus({
   analyzing,
   onAnalyze,
 }: ResumeAnalysisStatusProps) {
+  const analysisMethod = describeAnalysisMethod(latestRun?.parser_version);
+  const usedOcr = Boolean(latestRun?.parser_version?.includes('pdf-ocr') || latestRun?.parser_version?.includes(':ocr'));
+
   return (
     <section className="surface-panel space-y-4 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -53,12 +61,29 @@ export function ResumeAnalysisStatus({
           <div className="mt-1 text-xs text-text-tertiary">
             {latestRun ? formatDateTime(latestRun.created_at) : 'Upload and analyze to populate your profile.'}
           </div>
+          {analysisMethod ? (
+            <div className="mt-2 text-xs text-text-secondary">
+              Method: {analysisMethod}
+              {usedOcr ? ' with OCR fallback' : ''}
+            </div>
+          ) : null}
         </div>
       </div>
 
       {latestRun?.error_message ? (
         <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           {latestRun.error_message}
+          {resume.mime_type === 'application/pdf' ? (
+            <div className="mt-2 text-xs text-danger/90">
+              DOCX usually parses more reliably than PDF if this keeps failing.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {usedOcr && !latestRun?.error_message ? (
+        <div className="rounded-2xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-info">
+          OCR fallback was used for this resume because the original PDF text extraction was too weak.
         </div>
       ) : null}
     </section>

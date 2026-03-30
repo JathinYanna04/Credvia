@@ -4,6 +4,23 @@ export interface CareerSkill {
   name: string;
 }
 
+export interface CareerResumeExtractionMeta {
+  extractionMethod?: string;
+  extractionQuality?: Record<string, unknown>;
+  usedOcr?: boolean;
+  ocrConfidence?: number | null;
+}
+
+export interface CareerResumeSections {
+  summary: string[];
+  skills: string[];
+  projects: string[];
+  experience: string[];
+  education: string[];
+  other: string[];
+  __meta?: CareerResumeExtractionMeta;
+}
+
 export interface CareerResumeProfile {
   id: string;
   resume_id: string;
@@ -18,7 +35,7 @@ export interface CareerResumeProfile {
   education: string[];
   experience: string[];
   projects: string[];
-  raw_sections: Record<string, string[]>;
+  raw_sections: CareerResumeSections;
   parsed_text: string | null;
   parsed_at: string | null;
   created_at: string;

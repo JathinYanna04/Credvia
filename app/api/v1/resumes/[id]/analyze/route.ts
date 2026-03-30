@@ -2,6 +2,7 @@ import { fail, handleApiError, ok, parseJson } from '@/lib/api';
 import { getActiveResume, getOwnedResume } from '@/lib/career-match/queries';
 import { recomputeMatchesForResume } from '@/lib/matching/service';
 import { enforceRateLimit } from '@/lib/rate-limit';
+import { ResumeExtractionError } from '@/lib/resume/extract';
 import { analyzeStoredResume } from '@/lib/resume/analyze';
 import { ResumeAnalyzeSchema } from '@/lib/schemas/career-match';
 import { createServiceRoleClient } from '@/lib/supabase/service';
@@ -64,6 +65,10 @@ export async function POST(
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
       return fail('UNAUTHORIZED', 'You need to sign in.', 401);
+    }
+
+    if (error instanceof ResumeExtractionError) {
+      return fail('VALIDATION_ERROR', error.message, 422);
     }
 
     return handleApiError(error);

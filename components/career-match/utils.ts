@@ -53,3 +53,31 @@ export function parseStatusVariant(status: 'uploaded' | 'parsing' | 'parsed' | '
 export function explainRequirement(required: boolean) {
   return required ? 'Required' : 'Preferred';
 }
+
+export function describeAnalysisMethod(parserVersion: string | null | undefined) {
+  if (!parserVersion) {
+    return null;
+  }
+
+  if (parserVersion.includes('pdfjs-text')) {
+    return 'Native PDF text extraction';
+  }
+
+  if (parserVersion.includes('pdf-parse-fallback')) {
+    return 'Fallback PDF text extraction';
+  }
+
+  if (parserVersion.includes('pdf-token-fallback')) {
+    return 'Last-resort PDF text fallback';
+  }
+
+  if (parserVersion.includes('docx-mammoth')) {
+    return 'DOCX text extraction';
+  }
+
+  if (parserVersion.includes('pdf-ocr') || parserVersion.includes(':ocr')) {
+    return 'OCR fallback';
+  }
+
+  return parserVersion;
+}

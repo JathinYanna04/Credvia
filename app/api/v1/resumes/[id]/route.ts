@@ -1,5 +1,6 @@
 import { fail, handleApiError, ok } from '@/lib/api';
 import { getJobCardsByIds, getOwnedResume } from '@/lib/career-match/queries';
+import { assessResumeTextQuality } from '@/lib/resume/extract';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 
@@ -28,22 +29,26 @@ export async function GET(
     if (analysesResult.error) throw new Error(analysesResult.error.message);
     if (matchesResult.error) throw new Error(matchesResult.error.message);
 
+    const profileLooksValid = Boolean(
+      profileResult.data?.parsed_text &&
+        assessResumeTextQuality(profileResult.data.parsed_text).isAcceptable,
+    );
     const jobs = await getJobCardsByIds(
       supabase,
-      (matchesResult.data ?? []).map((match) => match.job_id),
+      profileLooksValid ? (matchesResult.data ?? []).map((match) => match.job_id) : [],
     );
     const jobLookup = new Map(jobs.map((job) => [job.id, job]));
 
     return ok({
       resume,
-      profile: profileResult.data ?? null,
-      skills: (skillsResult.data ?? []).map((row) => ({
+      profile: profileLooksValid ? profileResult.data ?? null : null,
+      skills: (profileLooksValid ? skillsResult.data ?? [] : []).map((row) => ({
         source: row.source_type,
         confidence: row.confidence,
         skill: { id: row.skill_slug, slug: row.skill_slug, name: row.skill_name },
       })),
       analysisRuns: analysesResult.data ?? [],
-      topMatches: (matchesResult.data ?? []).map((match) => ({
+      topMatches: (profileLooksValid ? matchesResult.data ?? [] : []).map((match) => ({
         ...match,
         job: jobLookup.get(match.job_id) ?? null,
       })),
