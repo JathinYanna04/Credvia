@@ -18,8 +18,24 @@ export type NotificationType =
   | 'vote'
   | 'best_answer'
   | 'follow'
+  | 'idea_revision'
   | 'mod_action'
   | 'reputation_gain';
+
+export interface StartupIdeaRevisionSummary {
+  id: string;
+  revisionNumber: number;
+  title: string;
+  body: string;
+  problem: string;
+  targetAudience: string;
+  solution: string;
+  marketCategory: string;
+  stage: 'idea' | 'problem_validation' | 'mvp_building' | 'early_users';
+  monetizationModel?: string;
+  changeSummary?: string;
+  createdAt: string;
+}
 
 export interface CommunitySummary {
   id: string;
@@ -74,6 +90,10 @@ export interface PostSummary {
     monetizationModel?: string;
     validationScore: number;
     uniqueCommenters: number;
+    followerCount: number;
+    revisionCount: number;
+    lastRevisionAt?: string;
+    currentRevisionId?: string;
   };
 }
 

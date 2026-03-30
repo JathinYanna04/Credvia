@@ -3,9 +3,9 @@ import { createServiceRoleClient } from '@/lib/supabase/service';
 
 export interface SendNotificationInput {
   userId: string;
-  notifType: 'reply' | 'vote' | 'mod_action';
+  notifType: 'reply' | 'vote' | 'follow' | 'idea_revision' | 'mod_action';
   actorUserId?: string | null;
-  entityType?: 'post' | 'comment' | null;
+  entityType?: 'post' | 'comment' | 'revision' | null;
   entityId?: string | null;
   payload?: Json | null;
 }
@@ -29,4 +29,10 @@ export async function sendNotification(input: SendNotificationInput) {
     entity_id: input.entityId ?? null,
     payload: input.payload ?? null,
   });
+}
+
+export async function sendNotifications(inputs: SendNotificationInput[]) {
+  for (const input of inputs) {
+    await sendNotification(input);
+  }
 }

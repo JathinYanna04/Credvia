@@ -29,8 +29,8 @@ export async function POST(request: Request) {
 
     await ensureProfileRecord(supabase, user);
 
-    const normalizedSkills = body.skills ? [...new Set(body.skills)] : null;
-    const normalizedCommunities = body.communityIds ? [...new Set(body.communityIds)] : null;
+    const normalizedSkills = body.skills ? [...new Set(body.skills)] as string[] : null;
+    const normalizedCommunities = body.communityIds ? [...new Set(body.communityIds)] as string[] : null;
 
     if (Object.keys(body.profile).length > 0 || typeof body.onboarding_complete === 'boolean') {
       const profileUpdate = await supabase

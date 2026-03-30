@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Bell, Compass, Feather, Home, Lightbulb, User } from 'lucide-react';
+import { Bell, BriefcaseBusiness, Feather, Home, Lightbulb, User } from 'lucide-react';
 import { getAppShellData } from '@/lib/supabase/app-shell';
 
 export async function MobileNav() {
@@ -10,8 +10,8 @@ export async function MobileNav() {
       <Link href="/feed" aria-label="Feed" className="text-text-secondary">
         <Home className="h-5 w-5" />
       </Link>
-      <Link href="/explore" aria-label="Explore" className="text-text-secondary">
-        <Compass className="h-5 w-5" />
+      <Link href="/career-match" aria-label="Career Match" className="text-text-secondary">
+        <BriefcaseBusiness className="h-5 w-5" />
       </Link>
       <Link href="/ideas" aria-label="Startup ideas" className="text-text-secondary">
         <Lightbulb className="h-5 w-5" />

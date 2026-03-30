@@ -3,33 +3,47 @@
 import { Input } from '@/components/ui/input';
 
 export interface IdeaFiltersProps {
-  sort: 'recent' | 'traction';
+  query: string;
+  sort: 'recent' | 'traction' | 'active';
   stage: string;
   category: string;
-  onSortChange: (value: 'recent' | 'traction') => void;
+  onQueryChange: (value: string) => void;
+  onSortChange: (value: 'recent' | 'traction' | 'active') => void;
   onStageChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
 }
 
 export function IdeaFilters({
+  query,
   sort,
   stage,
   category,
+  onQueryChange,
   onSortChange,
   onStageChange,
   onCategoryChange,
 }: IdeaFiltersProps) {
   return (
-    <div className="surface-panel grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="surface-panel grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+      <label className="grid gap-2 text-sm text-text-secondary sm:col-span-2 xl:col-span-1">
+        <span>Search</span>
+        <Input
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="Problem, audience, category, or title"
+        />
+      </label>
+
       <label className="grid gap-2 text-sm text-text-secondary">
         <span>Sort</span>
         <select
           value={sort}
-          onChange={(event) => onSortChange(event.target.value as 'recent' | 'traction')}
+          onChange={(event) => onSortChange(event.target.value as 'recent' | 'traction' | 'active')}
           className="flex h-11 w-full rounded-xl border border-border-default bg-bg-surface px-4 text-sm text-text-primary"
         >
           <option value="traction">Most traction</option>
           <option value="recent">Most recent</option>
+          <option value="active">Recently revised</option>
         </select>
       </label>
 

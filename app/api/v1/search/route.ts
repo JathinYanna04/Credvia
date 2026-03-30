@@ -62,14 +62,21 @@ export async function GET(request: Request) {
     const pattern = `%${query}%`;
     const supabase = await createServerSupabaseClient();
 
-    const [postsResult, communitiesResult, profilesResult] = await Promise.all([
+    const [postsResult, startupIdeaMatches, communitiesResult, profilesResult] = await Promise.all([
       supabase
         .from('posts')
         .select('*')
         .eq('status', 'published')
         .or(`title.ilike.${pattern},body_md.ilike.${pattern}`)
         .order('created_at', { ascending: false })
-        .limit(8),
+        .limit(12),
+      supabase
+        .from('startup_ideas')
+        .select('post_id')
+        .or(
+          `problem.ilike.${pattern},target_audience.ilike.${pattern},solution.ilike.${pattern},market_category.ilike.${pattern}`,
+        )
+        .limit(12),
       supabase
         .from('communities')
         .select('id, name, slug, description, member_count, post_count')
@@ -89,6 +96,10 @@ export async function GET(request: Request) {
       throw new Error(postsResult.error.message);
     }
 
+    if (startupIdeaMatches.error) {
+      throw new Error(startupIdeaMatches.error.message);
+    }
+
     if (communitiesResult.error) {
       throw new Error(communitiesResult.error.message);
     }
@@ -97,7 +108,27 @@ export async function GET(request: Request) {
       throw new Error(profilesResult.error.message);
     }
 
-    const posts = await toPostSummaries(supabase, postsResult.data ?? []);
+    const combinedPostIds = new Set([
+      ...(postsResult.data ?? []).map((post) => post.id),
+      ...(startupIdeaMatches.data ?? []).map((idea) => idea.post_id),
+    ]);
+
+    const hydratedPosts =
+      combinedPostIds.size > 0
+        ? await supabase
+            .from('posts')
+            .select('*')
+            .in('id', [...combinedPostIds])
+            .eq('status', 'published')
+            .order('created_at', { ascending: false })
+            .limit(12)
+        : { data: [], error: null };
+
+    if (hydratedPosts.error) {
+      throw new Error(hydratedPosts.error.message);
+    }
+
+    const posts = await toPostSummaries(supabase, hydratedPosts.data ?? []);
     const communities = (communitiesResult.data ?? []).map(toCommunitySummary);
     const people = (profilesResult.data ?? []).map(toUserSummary);
 

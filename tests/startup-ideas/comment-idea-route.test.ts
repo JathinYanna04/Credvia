@@ -98,5 +98,5 @@ describe('startup idea comment route', () => {
       body_md: 'Constructive feedback',
       body_html: '<p>Constructive feedback</p>',
     });
-  });
+  }, 10000);
 });

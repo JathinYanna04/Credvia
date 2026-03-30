@@ -3,7 +3,7 @@ import type { Database } from '@/lib/supabase/types';
 import { slugify } from '@/lib/utils/format';
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
-type SupabaseClientLike = SupabaseClient;
+type SupabaseClientLike = SupabaseClient<Database>;
 
 export async function getRequiredUser(supabase: SupabaseClientLike) {
   const {

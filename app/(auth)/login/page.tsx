@@ -16,16 +16,16 @@ export default function LoginPage() {
         </div>
         <div className="grid grid-cols-3 gap-6 text-sm">
           <div>
-            <div className="font-display text-2xl text-accent">18k+</div>
-            <div className="text-text-tertiary">Contributors</div>
+            <div className="font-display text-2xl text-accent">Proof</div>
+            <div className="text-text-tertiary">Work over polish</div>
           </div>
           <div>
-            <div className="font-display text-2xl text-accent">240k+</div>
-            <div className="text-text-tertiary">Posts</div>
+            <div className="font-display text-2xl text-accent">Signal</div>
+            <div className="text-text-tertiary">Earned in public</div>
           </div>
           <div>
-            <div className="font-display text-2xl text-accent">7</div>
-            <div className="text-text-tertiary">Communities</div>
+            <div className="font-display text-2xl text-accent">Depth</div>
+            <div className="text-text-tertiary">Communities that compound</div>
           </div>
         </div>
       </section>

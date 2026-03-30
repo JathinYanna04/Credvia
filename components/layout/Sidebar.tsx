@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Bell, Compass, Feather, Home, Lightbulb, Search, User } from 'lucide-react';
+import { Bell, BriefcaseBusiness, Compass, Feather, FileText, Home, Lightbulb, Search, User } from 'lucide-react';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -30,6 +30,14 @@ export async function Sidebar() {
         <Link href="/ideas" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
           <Lightbulb className="h-4 w-4" />
           Startup Ideas
+        </Link>
+        <Link href="/career-match" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
+          <BriefcaseBusiness className="h-4 w-4" />
+          Career Match
+        </Link>
+        <Link href="/resume" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
+          <FileText className="h-4 w-4" />
+          Resume
         </Link>
         <Link href="/explore?q=" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
           <Search className="h-4 w-4" />

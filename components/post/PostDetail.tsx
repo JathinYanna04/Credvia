@@ -3,18 +3,26 @@ import { ExternalLink } from 'lucide-react';
 import { CommentEditor } from '@/components/comments/CommentEditor';
 import { CommentThread } from '@/components/comments/CommentThread';
 import { PostTypeBadge } from '@/components/post/PostTypeBadge';
+import { IdeaFollowButton } from '@/components/startup-ideas/IdeaFollowButton';
+import { IdeaRevisionForm } from '@/components/startup-ideas/IdeaRevisionForm';
+import { IdeaRevisionTimeline } from '@/components/startup-ideas/IdeaRevisionTimeline';
 import { ReportIdeaButton } from '@/components/startup-ideas/ReportIdeaButton';
 import { ValidationScoreBadge } from '@/components/startup-ideas/ValidationScoreBadge';
 import { VoteButtons } from '@/components/voting/VoteButtons';
-import type { CommentSummary, PostSummary } from '@/lib/types';
+import type { CommentSummary, PostSummary, StartupIdeaRevisionSummary } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils/format';
 
 export interface PostDetailProps {
   post: PostSummary;
   comments: CommentSummary[];
+  startupIdeaContext?: {
+    revisions: StartupIdeaRevisionSummary[];
+    canRevise: boolean;
+    isFollowing: boolean;
+  };
 }
 
-export function PostDetail({ post, comments }: PostDetailProps) {
+export function PostDetail({ post, comments, startupIdeaContext }: PostDetailProps) {
   return (
     <div className="mx-auto max-w-4xl space-y-8">
       <header className="space-y-4">
@@ -71,8 +79,8 @@ export function PostDetail({ post, comments }: PostDetailProps) {
         ) : null}
         {post.startupIdea ? (
           <div className="rounded-2xl border border-border-subtle bg-bg-base px-4 py-3 text-sm text-text-secondary">
-            Startup ideas are immutable in this MVP. Add clarifications, pivots, and updates in the
-            comments so feedback stays transparent.
+            Startup ideas stay append-only. Founders can publish revisions without overwriting earlier
+            thinking, so the validation trail remains transparent.
           </div>
         ) : null}
       </header>
@@ -97,10 +105,55 @@ export function PostDetail({ post, comments }: PostDetailProps) {
           ) : null}
 
           <div className="grid gap-2 text-sm text-text-secondary sm:flex sm:flex-wrap sm:items-center">
+            {post.startupIdea ? (
+              <IdeaFollowButton
+                postId={post.id}
+                initialFollowing={startupIdeaContext?.isFollowing ?? false}
+                initialFollowerCount={post.startupIdea.followerCount}
+              />
+            ) : null}
             <ReportIdeaButton postId={post.id} />
           </div>
         </div>
       </div>
+
+      {post.startupIdea ? (
+        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <IdeaRevisionTimeline revisions={startupIdeaContext?.revisions ?? []} />
+          <div className="space-y-4">
+            <div className="surface-panel p-5">
+              <h2 className="text-lg font-semibold text-text-primary">Idea momentum</h2>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Followers</div>
+                  <p className="mt-1 text-2xl font-semibold text-text-primary">
+                    {post.startupIdea.followerCount}
+                  </p>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Revisions</div>
+                  <p className="mt-1 text-2xl font-semibold text-text-primary">
+                    {post.startupIdea.revisionCount}
+                  </p>
+                </div>
+              </div>
+              {post.startupIdea.lastRevisionAt ? (
+                <p className="mt-4 text-sm text-text-secondary">
+                  Last revised {formatRelativeTime(post.startupIdea.lastRevisionAt)}
+                </p>
+              ) : null}
+            </div>
+
+            {startupIdeaContext?.canRevise ? (
+              <IdeaRevisionForm post={post} />
+            ) : (
+              <div className="surface-panel p-5 text-sm text-text-secondary">
+                Follow this idea to get notified when the founder publishes a revision.
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">

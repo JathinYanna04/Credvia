@@ -5,11 +5,12 @@ import type {
   CommunitySummary,
   NotificationSummary,
   PostSummary,
+  StartupIdeaRevisionSummary,
   UserSummary,
 } from '@/lib/types';
 import { computeIdeaValidationScore } from '@/lib/utils/idea-score';
 
-export type TypedSupabaseClient = SupabaseClient;
+export type TypedSupabaseClient = SupabaseClient<Database>;
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type CommunityRow = Database['public']['Tables']['communities']['Row'];
@@ -17,6 +18,7 @@ type PostRow = Database['public']['Tables']['posts']['Row'];
 type CommentRow = Database['public']['Tables']['comments']['Row'];
 type CommunityReputationRow = Database['public']['Tables']['community_reputation']['Row'];
 type StartupIdeaRow = Database['public']['Tables']['startup_ideas']['Row'];
+type StartupIdeaRevisionRow = Database['public']['Tables']['startup_idea_revisions']['Row'];
 type NotificationRow = Database['public']['Tables']['notifications']['Row'];
 type StartupIdeaStage = NonNullable<PostSummary['startupIdea']>['stage'];
 
@@ -124,6 +126,52 @@ export async function getStartupIdeasByPostIds(
   return new Map(
     ((data ?? []) as StartupIdeaRow[]).map((idea) => [idea.post_id, idea]),
   );
+}
+
+export async function getStartupIdeaRevisionsByPostIds(
+  supabase: TypedSupabaseClient,
+  postIds: string[],
+) {
+  const ids = unique(postIds);
+
+  if (ids.length === 0) {
+    return new Map<string, StartupIdeaRevisionSummary[]>();
+  }
+
+  const { data, error } = await supabase
+    .from('startup_idea_revisions')
+    .select('*')
+    .in('post_id', ids)
+    .order('revision_number', { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const revisions = new Map<string, StartupIdeaRevisionSummary[]>();
+
+  ((data ?? []) as StartupIdeaRevisionRow[]).forEach((revision) => {
+    if (!revisions.has(revision.post_id)) {
+      revisions.set(revision.post_id, []);
+    }
+
+    revisions.get(revision.post_id)?.push({
+      id: revision.id,
+      revisionNumber: revision.revision_number,
+      title: revision.title,
+      body: revision.body_md ?? '',
+      problem: revision.problem,
+      targetAudience: revision.target_audience,
+      solution: revision.solution,
+      marketCategory: revision.market_category,
+      stage: revision.stage as StartupIdeaStage,
+      monetizationModel: revision.monetization_model ?? undefined,
+      changeSummary: revision.change_summary ?? undefined,
+      createdAt: revision.created_at,
+    });
+  });
+
+  return revisions;
 }
 
 export async function getUniqueCommenterCounts(
@@ -281,6 +329,10 @@ export async function toPostSummaries(
               createdAt: post.created_at,
             }),
             uniqueCommenters,
+            followerCount: startupIdea.follower_count ?? 0,
+            revisionCount: startupIdea.revision_count ?? 1,
+            lastRevisionAt: startupIdea.last_revision_at ?? undefined,
+            currentRevisionId: startupIdea.current_revision_id ?? undefined,
           }
         : undefined,
     };
@@ -345,6 +397,12 @@ function toNotificationDescription(notification: NotificationRow) {
       return 'replied to your post.';
     case 'vote':
       return 'voted on your post.';
+    case 'follow':
+      return notification.entity_type === 'post'
+        ? 'followed your startup idea.'
+        : 'followed your profile.';
+    case 'idea_revision':
+      return 'published a new startup idea revision.';
     case 'mod_action':
       return 'took moderation action on reported content.';
     default:

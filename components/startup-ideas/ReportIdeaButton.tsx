@@ -9,6 +9,9 @@ const REPORT_REASONS = [
   { value: 'spam', label: 'Spam or promotion' },
   { value: 'harassment', label: 'Harassment or abuse' },
   { value: 'misinformation', label: 'Misleading claims' },
+  { value: 'low_quality', label: 'Low quality / vague idea' },
+  { value: 'plagiarism', label: 'Plagiarism or copied idea' },
+  { value: 'fraud', label: 'Fraud or dishonest claims' },
   { value: 'off_topic', label: 'Off topic' },
   { value: 'other', label: 'Other' },
 ] as const;

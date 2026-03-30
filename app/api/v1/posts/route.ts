@@ -85,6 +85,9 @@ export async function POST(request: Request) {
         market_category: body.startup_idea.market_category,
         stage: body.startup_idea.stage,
         monetization_model: body.startup_idea.monetization_model ?? null,
+        revision_count: 1,
+        follower_count: 0,
+        last_revision_at: new Date().toISOString(),
       });
 
       if (startupIdeaInsert.error) {
@@ -96,6 +99,56 @@ export async function POST(request: Request) {
         });
         await supabase.from('posts').delete().eq('id', data.id);
         throw new Error(startupIdeaInsert.error.message);
+      }
+
+      const revisionInsert = await supabase
+        .from('startup_idea_revisions')
+        .insert({
+          post_id: data.id,
+          revision_number: 1,
+          title: data.title,
+          body_md: data.body_md,
+          body_html: data.body_html,
+          problem: body.startup_idea.problem,
+          target_audience: body.startup_idea.target_audience,
+          solution: body.startup_idea.solution,
+          market_category: body.startup_idea.market_category,
+          stage: body.startup_idea.stage,
+          monetization_model: body.startup_idea.monetization_model ?? null,
+          change_summary: 'Initial thesis snapshot',
+          created_by: user.id,
+        })
+        .select('id')
+        .single();
+
+      if (revisionInsert.error || !revisionInsert.data) {
+        logError('posts-create', 'Failed to insert startup_idea_revisions row', {
+          requestId,
+          userId: user.id,
+          postId: data.id,
+          error: revisionInsert.error?.message ?? 'Missing revision row',
+        });
+        await supabase.from('startup_ideas').delete().eq('post_id', data.id);
+        await supabase.from('posts').delete().eq('id', data.id);
+        throw new Error(revisionInsert.error?.message ?? 'Could not create startup idea revision.');
+      }
+
+      const startupIdeaUpdate = await supabase
+        .from('startup_ideas')
+        .update({ current_revision_id: revisionInsert.data.id })
+        .eq('post_id', data.id);
+
+      if (startupIdeaUpdate.error) {
+        logError('posts-create', 'Failed to update startup_ideas current revision', {
+          requestId,
+          userId: user.id,
+          postId: data.id,
+          error: startupIdeaUpdate.error.message,
+        });
+        await supabase.from('startup_idea_revisions').delete().eq('id', revisionInsert.data.id);
+        await supabase.from('startup_ideas').delete().eq('post_id', data.id);
+        await supabase.from('posts').delete().eq('id', data.id);
+        throw new Error(startupIdeaUpdate.error.message);
       }
     }
 

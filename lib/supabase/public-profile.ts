@@ -25,7 +25,7 @@ export async function getPublicProfileBundle(username: string): Promise<PublicPr
   const [skillsResult, reputationResult, postsResult, commentsResult] = await Promise.all([
     supabase
       .from('user_skills')
-      .select('skills(name)')
+      .select('skill_id')
       .eq('user_id', profile.user_id),
     supabase
       .from('community_reputation')
@@ -50,12 +50,20 @@ export async function getPublicProfileBundle(username: string): Promise<PublicPr
   ]);
 
   const communityIds = (reputationResult.data ?? []).map((entry) => entry.community_id);
+  const skillIds = (skillsResult.data ?? []).map((entry) => entry.skill_id);
+  const profileSkillsResult = skillIds.length
+    ? await supabase.from('skills').select('id, name').in('id', skillIds)
+    : { data: [], error: null };
   const communitiesResult = communityIds.length
     ? await supabase
         .from('communities')
         .select('id, name, slug')
         .in('id', communityIds)
     : { data: [], error: null };
+
+  if (profileSkillsResult.error) {
+    throw new Error(profileSkillsResult.error.message);
+  }
 
   const communitiesMap = new Map(
     (communitiesResult.data ?? []).map((community) => [community.id, community]),
@@ -92,8 +100,8 @@ export async function getPublicProfileBundle(username: string): Promise<PublicPr
       fullName: profile.full_name ?? profile.username,
       headline: profile.headline ?? '',
       avatarUrl: profile.avatar_url ?? '',
-      skills: (skillsResult.data ?? [])
-        .map((row) => (row.skills as { name?: string } | null)?.name)
+      skills: (profileSkillsResult.data ?? [])
+        .map((row) => row.name)
         .filter((value): value is string => Boolean(value)),
       location: profile.location ?? undefined,
       currentCompany: profile.current_company ?? undefined,

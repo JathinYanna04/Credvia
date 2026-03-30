@@ -1,7 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseServiceRoleKey, getSupabaseUrl } from '@/lib/supabase/env';
+import type { Database } from '@/lib/supabase/types';
 
-export function createServiceRoleClient() {
+export function createServiceRoleClient(): SupabaseClient<Database> | null {
   const serviceRoleKey = getSupabaseServiceRoleKey();
   const url = getSupabaseUrl();
 
@@ -9,7 +10,7 @@ export function createServiceRoleClient() {
     return null;
   }
 
-  return createClient(
+  return createClient<Database>(
     url,
     serviceRoleKey,
     {
@@ -18,5 +19,5 @@ export function createServiceRoleClient() {
         autoRefreshToken: false,
       },
     },
-  );
+  ) as SupabaseClient<Database>;
 }

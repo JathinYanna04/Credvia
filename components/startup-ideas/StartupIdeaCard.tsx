@@ -60,6 +60,12 @@ export function StartupIdeaCard({ idea }: StartupIdeaCardProps) {
             <Badge variant="secondary">
               {idea.startupIdea.uniqueCommenters} unique voices
             </Badge>
+            <Badge variant="secondary">
+              {idea.startupIdea.followerCount} followers
+            </Badge>
+            <Badge variant="secondary">
+              {idea.startupIdea.revisionCount} revisions
+            </Badge>
             {idea.startupIdea.monetizationModel ? (
               <Badge variant="secondary">{idea.startupIdea.monetizationModel}</Badge>
             ) : null}

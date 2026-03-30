@@ -70,3 +70,18 @@ export const SavePostSchema = z
     saved: z.boolean(),
   })
   .strict();
+
+export const CreateIdeaRevisionSchema = z
+  .object({
+    title: z.string().min(10).max(300),
+    body_md: z.string().min(1).max(20000).optional(),
+    startup_idea: StartupIdeaSchema,
+    change_summary: z.string().min(10).max(280),
+  })
+  .strict();
+
+export const FollowIdeaSchema = z
+  .object({
+    following: z.boolean(),
+  })
+  .strict();

@@ -11,7 +11,8 @@ import type { PostSummary } from '@/lib/types';
 export default function IdeasPage() {
   const [ideas, setIdeas] = useState<PostSummary[] | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [sort, setSort] = useState<'recent' | 'traction'>('traction');
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<'recent' | 'traction' | 'active'>('traction');
   const [stage, setStage] = useState('');
   const [category, setCategory] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -21,6 +22,9 @@ export default function IdeasPage() {
     setError(null);
     const params = new URLSearchParams();
     params.set('sort', sort);
+    if (query.trim()) {
+      params.set('q', query.trim());
+    }
     if (stage) {
       params.set('stage', stage);
     }
@@ -49,7 +53,7 @@ export default function IdeasPage() {
             : 'Could not load startup ideas.',
         );
       });
-  }, [category, refreshKey, sort, stage]);
+  }, [category, query, refreshKey, sort, stage]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -66,9 +70,11 @@ export default function IdeasPage() {
       </header>
 
       <IdeaFilters
+        query={query}
         sort={sort}
         stage={stage}
         category={category}
+        onQueryChange={setQuery}
         onSortChange={setSort}
         onStageChange={setStage}
         onCategoryChange={setCategory}

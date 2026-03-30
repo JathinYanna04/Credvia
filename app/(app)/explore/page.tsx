@@ -31,14 +31,21 @@ export default async function ExplorePage({
 
   if (query.length >= 2) {
     const pattern = `%${query}%`;
-    const [postsResult, peopleResult] = await Promise.all([
+    const [postsResult, startupIdeaMatches, peopleResult] = await Promise.all([
       supabase
         .from('posts')
         .select('*')
         .eq('status', 'published')
         .or(`title.ilike.${pattern},body_md.ilike.${pattern}`)
         .order('created_at', { ascending: false })
-        .limit(8),
+        .limit(12),
+      supabase
+        .from('startup_ideas')
+        .select('post_id')
+        .or(
+          `problem.ilike.${pattern},target_audience.ilike.${pattern},solution.ilike.${pattern},market_category.ilike.${pattern}`,
+        )
+        .limit(12),
       supabase
         .from('profiles')
         .select('user_id, username, full_name, headline')
@@ -46,7 +53,23 @@ export default async function ExplorePage({
         .limit(8),
     ]);
 
-    posts = await toPostSummaries(supabase, postsResult.data ?? []);
+    const postIds = new Set([
+      ...(postsResult.data ?? []).map((post) => post.id),
+      ...(startupIdeaMatches.data ?? []).map((idea) => idea.post_id),
+    ]);
+
+    if (postIds.size > 0) {
+      const hydratedPosts = await supabase
+        .from('posts')
+        .select('*')
+        .in('id', [...postIds])
+        .eq('status', 'published')
+        .order('created_at', { ascending: false })
+        .limit(12);
+
+      posts = await toPostSummaries(supabase, hydratedPosts.data ?? []);
+    }
+
     people = peopleResult.data ?? [];
   }
 

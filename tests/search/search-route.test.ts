@@ -64,9 +64,35 @@ describe('search route', () => {
       })),
     };
 
+    const startupIdeasQuery = {
+      select: vi.fn(() => startupIdeasQuery),
+      or: vi.fn(() => startupIdeasQuery),
+      limit: vi.fn(async () => ({
+        data: [{ post_id: 'post-1' }],
+        error: null,
+      })),
+    };
+
+    const hydratedPostsQuery = {
+      select: vi.fn(() => hydratedPostsQuery),
+      in: vi.fn(() => hydratedPostsQuery),
+      eq: vi.fn(() => hydratedPostsQuery),
+      order: vi.fn(() => hydratedPostsQuery),
+      limit: vi.fn(async () => ({
+        data: [{ id: 'post-1', title: 'Searchable post' }],
+        error: null,
+      })),
+    };
+
+    let postsCallCount = 0;
+
     createServerSupabaseClient.mockResolvedValue({
       from: vi.fn((table: string) => {
-        if (table === 'posts') return postsQuery;
+        if (table === 'posts') {
+          postsCallCount += 1;
+          return postsCallCount === 1 ? postsQuery : hydratedPostsQuery;
+        }
+        if (table === 'startup_ideas') return startupIdeasQuery;
         if (table === 'communities') return communitiesQuery;
         if (table === 'profiles') return profilesQuery;
         throw new Error(`Unexpected table ${table}`);

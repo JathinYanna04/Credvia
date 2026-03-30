@@ -39,6 +39,8 @@ describe('startup idea create route', () => {
   it('creates a post row and startup idea row from the nested startup_idea payload', async () => {
     let insertedPost: Record<string, unknown> | null = null;
     let insertedIdea: Record<string, unknown> | null = null;
+    let insertedRevision: Record<string, unknown> | null = null;
+    let startupIdeaUpdate: Record<string, unknown> | null = null;
 
     const supabase = {
       from: vi.fn((table: string) => {
@@ -81,6 +83,40 @@ describe('startup idea create route', () => {
             insert: async (payload: Record<string, unknown>) => {
               insertedIdea = payload;
               return { error: null };
+            },
+            update(payload: Record<string, unknown>) {
+              startupIdeaUpdate = payload;
+              return {
+                eq: async () => ({ error: null }),
+              };
+            },
+            delete() {
+              return {
+                eq: async () => ({ error: null }),
+              };
+            },
+          };
+        }
+
+        if (table === 'startup_idea_revisions') {
+          return {
+            insert(payload: Record<string, unknown>) {
+              insertedRevision = payload;
+              return {
+                select() {
+                  return {
+                    single: async () => ({
+                      data: { id: 'revision-1' },
+                      error: null,
+                    }),
+                  };
+                },
+              };
+            },
+            delete() {
+              return {
+                eq: async () => ({ error: null }),
+              };
             },
           };
         }
@@ -144,6 +180,27 @@ describe('startup idea create route', () => {
       market_category: 'devtools',
       stage: 'idea',
       monetization_model: 'subscription',
+      revision_count: 1,
+      follower_count: 0,
+    });
+    expect(insertedRevision).toMatchObject({
+      post_id: 'idea-post-1',
+      revision_number: 1,
+      title: 'Idea title',
+      body_md: 'Idea body',
+      problem:
+        'Founders need structured validation before they commit serious build time.',
+      target_audience:
+        'Student founders and solo builders validating startup concepts.',
+      solution: 'A startup idea workflow with comments and traction signals.',
+      market_category: 'devtools',
+      stage: 'idea',
+      monetization_model: 'subscription',
+      change_summary: 'Initial thesis snapshot',
+      created_by: 'founder-1',
+    });
+    expect(startupIdeaUpdate).toMatchObject({
+      current_revision_id: 'revision-1',
     });
   });
 });

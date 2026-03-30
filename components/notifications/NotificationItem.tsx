@@ -1,4 +1,4 @@
-import { BellRing, MessageSquare, Star, UserPlus } from 'lucide-react';
+import { BellRing, GitBranch, MessageSquare, Star, UserPlus } from 'lucide-react';
 import type { NotificationSummary } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils/format';
 
@@ -12,6 +12,7 @@ const iconMap = {
   vote: BellRing,
   best_answer: Star,
   follow: UserPlus,
+  idea_revision: GitBranch,
   mod_action: BellRing,
   reputation_gain: Star,
 } as const;
