@@ -57,3 +57,8 @@ CREATE POLICY "job_match_alerts: self read" ON public.job_match_alerts
   FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "job_match_alerts: self insert" ON public.job_match_alerts
   FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "job_match_alerts: self update" ON public.job_match_alerts
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "job_match_alerts: self delete" ON public.job_match_alerts
+  FOR DELETE USING (auth.uid() = user_id);

@@ -3,6 +3,7 @@
 import { Loader2, UploadCloud } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import posthog from '@/lib/analytics/posthog-client';
 
 export interface ResumeUploadCardProps {
   onUploaded: () => Promise<void> | void;
@@ -18,6 +19,10 @@ export function ResumeUploadCard({ onUploaded }: ResumeUploadCardProps) {
     setUploading(true);
     setError(null);
     setSuccess(null);
+    posthog.capture('resume_upload_started', {
+      mimeType: file.type,
+      fileExtension: file.name.split('.').pop()?.toLowerCase() ?? null,
+    });
 
     try {
       const formData = new FormData();

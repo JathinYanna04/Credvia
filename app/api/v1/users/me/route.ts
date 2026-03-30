@@ -1,4 +1,5 @@
 import { handleApiError, ok, parseJson, fail } from '@/lib/api';
+import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { ensureProfileRecord, getRequiredUser } from '@/lib/supabase/helpers';
 import { UpdateProfileSchema } from '@/lib/schemas/profile';
@@ -63,6 +64,14 @@ export async function PATCH(request: Request) {
     if (error) {
       throw new Error(error.message);
     }
+
+    await captureServerEvent({
+      event: 'profile_updated',
+      distinctId: user.id,
+      properties: {
+        updatedFields: Object.keys(body),
+      },
+    });
 
     return ok(data);
   } catch (error) {

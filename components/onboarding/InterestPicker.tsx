@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import posthog from '@/lib/analytics/posthog-client';
 
 interface SkillOption {
   id: string;
@@ -20,6 +21,16 @@ export function InterestPicker({ onContinue }: InterestPickerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const trackedStartRef = useRef(false);
+
+  useEffect(() => {
+    if (trackedStartRef.current) {
+      return;
+    }
+
+    trackedStartRef.current = true;
+    posthog.capture('onboarding_started');
+  }, []);
 
   useEffect(() => {
     void fetch('/api/v1/users/me')

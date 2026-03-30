@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { getSupabaseEnvDebug } from '@/lib/supabase/env';
 import { ensureProfileRecord } from '@/lib/supabase/helpers';
 import { createServiceRoleClient } from '@/lib/supabase/service';
@@ -84,6 +85,14 @@ export async function GET(request: Request) {
 
   if (error || !data.user) {
     const message = error?.message ?? 'Session exchange did not return a user.';
+    await captureServerEvent({
+      event: 'oauth_google_failed',
+      distinctId: data.user?.id ?? null,
+      properties: {
+        stage: 'exchange',
+        message,
+      },
+    });
     logError('auth-callback', 'Session exchange failed', {
       requestId,
       message,
@@ -136,6 +145,15 @@ export async function GET(request: Request) {
         ? profileError.message
         : 'Unknown profile bootstrap failure.';
 
+    await captureServerEvent({
+      event: 'oauth_google_failed',
+      distinctId: data.user.id,
+      properties: {
+        stage: 'profile_bootstrap',
+        message,
+      },
+    });
+
     logError('auth-callback', 'Profile bootstrap failed after session exchange', {
       requestId,
       userId: data.user.id,
@@ -165,6 +183,15 @@ export async function GET(request: Request) {
   }
 
   const redirectPath = profile.onboarding_complete ? '/feed' : '/onboarding/interests';
+  await captureServerEvent({
+    event: 'oauth_google_completed',
+    distinctId: data.user.id,
+    properties: {
+      provider: 'google',
+      redirectPath,
+      onboardingComplete: profile.onboarding_complete,
+    },
+  });
   logInfo('auth-callback', 'Callback completed successfully', {
     requestId,
     redirectPath,

@@ -1,5 +1,6 @@
 import type { PropsWithChildren } from 'react';
 import { redirect } from 'next/navigation';
+import { PostHogIdentify } from '@/components/analytics/PostHogIdentify';
 import { AppShell } from '@/components/layout/AppShell';
 import { ensureProfileRecord } from '@/lib/supabase/helpers';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -18,5 +19,10 @@ export default async function AuthenticatedLayout({ children }: PropsWithChildre
     }
   }
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <>
+      <PostHogIdentify distinctId={user?.id ?? null} />
+      <AppShell>{children}</AppShell>
+    </>
+  );
 }

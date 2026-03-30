@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { OAuthButton } from '@/components/auth/OAuthButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import posthog from '@/lib/analytics/posthog-client';
 import { LoginSchema, type LoginInput } from '@/lib/schemas/auth';
 
 interface LoginFormProps {
@@ -21,6 +22,17 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
   const { register, handleSubmit, formState } = useForm<LoginInput>({
     resolver: zodResolver(LoginSchema),
   });
+
+  useEffect(() => {
+    if (!initialError) {
+      return;
+    }
+
+    posthog.capture('oauth_google_failed', {
+      source: 'callback_redirect',
+      message: initialError,
+    });
+  }, [initialError]);
 
   const onSubmit = async (values: LoginInput) => {
     setLoading(true);

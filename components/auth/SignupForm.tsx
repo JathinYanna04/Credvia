@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { OAuthButton } from '@/components/auth/OAuthButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import posthog from '@/lib/analytics/posthog-client';
 import { SignupSchema, type SignupInput } from '@/lib/schemas/auth';
 import { createClient } from '@/lib/supabase/client';
 
@@ -28,6 +29,10 @@ export function SignupForm() {
     setError(null);
     setMessage(null);
     const supabase = createClient();
+    posthog.capture('auth_signup_started', {
+      accountType: values.accountType,
+      method: 'email',
+    });
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: values.email,
       password: values.password,
@@ -39,6 +44,16 @@ export function SignupForm() {
     if (signUpError) {
       setError(signUpError.message);
     } else {
+      if (data.user?.id) {
+        posthog.identify(data.user.id);
+      }
+
+      posthog.capture('auth_signup_completed', {
+        accountType: values.accountType,
+        method: 'email',
+        hasSession: Boolean(data.session),
+      });
+
       if (data.session) {
         router.push('/onboarding/interests');
         router.refresh();

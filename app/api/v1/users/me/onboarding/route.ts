@@ -1,4 +1,5 @@
 import { fail, handleApiError, ok, parseJson } from '@/lib/api';
+import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { z } from 'zod';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { ensureProfileRecord, getRequiredUser } from '@/lib/supabase/helpers';
@@ -90,6 +91,17 @@ export async function POST(request: Request) {
           throw new Error(membershipInsert.error.message);
         }
       }
+    }
+
+    if (body.onboarding_complete) {
+      await captureServerEvent({
+        event: 'onboarding_completed',
+        distinctId: user.id,
+        properties: {
+          skillsCount: normalizedSkills?.length ?? 0,
+          communitiesCount: normalizedCommunities?.length ?? 0,
+        },
+      });
     }
 
     return ok({

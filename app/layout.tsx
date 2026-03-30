@@ -3,6 +3,7 @@ import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import { DM_Sans } from 'next/font/google';
 import '@/app/globals.css';
+import { PostHogInit } from '@/components/analytics/PostHogInit';
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
@@ -31,6 +32,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-bg-base font-body text-text-primary antialiased">
+        <PostHogInit />
         {children}
       </body>
     </html>

@@ -1,4 +1,5 @@
 import { fail, handleApiError, ok, parseJson } from '@/lib/api';
+import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { getActiveResume, getOwnedResume } from '@/lib/career-match/queries';
 import { recomputeMatchesForResume } from '@/lib/matching/service';
 import { enforceRateLimit } from '@/lib/rate-limit';
@@ -37,6 +38,14 @@ export async function POST(
       throw new Error(processingUpdate.error.message);
     }
 
+    await captureServerEvent({
+      event: 'resume_analysis_started',
+      distinctId: user.id,
+      properties: {
+        resumeId: resume.id,
+      },
+    });
+
     const download = await supabase.storage.from('resumes').download(resume.file_path);
     if (download.error || !download.data) {
       throw new Error(download.error?.message ?? 'Could not download stored resume.');
@@ -46,11 +55,23 @@ export async function POST(
 
     try {
       const analysisClient = createServiceRoleClient() ?? supabase;
-      await analyzeStoredResume(analysisClient, resume, buffer);
+      const analysis = await analyzeStoredResume(analysisClient, resume, buffer);
       const activeResume = await getActiveResume(supabase, user.id);
       if (activeResume?.id === resume.id) {
         await recomputeMatchesForResume(supabase, user.id, resume.id);
       }
+
+      await captureServerEvent({
+        event: 'resume_analysis_completed',
+        distinctId: user.id,
+        properties: {
+          resumeId: resume.id,
+          extractedSkills: analysis.matchedSkillRows.length,
+          extractionMethod:
+            analysis.parsed.parsedSections.__meta?.extractionMethod ?? null,
+          usedOcr: analysis.parsed.parsedSections.__meta?.usedOcr ?? false,
+        },
+      });
     } catch (analysisError) {
       await supabase
         .from('resumes')
@@ -58,6 +79,17 @@ export async function POST(
           parse_status: 'failed',
         })
         .eq('id', resume.id);
+      await captureServerEvent({
+        event: 'resume_analysis_failed',
+        distinctId: user.id,
+        properties: {
+          resumeId: resume.id,
+          message:
+            analysisError instanceof Error
+              ? analysisError.message
+              : 'Resume analysis failed.',
+        },
+      });
       throw analysisError;
     }
 

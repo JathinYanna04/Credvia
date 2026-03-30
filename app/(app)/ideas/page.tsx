@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { IdeaFilters } from '@/components/startup-ideas/IdeaFilters';
 import { StartupIdeaCard } from '@/components/startup-ideas/StartupIdeaCard';
 import { StartupIdeaCardSkeleton } from '@/components/startup-ideas/StartupIdeaCardSkeleton';
+import posthog from '@/lib/analytics/posthog-client';
 import type { PostSummary } from '@/lib/types';
 
 export default function IdeasPage() {
@@ -16,6 +17,30 @@ export default function IdeasPage() {
   const [stage, setStage] = useState('');
   const [category, setCategory] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const hasTrackedSortChange = useRef(false);
+  const queryRef = useRef(query);
+  const stageRef = useRef(stage);
+  const categoryRef = useRef(category);
+
+  useEffect(() => {
+    queryRef.current = query;
+    stageRef.current = stage;
+    categoryRef.current = category;
+  }, [category, query, stage]);
+
+  useEffect(() => {
+    if (!hasTrackedSortChange.current) {
+      hasTrackedSortChange.current = true;
+      return;
+    }
+
+    posthog.capture('idea_sorted', {
+      sort,
+      query: queryRef.current.trim() || null,
+      stage: stageRef.current || null,
+      category: categoryRef.current || null,
+    });
+  }, [sort]);
 
   useEffect(() => {
     setIdeas(undefined);

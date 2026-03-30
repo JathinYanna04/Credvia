@@ -1,4 +1,5 @@
 import { fail, handleApiError, ok } from '@/lib/api';
+import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
@@ -125,6 +126,17 @@ export async function POST(request: Request) {
     if (resumeInsert.error) {
       throw new Error(resumeInsert.error.message);
     }
+
+    await captureServerEvent({
+      event: 'resume_upload_completed',
+      distinctId: user.id,
+      properties: {
+        resumeId,
+        mimeType: resumeInsert.data.mime_type,
+        fileExtension: extension,
+        fileSizeBytes: buffer.byteLength,
+      },
+    });
 
     return ok(resumeInsert.data);
   } catch (error) {

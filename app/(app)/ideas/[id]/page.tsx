@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { IdeaOpenedTracker } from '@/components/analytics/IdeaOpenedTracker';
 import { PostDetail } from '@/components/post/PostDetail';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getStartupIdeaBundle } from '@/lib/supabase/startup-ideas';
@@ -15,15 +16,18 @@ export default async function IdeaPage({ params }: { params: { id: string } }) {
   }
 
   return (
-    <PostDetail
-      post={bundle.idea}
-      comments={bundle.comments}
-      startupIdeaContext={{
-        revisions: bundle.revisions,
-        canRevise: bundle.canRevise,
-        isFollowing: bundle.isFollowing,
-        advancedFeaturesEnabled: bundle.advancedFeaturesEnabled,
-      }}
-    />
+    <>
+      <IdeaOpenedTracker ideaId={bundle.idea.id} />
+      <PostDetail
+        post={bundle.idea}
+        comments={bundle.comments}
+        startupIdeaContext={{
+          revisions: bundle.revisions,
+          canRevise: bundle.canRevise,
+          isFollowing: bundle.isFollowing,
+          advancedFeaturesEnabled: bundle.advancedFeaturesEnabled,
+        }}
+      />
+    </>
   );
 }

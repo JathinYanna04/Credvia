@@ -2,6 +2,7 @@
 
 import { Chrome } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import posthog from '@/lib/analytics/posthog-client';
 import { createClient } from '@/lib/supabase/client';
 
 export interface OAuthButtonProps {
@@ -12,6 +13,7 @@ export interface OAuthButtonProps {
 export function OAuthButton({ mode, onError }: OAuthButtonProps) {
   const onClick = async () => {
     const supabase = createClient();
+    posthog.capture('oauth_google_started', { mode });
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -20,6 +22,10 @@ export function OAuthButton({ mode, onError }: OAuthButtonProps) {
     });
 
     if (error) {
+      posthog.capture('oauth_google_failed', {
+        mode,
+        message: error.message,
+      });
       onError?.(error.message);
     }
   };

@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { JobMatchCard } from '@/components/career-match/JobMatchCard';
 import type { CareerMatch, CareerResumeSummary } from '@/components/career-match/types';
 import { humanizeParseStatus, parseStatusVariant } from '@/components/career-match/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import posthog from '@/lib/analytics/posthog-client';
 
 export default function CareerMatchPage() {
   const [resume, setResume] = useState<CareerResumeSummary | null | undefined>(undefined);
@@ -15,6 +16,7 @@ export default function CareerMatchPage() {
   const [authExpired, setAuthExpired] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const viewedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     setError(null);
@@ -42,6 +44,15 @@ export default function CareerMatchPage() {
 
         setResume(payload.data.resume);
         setMatches(payload.data.matches);
+
+        const trackingKey = `${payload.data.resume?.id ?? 'no-resume'}:${payload.data.matches.length}:${refreshKey}`;
+        if (viewedKeyRef.current !== trackingKey) {
+          viewedKeyRef.current = trackingKey;
+          posthog.capture('career_match_viewed', {
+            resumeId: payload.data.resume?.id ?? null,
+            matchesCount: payload.data.matches.length,
+          });
+        }
       })
       .catch((fetchError) => {
         setResume(null);
