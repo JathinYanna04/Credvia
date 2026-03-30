@@ -2,13 +2,24 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { LucideIcon } from 'lucide-react';
+import { Bell, Compass, Home, User, Users } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+
+const iconMap = {
+  home: Home,
+  explore: Compass,
+  communities: Users,
+  notifications: Bell,
+  profile: User,
+} as const;
+
+type PrimaryNavIcon = keyof typeof iconMap;
+export type { PrimaryNavIcon };
 
 export interface PrimaryNavItem {
   href: string;
   label: string;
-  icon: LucideIcon;
+  icon: PrimaryNavIcon;
   badge?: number;
 }
 
@@ -25,7 +36,7 @@ export function PrimaryNav({
     return (
       <>
         {items.map((item) => {
-          const Icon = item.icon;
+          const Icon = iconMap[item.icon];
           const active =
             pathname === item.href ||
             (item.href !== '/feed' && pathname.startsWith(`${item.href}/`));
@@ -58,7 +69,7 @@ export function PrimaryNav({
   return (
     <nav className="space-y-1.5">
       {items.map((item) => {
-        const Icon = item.icon;
+        const Icon = iconMap[item.icon];
         const active =
           pathname === item.href ||
           (item.href !== '/feed' && pathname.startsWith(`${item.href}/`));

@@ -1,16 +1,16 @@
-import { Bell, Compass, Home, User, Users } from 'lucide-react';
 import { PrimaryNav } from '@/components/layout/PrimaryNav';
+import type { PrimaryNavItem } from '@/components/layout/PrimaryNav';
 import { getAppShellData } from '@/lib/supabase/app-shell';
 
 export async function MobileNav() {
   const { currentUser, unreadNotifications } = await getAppShellData();
 
-  const items = [
-    { href: '/feed', label: 'Home', icon: Home },
-    { href: '/explore', label: 'Explore', icon: Compass },
-    { href: '/communities', label: 'Communities', icon: Users },
-    { href: '/notifications', label: 'Notifications', icon: Bell, badge: unreadNotifications },
-    { href: currentUser ? `/u/${currentUser.username}` : '/login', label: 'Profile', icon: User },
+  const items: PrimaryNavItem[] = [
+    { href: '/feed', label: 'Home', icon: 'home' },
+    { href: '/explore', label: 'Explore', icon: 'explore' },
+    { href: '/communities', label: 'Communities', icon: 'communities' },
+    { href: '/notifications', label: 'Notifications', icon: 'notifications', badge: unreadNotifications },
+    { href: currentUser ? `/u/${currentUser.username}` : '/login', label: 'Profile', icon: 'profile' },
   ];
 
   return (

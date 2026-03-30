@@ -9,5 +9,6 @@ if (
     defaults: '2026-01-30',
     capture_pageview: true,
     capture_pageleave: true,
+    disable_external_dependency_loading: true,
   });
 }

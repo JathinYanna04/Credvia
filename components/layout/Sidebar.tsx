@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { Bell, BriefcaseBusiness, Compass, Home, Lightbulb, User, Users } from 'lucide-react';
+import { BriefcaseBusiness, Lightbulb } from 'lucide-react';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { PrimaryNav } from '@/components/layout/PrimaryNav';
+import type { PrimaryNavItem } from '@/components/layout/PrimaryNav';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getAppShellData } from '@/lib/supabase/app-shell';
@@ -13,12 +14,12 @@ export async function Sidebar() {
     return null;
   }
 
-  const primaryItems = [
-    { href: '/feed', label: 'Home', icon: Home },
-    { href: '/explore', label: 'Explore', icon: Compass },
-    { href: '/communities', label: 'My Communities', icon: Users },
-    { href: '/notifications', label: 'Notifications', icon: Bell, badge: unreadNotifications },
-    { href: `/u/${currentUser.username}`, label: 'Profile', icon: User },
+  const primaryItems: PrimaryNavItem[] = [
+    { href: '/feed', label: 'Home', icon: 'home' },
+    { href: '/explore', label: 'Explore', icon: 'explore' },
+    { href: '/communities', label: 'My Communities', icon: 'communities' },
+    { href: '/notifications', label: 'Notifications', icon: 'notifications', badge: unreadNotifications },
+    { href: `/u/${currentUser.username}`, label: 'Profile', icon: 'profile' },
   ];
   const topReputation = currentUser.reputation[0];
 
