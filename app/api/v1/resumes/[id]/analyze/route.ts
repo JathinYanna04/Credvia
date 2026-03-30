@@ -61,15 +61,18 @@ export async function POST(
         await recomputeMatchesForResume(supabase, user.id, resume.id);
       }
 
+      const extractionMeta = analysis.parsed?.parsedSections?.__meta;
+
       await captureServerEvent({
         event: 'resume_analysis_completed',
         distinctId: user.id,
         properties: {
           resumeId: resume.id,
-          extractedSkills: analysis.matchedSkillRows.length,
-          extractionMethod:
-            analysis.parsed.parsedSections.__meta?.extractionMethod ?? null,
-          usedOcr: analysis.parsed.parsedSections.__meta?.usedOcr ?? false,
+          extractedSkills: Array.isArray(analysis.matchedSkillRows)
+            ? analysis.matchedSkillRows.length
+            : null,
+          extractionMethod: extractionMeta?.extractionMethod ?? null,
+          usedOcr: extractionMeta?.usedOcr ?? false,
         },
       });
     } catch (analysisError) {

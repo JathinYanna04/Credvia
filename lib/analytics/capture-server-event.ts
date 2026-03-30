@@ -9,25 +9,42 @@ interface CaptureServerEventInput {
 export async function captureServerEvent({
   event,
   distinctId,
-  properties,
+  properties = {},
 }: CaptureServerEventInput) {
+  if (
+    !process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ||
+    !process.env.NEXT_PUBLIC_POSTHOG_HOST
+  ) {
+    return;
+  }
+
   if (!distinctId) {
     return;
   }
 
-  const posthog = createPostHogServerClient();
-
-  if (!posthog) {
-    return;
-  }
+  let posthog: ReturnType<typeof createPostHogServerClient> = null;
 
   try {
+    posthog = createPostHogServerClient();
+
+    if (!posthog) {
+      return;
+    }
+
     posthog.capture({
       event,
       distinctId,
       properties,
     });
+  } catch (error) {
+    console.error('[posthog] captureServerEvent failed', error);
   } finally {
-    await posthog.shutdown();
+    if (posthog) {
+      try {
+        await posthog.shutdown();
+      } catch (error) {
+        console.error('[posthog] captureServerEvent shutdown failed', error);
+      }
+    }
   }
 }
