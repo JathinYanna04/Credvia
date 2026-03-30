@@ -54,7 +54,24 @@ describe('career match read routes', () => {
               return {
                 eq() {
                   return {
-                    maybeSingle: async () => ({ data: { resume_id: 'resume-1' }, error: null }),
+                    maybeSingle: async () => ({
+                      data: {
+                        resume_id: 'resume-1',
+                        parsed_text:
+                          [
+                            'Jane Builder',
+                            'Product Engineer building startup tools for technical teams.',
+                            'jane@example.com',
+                            'Bangalore, India',
+                            'Summary: Product-minded engineer focused on React applications, backend systems, and developer tooling.',
+                            'Skills: React, TypeScript, PostgreSQL, Supabase, Node.js',
+                            'Experience: 4 years building startup products with cross-functional teams.',
+                            'Projects: Led roadmap and implementation for developer platform onboarding and analytics.',
+                            'Education: BSc Computer Science',
+                          ].join('\n'),
+                      },
+                      error: null,
+                    }),
                   };
                 },
               };
