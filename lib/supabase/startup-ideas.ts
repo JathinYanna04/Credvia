@@ -1,5 +1,6 @@
 import { fail } from '@/lib/api';
 import type { CommentSummary, PostSummary, StartupIdeaRevisionSummary } from '@/lib/types';
+import { isMissingStartupIdeaAdvancedSchemaError } from '@/lib/supabase/startup-idea-schema';
 import {
   getStartupIdeaRevisionsByPostIds,
   toCommentSummaries,
@@ -13,6 +14,7 @@ export interface StartupIdeaBundle {
   revisions: StartupIdeaRevisionSummary[];
   isFollowing: boolean;
   canRevise: boolean;
+  advancedFeaturesEnabled: boolean;
 }
 
 export async function getStartupIdeaBundle(
@@ -64,7 +66,9 @@ export async function getStartupIdeaBundle(
     throw new Error(commentsResult.error.message);
   }
 
-  if (followResult.error) {
+  const advancedFeaturesEnabled = !followResult.error;
+
+  if (followResult.error && !isMissingStartupIdeaAdvancedSchemaError(followResult.error)) {
     throw new Error(followResult.error.message);
   }
 
@@ -79,6 +83,7 @@ export async function getStartupIdeaBundle(
     comments,
     revisions: revisionsMap.get(postId) ?? [],
     isFollowing: Boolean(followResult.data),
-    canRevise: viewerId === postResult.data.author_id,
+    canRevise: advancedFeaturesEnabled && viewerId === postResult.data.author_id,
+    advancedFeaturesEnabled,
   } satisfies StartupIdeaBundle;
 }

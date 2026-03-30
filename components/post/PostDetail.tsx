@@ -19,6 +19,7 @@ export interface PostDetailProps {
     revisions: StartupIdeaRevisionSummary[];
     canRevise: boolean;
     isFollowing: boolean;
+    advancedFeaturesEnabled: boolean;
   };
 }
 
@@ -105,7 +106,7 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
           ) : null}
 
           <div className="grid gap-2 text-sm text-text-secondary sm:flex sm:flex-wrap sm:items-center">
-            {post.startupIdea ? (
+            {post.startupIdea && startupIdeaContext?.advancedFeaturesEnabled ? (
               <IdeaFollowButton
                 postId={post.id}
                 initialFollowing={startupIdeaContext?.isFollowing ?? false}
@@ -117,7 +118,7 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
         </div>
       </div>
 
-      {post.startupIdea ? (
+      {post.startupIdea && startupIdeaContext?.advancedFeaturesEnabled ? (
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <IdeaRevisionTimeline revisions={startupIdeaContext?.revisions ?? []} />
           <div className="space-y-4">

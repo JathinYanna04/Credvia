@@ -12,10 +12,12 @@ export function ResumeUploadCard({ onUploaded }: ResumeUploadCardProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   async function handleFile(file: File) {
     setUploading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const formData = new FormData();
@@ -31,10 +33,14 @@ export function ResumeUploadCard({ onUploaded }: ResumeUploadCardProps) {
       };
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Your session expired. Sign in again before uploading a resume.');
+        }
         throw new Error(payload.error?.message ?? 'Could not upload your resume.');
       }
 
       await onUploaded();
+      setSuccess('Resume uploaded. Run analysis to turn it into a match profile.');
       if (inputRef.current) {
         inputRef.current.value = '';
       }
@@ -83,6 +89,12 @@ export function ResumeUploadCard({ onUploaded }: ResumeUploadCardProps) {
       {error ? (
         <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
+        </div>
+      ) : null}
+
+      {success ? (
+        <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+          {success}
         </div>
       ) : null}
     </section>

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Bell, BriefcaseBusiness, Compass, Feather, FileText, Home, Lightbulb, Search, User } from 'lucide-react';
+import { Bell, BriefcaseBusiness, Compass, Feather, Home, Lightbulb, Search, User } from 'lucide-react';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -34,10 +34,6 @@ export async function Sidebar() {
         <Link href="/career-match" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
           <BriefcaseBusiness className="h-4 w-4" />
           Career Match
-        </Link>
-        <Link href="/resume" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
-          <FileText className="h-4 w-4" />
-          Resume
         </Link>
         <Link href="/explore?q=" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
           <Search className="h-4 w-4" />
@@ -104,6 +100,9 @@ export async function Sidebar() {
           <div>
             <div className="text-sm text-text-primary">{currentUser.fullName}</div>
             <div className="text-xs text-text-tertiary">@{currentUser.username}</div>
+            <Link href="/settings" className="text-xs text-accent">
+              Manage profile
+            </Link>
           </div>
         </div>
         <LogoutButton compact className="h-9 px-3 text-xs" />

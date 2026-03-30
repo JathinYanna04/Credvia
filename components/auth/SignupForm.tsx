@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/client';
 
 export function SignupForm() {
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { register, handleSubmit, formState } = useForm<SignupInput>({
@@ -25,6 +26,7 @@ export function SignupForm() {
   const onSubmit = async (values: SignupInput) => {
     setLoading(true);
     setError(null);
+    setMessage(null);
     const supabase = createClient();
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: values.email,
@@ -41,7 +43,7 @@ export function SignupForm() {
         router.push('/onboarding/interests');
         router.refresh();
       } else {
-        setError('Check your email to confirm your account, then continue through the callback link.');
+        setMessage('Check your email to confirm your account, then continue through the callback link.');
       }
     }
     setLoading(false);
@@ -49,7 +51,13 @@ export function SignupForm() {
 
   return (
     <div className="space-y-6">
-      <OAuthButton mode="signup" />
+      <OAuthButton
+        mode="signup"
+        onError={(nextError) => {
+          setError(nextError);
+          setMessage(null);
+        }}
+      />
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
@@ -98,6 +106,9 @@ export function SignupForm() {
         ) : null}
         {error ? (
           <p className="border-l-2 border-danger pl-3 text-sm text-danger">{error}</p>
+        ) : null}
+        {message ? (
+          <p className="border-l-2 border-accent pl-3 text-sm text-accent">{message}</p>
         ) : null}
 
         <Button className="w-full" disabled={loading}>

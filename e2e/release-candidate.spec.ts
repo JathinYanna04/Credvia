@@ -37,6 +37,17 @@ test('release-candidate smoke for core discovery and content surfaces', async ({
   await page.goto(`/u/${user.username}`);
   await expect(page.getByText(user.fullName).first()).toBeVisible();
 
+  await page.goto('/settings');
+  await expect(page.getByRole('heading', { name: 'Profile settings' })).toBeVisible();
+  await page.getByLabel('Headline').fill('Release-candidate settings update');
+  await page.getByLabel('Location').fill('Hyderabad');
+  await page.getByRole('button', { name: 'Save profile' }).click();
+  await expect(page.getByText('Profile updated.')).toBeVisible();
+
+  await page.goto(`/u/${user.username}`);
+  await expect(page.getByText('Release-candidate settings update')).toBeVisible();
+  await expect(page.getByText('Hyderabad')).toBeVisible();
+
   await page.goto('/post/new');
   await expect(page.getByRole('heading', { name: 'Create a post' })).toBeVisible();
   await page.getByPlaceholder('Post title').fill('Release candidate discussion post');
@@ -45,13 +56,19 @@ test('release-candidate smoke for core discovery and content surfaces', async ({
   );
   await page.getByRole('button', { name: 'Create post' }).click();
   await page.waitForURL(/\/post\//, { timeout: 30_000 });
-  await expect(page.getByText('Release candidate discussion post')).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('heading', { name: 'Release candidate discussion post' })).toBeVisible({
+    timeout: 30_000,
+  });
 
   const postId = page.url().split('/post/')[1];
   expect(postId).toBeTruthy();
 
   await page.getByRole('button', { name: 'Upvote post' }).click();
-  await expect(page.getByText('1').first()).toBeVisible();
+  await expect.poll(async () => {
+    const post = await adminSupabase.from('posts').select('vote_score').eq('id', postId).single();
+    return post.data?.vote_score ?? null;
+  }).toBe(1);
 
   await page.getByPlaceholder('Add your answer or perspective').fill(
     'Release-candidate comment on the normal post flow.',
@@ -76,11 +93,20 @@ test('release-candidate smoke for core discovery and content surfaces', async ({
   );
   await page.getByRole('button', { name: 'Create post' }).click();
   await page.waitForURL(/\/ideas\//, { timeout: 30_000 });
-  await expect(page.getByText('Release candidate startup idea')).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('heading', { name: 'Release candidate startup idea' })).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(page.getByText('Validation').first()).toBeVisible();
 
+  const ideaPostId = page.url().split('/ideas/')[1];
+  expect(ideaPostId).toBeTruthy();
+
   await page.getByRole('button', { name: 'Upvote post' }).click();
-  await expect(page.getByText('1').first()).toBeVisible();
+  await expect.poll(async () => {
+    const post = await adminSupabase.from('posts').select('vote_score').eq('id', ideaPostId).single();
+    return post.data?.vote_score ?? null;
+  }).toBe(1);
 
   await page.getByPlaceholder('Add your answer or perspective').fill(
     'Release-candidate comment on the startup idea flow.',

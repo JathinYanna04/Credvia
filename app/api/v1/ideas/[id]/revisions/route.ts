@@ -2,6 +2,7 @@ import { fail, handleApiError, ok, parseJson } from '@/lib/api';
 import { CreateIdeaRevisionSchema } from '@/lib/schemas/post';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { sendNotifications } from '@/lib/supabase/notifications';
+import { isMissingStartupIdeaAdvancedSchemaError } from '@/lib/supabase/startup-idea-schema';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 import { sanitizeHtml } from '@/lib/utils/sanitize';
@@ -34,6 +35,9 @@ export async function POST(
     ]);
 
     if (ideaResult.error) {
+      if (isMissingStartupIdeaAdvancedSchemaError(ideaResult.error)) {
+        return fail('NOT_FOUND', 'Idea revisions are not enabled yet.', 404);
+      }
       throw new Error(ideaResult.error.message);
     }
 
@@ -72,6 +76,9 @@ export async function POST(
       .single();
 
     if (revisionInsert.error || !revisionInsert.data) {
+      if (isMissingStartupIdeaAdvancedSchemaError(revisionInsert.error)) {
+        return fail('NOT_FOUND', 'Idea revisions are not enabled yet.', 404);
+      }
       throw new Error(revisionInsert.error?.message ?? 'Could not create revision.');
     }
 
@@ -112,10 +119,16 @@ export async function POST(
     }
 
     if (ideaUpdate.error) {
+      if (isMissingStartupIdeaAdvancedSchemaError(ideaUpdate.error)) {
+        return fail('NOT_FOUND', 'Idea revisions are not enabled yet.', 404);
+      }
       throw new Error(ideaUpdate.error.message);
     }
 
     if (followersResult.error) {
+      if (isMissingStartupIdeaAdvancedSchemaError(followersResult.error)) {
+        return fail('NOT_FOUND', 'Idea revisions are not enabled yet.', 404);
+      }
       throw new Error(followersResult.error.message);
     }
 

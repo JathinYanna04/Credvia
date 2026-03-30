@@ -2,6 +2,7 @@ import { fail, handleApiError, ok, parseJson } from '@/lib/api';
 import { FollowIdeaSchema } from '@/lib/schemas/post';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { sendNotification } from '@/lib/supabase/notifications';
+import { isMissingStartupIdeaAdvancedSchemaError } from '@/lib/supabase/startup-idea-schema';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 
@@ -40,6 +41,9 @@ export async function POST(
       });
 
       if (insertResult.error) {
+        if (isMissingStartupIdeaAdvancedSchemaError(insertResult.error)) {
+          return fail('NOT_FOUND', 'Following is not enabled for startup ideas yet.', 404);
+        }
         throw new Error(insertResult.error.message);
       }
     } else {
@@ -50,6 +54,9 @@ export async function POST(
         .eq('user_id', user.id);
 
       if (deleteResult.error) {
+        if (isMissingStartupIdeaAdvancedSchemaError(deleteResult.error)) {
+          return fail('NOT_FOUND', 'Following is not enabled for startup ideas yet.', 404);
+        }
         throw new Error(deleteResult.error.message);
       }
     }
@@ -60,6 +67,9 @@ export async function POST(
       .eq('post_id', params.id);
 
     if (countResult.error) {
+      if (isMissingStartupIdeaAdvancedSchemaError(countResult.error)) {
+        return fail('NOT_FOUND', 'Following is not enabled for startup ideas yet.', 404);
+      }
       throw new Error(countResult.error.message);
     }
 
@@ -70,6 +80,9 @@ export async function POST(
       .eq('post_id', params.id);
 
     if (updateResult.error) {
+      if (isMissingStartupIdeaAdvancedSchemaError(updateResult.error)) {
+        return fail('NOT_FOUND', 'Following is not enabled for startup ideas yet.', 404);
+      }
       throw new Error(updateResult.error.message);
     }
 

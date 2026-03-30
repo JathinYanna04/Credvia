@@ -10,11 +10,11 @@ export async function MobileNav() {
       <Link href="/feed" aria-label="Feed" className="text-text-secondary">
         <Home className="h-5 w-5" />
       </Link>
-      <Link href="/career-match" aria-label="Career Match" className="text-text-secondary">
-        <BriefcaseBusiness className="h-5 w-5" />
-      </Link>
       <Link href="/ideas" aria-label="Startup ideas" className="text-text-secondary">
         <Lightbulb className="h-5 w-5" />
+      </Link>
+      <Link href="/career-match" aria-label="Career match" className="text-text-secondary">
+        <BriefcaseBusiness className="h-5 w-5" />
       </Link>
       <Link href="/post/new" aria-label="Create post" className="rounded-full bg-accent p-3 text-bg-base">
         <Feather className="h-5 w-5" />

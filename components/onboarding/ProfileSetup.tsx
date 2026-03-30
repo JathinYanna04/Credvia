@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,14 +24,54 @@ export interface ProfileSetupProps {
 export function ProfileSetup({ onComplete }: ProfileSetupProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const { register, handleSubmit } = useForm<FormValues>({
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const { register, handleSubmit, reset } = useForm<FormValues>({
     resolver: zodResolver(OnboardingProfileSchema),
     defaultValues: {
-      username: 'craftingcred',
-      full_name: 'Credvia Builder',
-      headline: 'Early-career engineer obsessed with shipping proof-of-work.',
+      username: '',
+      full_name: '',
+      headline: '',
+      bio: '',
+      location: '',
     },
   });
+
+  useEffect(() => {
+    void fetch('/api/v1/users/me')
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          data?: {
+            profile?: {
+              username?: string | null;
+              full_name?: string | null;
+              headline?: string | null;
+              bio?: string | null;
+              location?: string | null;
+            };
+          };
+          error?: { message?: string };
+        };
+
+        if (!response.ok) {
+          throw new Error(payload.error?.message ?? 'Could not load your profile.');
+        }
+
+        const profile = payload.data?.profile;
+        reset({
+          username: profile?.username ?? '',
+          full_name: profile?.full_name ?? '',
+          headline: profile?.headline ?? '',
+          bio: profile?.bio ?? '',
+          location: profile?.location ?? '',
+        });
+      })
+      .catch((profileError) => {
+        setError(profileError instanceof Error ? profileError.message : 'Could not load your profile.');
+      })
+      .finally(() => {
+        setLoadingProfile(false);
+      });
+  }, [reset]);
 
   return (
     <form
@@ -59,6 +99,9 @@ export function ProfileSetup({ onComplete }: ProfileSetupProps) {
       })}
       className="grid gap-4"
     >
+      {loadingProfile ? (
+        <p className="text-sm text-text-secondary">Loading your profile…</p>
+      ) : null}
       <Input placeholder="Username" {...register('username')} />
       <Input placeholder="Full name" {...register('full_name')} />
       <Input placeholder="Headline" {...register('headline')} />

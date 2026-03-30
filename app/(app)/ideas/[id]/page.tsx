@@ -22,6 +22,7 @@ export default async function IdeaPage({ params }: { params: { id: string } }) {
         revisions: bundle.revisions,
         canRevise: bundle.canRevise,
         isFollowing: bundle.isFollowing,
+        advancedFeaturesEnabled: bundle.advancedFeaturesEnabled,
       }}
     />
   );

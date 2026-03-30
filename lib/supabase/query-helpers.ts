@@ -8,6 +8,7 @@ import type {
   StartupIdeaRevisionSummary,
   UserSummary,
 } from '@/lib/types';
+import { isMissingStartupIdeaAdvancedSchemaError } from '@/lib/supabase/startup-idea-schema';
 import { computeIdeaValidationScore } from '@/lib/utils/idea-score';
 
 export type TypedSupabaseClient = SupabaseClient<Database>;
@@ -145,6 +146,9 @@ export async function getStartupIdeaRevisionsByPostIds(
     .order('revision_number', { ascending: false });
 
   if (error) {
+    if (isMissingStartupIdeaAdvancedSchemaError(error)) {
+      return new Map<string, StartupIdeaRevisionSummary[]>();
+    }
     throw new Error(error.message);
   }
 

@@ -144,6 +144,8 @@ export default function CareerMatchPage() {
           <p>
             {resume.parse_status === 'parsed'
               ? 'No ranked matches have been generated yet.'
+              : resume.parse_status === 'failed'
+                ? 'Resume analysis failed, so Credvia is not showing weak or misleading match output yet.'
               : 'Your resume needs analysis before matches can be generated.'}
           </p>
           <div className="flex flex-wrap gap-3">

@@ -1,14 +1,23 @@
 import { PostCard } from '@/components/feed/PostCard';
 import { CommentThread } from '@/components/comments/CommentThread';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getPublicProfileBundle } from '@/lib/supabase/public-profile';
 
 export default async function ProfilePage({ params }: { params: { username: string } }) {
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user: currentUser },
+  } = await supabase.auth.getUser();
   const profile = await getPublicProfileBundle(params.username);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <ProfileHeader user={profile.user} showFollowAction={false} />
+      <ProfileHeader
+        user={profile.user}
+        showFollowAction={false}
+        editHref={currentUser?.id === profile.user.id ? '/settings' : null}
+      />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section className="space-y-4">
           <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">

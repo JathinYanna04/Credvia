@@ -10,7 +10,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LoginSchema, type LoginInput } from '@/lib/schemas/auth';
 
-export function LoginForm() {
+interface LoginFormProps {
+  initialError?: string | null;
+}
+
+export function LoginForm({ initialError = null }: LoginFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -49,7 +53,12 @@ export function LoginForm() {
 
   return (
     <div className="space-y-6">
-      <OAuthButton mode="login" />
+      <OAuthButton
+        mode="login"
+        onError={(message) => {
+          setError(message);
+        }}
+      />
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
@@ -89,6 +98,9 @@ export function LoginForm() {
 
         {error ? (
           <p className="border-l-2 border-danger pl-3 text-sm text-danger">{error}</p>
+        ) : null}
+        {!error && initialError ? (
+          <p className="border-l-2 border-danger pl-3 text-sm text-danger">{initialError}</p>
         ) : null}
 
         <Button className="w-full" disabled={loading}>

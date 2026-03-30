@@ -1,4 +1,5 @@
 import { MapPin, Building2 } from 'lucide-react';
+import Link from 'next/link';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import type { UserSummary } from '@/lib/types';
@@ -7,9 +8,10 @@ import { ReputationBadge } from '@/components/reputation/ReputationBadge';
 export interface ProfileHeaderProps {
   user: UserSummary;
   showFollowAction?: boolean;
+  editHref?: string | null;
 }
 
-export function ProfileHeader({ user, showFollowAction = false }: ProfileHeaderProps) {
+export function ProfileHeader({ user, showFollowAction = false, editHref = null }: ProfileHeaderProps) {
   return (
     <header className="surface-panel p-6">
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
@@ -44,7 +46,14 @@ export function ProfileHeader({ user, showFollowAction = false }: ProfileHeaderP
           </div>
         </div>
 
-        {showFollowAction ? <Button variant="secondary">Follow</Button> : null}
+        <div className="flex gap-3">
+          {editHref ? (
+            <Button asChild variant="secondary">
+              <Link href={editHref}>Edit profile</Link>
+            </Button>
+          ) : null}
+          {showFollowAction ? <Button variant="secondary">Follow</Button> : null}
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2">

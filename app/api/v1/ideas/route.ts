@@ -1,5 +1,6 @@
 import { handleApiError, ok } from '@/lib/api';
 import { IdeaSearchSchema } from '@/lib/schemas/community';
+import { isMissingStartupIdeaAdvancedSchemaError } from '@/lib/supabase/startup-idea-schema';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { toPostSummaries } from '@/lib/supabase/query-helpers';
 
@@ -16,8 +17,8 @@ export async function GET(request: Request) {
 
     let ideaQuery = supabase
       .from('startup_ideas')
-      .select('post_id, problem, target_audience, solution, market_category, stage, last_revision_at')
-      .order(filters.sort === 'active' ? 'last_revision_at' : 'created_at', { ascending: false })
+      .select('post_id, problem, target_audience, solution, market_category, stage, created_at')
+      .order('created_at', { ascending: false })
       .limit(100);
 
     if (filters.stage) {
@@ -28,7 +29,15 @@ export async function GET(request: Request) {
       ideaQuery = ideaQuery.ilike('market_category', `%${filters.category}%`);
     }
 
-    const ideaIdsResult = await ideaQuery;
+    let ideaIdsResult = await ideaQuery;
+
+    if (ideaIdsResult.error && isMissingStartupIdeaAdvancedSchemaError(ideaIdsResult.error)) {
+      ideaIdsResult = await supabase
+        .from('startup_ideas')
+        .select('post_id, problem, target_audience, solution, market_category, stage, created_at')
+        .order('created_at', { ascending: false })
+        .limit(100);
+    }
 
     if (ideaIdsResult.error) {
       throw new Error(ideaIdsResult.error.message);

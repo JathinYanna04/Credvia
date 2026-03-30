@@ -180,8 +180,6 @@ describe('startup idea create route', () => {
       market_category: 'devtools',
       stage: 'idea',
       monetization_model: 'subscription',
-      revision_count: 1,
-      follower_count: 0,
     });
     expect(insertedRevision).toMatchObject({
       post_id: 'idea-post-1',

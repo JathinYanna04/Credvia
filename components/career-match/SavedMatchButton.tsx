@@ -13,6 +13,7 @@ export interface SavedMatchButtonProps {
 export function SavedMatchButton({ matchId, saved, onSavedChange }: SavedMatchButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authExpired, setAuthExpired] = useState(false);
 
   return (
     <div className="space-y-2">
@@ -23,6 +24,7 @@ export function SavedMatchButton({ matchId, saved, onSavedChange }: SavedMatchBu
         onClick={async () => {
           setLoading(true);
           setError(null);
+          setAuthExpired(false);
 
           try {
             const response = await fetch(`/api/v1/matches/${matchId}/save`, {
@@ -34,6 +36,11 @@ export function SavedMatchButton({ matchId, saved, onSavedChange }: SavedMatchBu
               data?: { saved: boolean };
               error?: { message?: string };
             };
+
+            if (response.status === 401) {
+              setAuthExpired(true);
+              return;
+            }
 
             if (!response.ok || !payload.data) {
               throw new Error(payload.error?.message ?? 'Could not update saved matches.');
@@ -50,6 +57,9 @@ export function SavedMatchButton({ matchId, saved, onSavedChange }: SavedMatchBu
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bookmark className="h-4 w-4" />}
         {saved ? 'Saved' : 'Save match'}
       </Button>
+      {authExpired ? (
+        <p className="text-xs text-danger">Your session expired. Sign in again to save matches.</p>
+      ) : null}
       {error ? <p className="text-xs text-danger">{error}</p> : null}
     </div>
   );

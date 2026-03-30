@@ -6,17 +6,22 @@ import { createClient } from '@/lib/supabase/client';
 
 export interface OAuthButtonProps {
   mode: 'login' | 'signup';
+  onError?: (message: string) => void;
 }
 
-export function OAuthButton({ mode }: OAuthButtonProps) {
+export function OAuthButton({ mode, onError }: OAuthButtonProps) {
   const onClick = async () => {
     const supabase = createClient();
-    await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
+
+    if (error) {
+      onError?.(error.message);
+    }
   };
 
   return (

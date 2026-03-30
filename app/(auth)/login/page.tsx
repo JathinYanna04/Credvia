@@ -1,7 +1,15 @@
 import Link from 'next/link';
 import { LoginForm } from '@/components/auth/LoginForm';
 
-export default function LoginPage() {
+interface LoginPageProps {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const rawError = resolvedSearchParams?.error;
+  const initialError = Array.isArray(rawError) ? rawError[0] : rawError ?? null;
+
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-2">
       <section className="hidden border-r border-border-subtle bg-bg-surface px-10 py-12 lg:flex lg:flex-col lg:justify-between">
@@ -37,7 +45,7 @@ export default function LoginPage() {
             Continue where your last contribution left off.
           </p>
           <div className="mt-8">
-            <LoginForm />
+            <LoginForm initialError={initialError} />
           </div>
           <p className="mt-8 text-sm text-text-secondary">
             Need a public view first?{' '}

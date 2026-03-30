@@ -1,5 +1,5 @@
-import { notFound } from 'next/navigation';
+import { ProfileSettingsForm } from '@/components/profile/ProfileSettingsForm';
 
 export default function SettingsPage() {
-  notFound();
+  return <ProfileSettingsForm />;
 }

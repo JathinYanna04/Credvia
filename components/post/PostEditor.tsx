@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -33,7 +32,6 @@ export function PostEditor({ type }: PostEditorProps) {
   const [monetizationModel, setMonetizationModel] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
   useEffect(() => {
     setCommunitiesLoading(true);
@@ -104,8 +102,10 @@ export function PostEditor({ type }: PostEditorProps) {
         const payload = (await response.json()) as { data?: { id: string }; error?: { message: string } };
 
         if (response.ok && typeof payload.data?.id === 'string' && payload.data.id.length > 0) {
-          router.push(type === 'startup_idea' ? `/ideas/${payload.data.id}` : `/post/${payload.data.id}`);
-          router.refresh();
+          const destination =
+            type === 'startup_idea' ? `/ideas/${payload.data.id}` : `/post/${payload.data.id}`;
+
+          window.location.assign(destination);
           return;
         }
 
