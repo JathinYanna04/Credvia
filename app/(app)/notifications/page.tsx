@@ -1,22 +1,42 @@
 import { NotificationItem } from '@/components/notifications/NotificationItem';
-import { Button } from '@/components/ui/button';
-import { mockNotifications } from '@/lib/mock-data';
+import { MarkAllReadButton } from '@/components/notifications/MarkAllReadButton';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getRequiredUser } from '@/lib/supabase/helpers';
+import { toNotificationSummaries } from '@/lib/supabase/query-helpers';
 
-export default function NotificationsPage() {
+export default async function NotificationsPage() {
+  const supabase = await createServerSupabaseClient();
+  const user = await getRequiredUser(supabase);
+  const notificationsResult = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  const notifications = notificationsResult.error
+    ? []
+    : await toNotificationSummaries(supabase, notificationsResult.data ?? []);
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold">Notifications</h1>
           <p className="mt-2 text-sm text-text-secondary">
-            Real-time updates when your work gains traction or someone responds.
+            Useful updates when your work gets a response or traction.
           </p>
         </div>
-        <Button variant="secondary">Mark all read</Button>
+        <MarkAllReadButton />
       </div>
 
       <section className="space-y-3">
-        {mockNotifications.map((notification) => (
+        {notifications.length === 0 ? (
+          <div className="surface-panel p-5 text-sm text-text-secondary">
+            No notifications yet. Votes and replies to your posts and startup ideas will show up here.
+          </div>
+        ) : null}
+        {notifications.map((notification) => (
           <NotificationItem key={notification.id} notification={notification} />
         ))}
       </section>

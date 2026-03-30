@@ -8,6 +8,23 @@ export async function GET() {
     const supabase = await createServerSupabaseClient();
     const user = await getRequiredUser(supabase);
     const profile = await ensureProfileRecord(supabase, user);
+    const [skillsResult, userSkillsResult, membershipsResult] = await Promise.all([
+      supabase.from('skills').select('id, name').order('name', { ascending: true }),
+      supabase.from('user_skills').select('skill_id').eq('user_id', user.id),
+      supabase.from('community_memberships').select('community_id').eq('user_id', user.id),
+    ]);
+
+    if (skillsResult.error) {
+      throw new Error(skillsResult.error.message);
+    }
+
+    if (userSkillsResult.error) {
+      throw new Error(userSkillsResult.error.message);
+    }
+
+    if (membershipsResult.error) {
+      throw new Error(membershipsResult.error.message);
+    }
 
     return ok({
       user: {
@@ -15,6 +32,9 @@ export async function GET() {
         email: user.email ?? null,
       },
       profile,
+      availableSkills: skillsResult.data ?? [],
+      selectedSkillIds: (userSkillsResult.data ?? []).map((item) => item.skill_id),
+      joinedCommunityIds: (membershipsResult.data ?? []).map((item) => item.community_id),
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {

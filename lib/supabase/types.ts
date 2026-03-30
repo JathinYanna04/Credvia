@@ -296,6 +296,54 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['reports']['Insert']>;
       };
+      notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          notif_type: string;
+          actor_user_id: string | null;
+          entity_type: string | null;
+          entity_id: string | null;
+          payload: Json | null;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          notif_type: string;
+          actor_user_id?: string | null;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          payload?: Json | null;
+          read_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['notifications']['Insert']>;
+      };
+      moderation_actions: {
+        Row: {
+          id: string;
+          moderator_user_id: string;
+          target_type: string;
+          target_id: string;
+          action_type: string;
+          reason: string | null;
+          metadata: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          moderator_user_id: string;
+          target_type: string;
+          target_id: string;
+          action_type: string;
+          reason?: string | null;
+          metadata?: Json | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['moderation_actions']['Insert']>;
+      };
       startup_ideas: {
         Row: {
           post_id: string;

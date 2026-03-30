@@ -3,11 +3,24 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
-export function useNotifications(userId = 'user-ada') {
-  const [unreadCount, setUnreadCount] = useState(1);
+export function useNotifications(userId?: string) {
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
+    if (!userId) {
+      return;
+    }
+
     const supabase = createClient();
+    void supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .is('read_at', null)
+      .then(({ count }) => {
+        setUnreadCount(count ?? 0);
+      });
+
     const channel = supabase
       .channel(`notifications:${userId}`)
       .on(

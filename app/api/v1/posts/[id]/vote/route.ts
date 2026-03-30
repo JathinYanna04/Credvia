@@ -1,6 +1,7 @@
 import { fail, handleApiError, ok, parseJson } from '@/lib/api';
 import { VotePostSchema } from '@/lib/schemas/post';
 import { enforceRateLimit } from '@/lib/rate-limit';
+import { sendNotification } from '@/lib/supabase/notifications';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 
@@ -20,7 +21,7 @@ export async function POST(
 
     const postResult = await supabase
       .from('posts')
-      .select('id')
+      .select('id, author_id, title')
       .eq('id', params.id)
       .eq('status', 'published')
       .maybeSingle();
@@ -86,6 +87,20 @@ export async function POST(
 
     if (refreshedPost.error) {
       throw new Error(refreshedPost.error.message);
+    }
+
+    if (body.value !== 0 && postResult.data.author_id !== user.id) {
+      await sendNotification({
+        userId: postResult.data.author_id,
+        notifType: 'vote',
+        actorUserId: user.id,
+        entityType: 'post',
+        entityId: params.id,
+        payload: {
+          title: postResult.data.title,
+          value: body.value,
+        },
+      });
     }
 
     return ok({

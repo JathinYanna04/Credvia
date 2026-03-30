@@ -1,4 +1,3 @@
-import { MessageSquare, Reply } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { BestAnswerBadge } from '@/components/comments/BestAnswerBadge';
 import { VoteButtons } from '@/components/voting/VoteButtons';
@@ -14,7 +13,12 @@ export function CommentItem({ comment, depth = 0 }: CommentItemProps) {
   return (
     <div className="space-y-4">
       <div className="flex gap-3">
-        <VoteButtons score={comment.voteScore} orientation="vertical" className="hidden sm:flex" />
+        <VoteButtons
+          score={comment.voteScore}
+          endpoint={`/api/v1/comments/${comment.id}/vote`}
+          orientation="vertical"
+          className="hidden sm:flex"
+        />
         <div className="min-w-0 flex-1 rounded-2xl border border-border-subtle bg-bg-surface p-4">
           <div className="flex flex-wrap items-center gap-2">
             <Avatar className="h-7 w-7">
@@ -31,15 +35,8 @@ export function CommentItem({ comment, depth = 0 }: CommentItemProps) {
             {comment.isBestAnswer ? <BestAnswerBadge /> : null}
           </div>
           <p className="mt-3 text-sm leading-6 text-text-secondary">{comment.body}</p>
-          <div className="mt-4 flex items-center gap-3 text-xs text-text-secondary">
-            <button className="inline-flex items-center gap-1 hover:text-text-primary">
-              <Reply className="h-3.5 w-3.5" />
-              Reply
-            </button>
-            <button className="inline-flex items-center gap-1 hover:text-text-primary">
-              <MessageSquare className="h-3.5 w-3.5" />
-              Report
-            </button>
+          <div className="mt-4 sm:hidden">
+            <VoteButtons score={comment.voteScore} endpoint={`/api/v1/comments/${comment.id}/vote`} />
           </div>
         </div>
       </div>

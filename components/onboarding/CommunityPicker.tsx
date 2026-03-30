@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils/cn';
-import { createClient } from '@/lib/supabase/client';
 
 export interface CommunityPickerProps {
   onComplete?: () => void;
@@ -24,40 +23,38 @@ export function CommunityPicker({ onComplete }: CommunityPickerProps) {
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
     void fetch('/api/v1/communities')
       .then((response) => response.json())
-      .then((payload: { data?: CommunityOption[] }) => setCommunities(payload.data ?? []));
+      .then((payload: { data?: CommunityOption[] }) => setCommunities(payload.data ?? []))
+      .catch(() => {
+        setError('Could not load communities.');
+      });
   }, []);
 
   const handleContinue = async () => {
     setLoading(true);
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    setError(null);
 
-    if (!user) {
-      router.push('/login');
+    const response = await fetch('/api/v1/users/me/onboarding', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        communityIds: selected,
+        profile: {},
+        onboarding_complete: false,
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json()) as { error?: { message?: string } };
+      setError(payload.error?.message ?? 'Could not save your communities.');
+      setLoading(false);
       return;
     }
-
-    await supabase
-      .from('community_memberships')
-      .delete()
-      .eq('user_id', user.id);
-
-    await Promise.all(
-      selected.map((communityId) =>
-        fetch(`/api/v1/communities/${communityId}/join`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ communityId, joined: true }),
-        }),
-      ),
-    );
 
     onComplete?.();
     router.push('/onboarding/profile');
@@ -106,6 +103,7 @@ export function CommunityPicker({ onComplete }: CommunityPickerProps) {
           );
         })}
       </div>
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
       <Button onClick={handleContinue} disabled={loading}>
         {loading ? 'Joining...' : 'Continue'}
       </Button>

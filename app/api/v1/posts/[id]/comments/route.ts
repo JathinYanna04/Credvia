@@ -1,6 +1,7 @@
 import { handleApiError, ok, parseJson, fail } from '@/lib/api';
 import { CreateCommentSchema } from '@/lib/schemas/comment';
 import { enforceRateLimit } from '@/lib/rate-limit';
+import { sendNotification } from '@/lib/supabase/notifications';
 import { sanitizeHtml } from '@/lib/utils/sanitize';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
@@ -87,7 +88,7 @@ export async function POST(
 
     const postResult = await supabase
       .from('posts')
-      .select('community_id')
+      .select('community_id, author_id, title')
       .eq('id', params.id)
       .single();
 
@@ -100,6 +101,20 @@ export async function POST(
       [data],
       postResult.data.community_id,
     );
+
+    if (postResult.data.author_id !== user.id) {
+      await sendNotification({
+        userId: postResult.data.author_id,
+        notifType: 'reply',
+        actorUserId: user.id,
+        entityType: 'post',
+        entityId: params.id,
+        payload: {
+          title: postResult.data.title,
+          commentId: data.id,
+        },
+      });
+    }
 
     return ok(comment);
   } catch (error) {

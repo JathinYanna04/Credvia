@@ -9,7 +9,6 @@ import { OAuthButton } from '@/components/auth/OAuthButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LoginSchema, type LoginInput } from '@/lib/schemas/auth';
-import { createClient } from '@/lib/supabase/client';
 
 export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
@@ -22,21 +21,30 @@ export function LoginForm() {
   const onSubmit = async (values: LoginInput) => {
     setLoading(true);
     setError(null);
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword(values);
-    if (signInError) {
-      setError(signInError.message);
-    } else {
-      const profileResult = await supabase
-        .from('profiles')
-        .select('onboarding_complete')
-        .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
-        .maybeSingle();
+    try {
+      const response = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(values),
+      });
+      const payload = (await response.json()) as {
+        data?: { redirectTo?: string };
+        error?: { message?: string };
+      };
 
-      router.push(profileResult.data?.onboarding_complete ? '/feed' : '/onboarding/interests');
-      router.refresh();
+      if (!response.ok) {
+        setError(payload.error?.message ?? 'Could not sign in.');
+      } else {
+        router.push(payload.data?.redirectTo ?? '/feed');
+        router.refresh();
+      }
+    } catch {
+      setError('Could not sign in.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

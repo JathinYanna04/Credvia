@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Bookmark, MessageSquare, Share2 } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { PostTypeBadge } from '@/components/post/PostTypeBadge';
@@ -85,14 +85,6 @@ export function PostCard({ post }: PostCardProps) {
             <div className="inline-flex items-center gap-1 rounded-full border border-border-subtle px-3 py-2">
               <MessageSquare className="h-3.5 w-3.5" />
               {post.commentCount}
-            </div>
-            <div className="inline-flex items-center gap-1 rounded-full border border-border-subtle px-3 py-2">
-              <Bookmark className="h-3.5 w-3.5" />
-              {post.saveCount}
-            </div>
-            <div className="inline-flex items-center gap-1 rounded-full border border-border-subtle px-3 py-2">
-              <Share2 className="h-3.5 w-3.5" />
-              Share
             </div>
           </div>
         </div>

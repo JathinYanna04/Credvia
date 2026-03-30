@@ -24,6 +24,23 @@ function isPublicPath(pathname: string) {
   );
 }
 
+function isPublicApiRequest(pathname: string, method: string) {
+  if (method !== 'GET') {
+    return pathname.startsWith('/api/v1/auth');
+  }
+
+  return (
+    pathname === '/api/v1/communities' ||
+    pathname === '/api/v1/search' ||
+    pathname === '/api/v1/ideas' ||
+    pathname.startsWith('/api/v1/ideas/') ||
+    pathname === '/api/v1/posts' ||
+    pathname.startsWith('/api/v1/posts/') ||
+    pathname.startsWith('/api/v1/users/') ||
+    pathname.startsWith('/api/v1/auth')
+  );
+}
+
 function shouldBypassMiddleware(pathname: string) {
   return (
     pathname.startsWith('/_next/static') ||
@@ -42,6 +59,7 @@ function isApiPath(pathname: string) {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  const method = request.method;
 
   if (shouldBypassMiddleware(pathname)) {
     logInfo('middleware', 'Bypassing middleware for asset/system request', {
@@ -56,7 +74,7 @@ export async function middleware(request: NextRequest) {
 
   const { response, user } = await updateSession(request);
 
-  if (!user && !isPublicPath(pathname)) {
+  if (!user && !isPublicPath(pathname) && !isPublicApiRequest(pathname, method)) {
     if (isApiPath(pathname)) {
       logInfo('middleware', 'Returning JSON 401 for unauthenticated API request', {
         pathname,

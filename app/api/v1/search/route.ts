@@ -1,17 +1,108 @@
-import { ok } from '@/lib/api';
-import { mockCommunities, mockPosts, mockUsers } from '@/lib/mock-data';
+import { handleApiError, ok } from '@/lib/api';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { toPostSummaries } from '@/lib/supabase/query-helpers';
+import type { CommunitySummary, UserSummary } from '@/lib/types';
+
+function toCommunitySummary(community: {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  member_count: number;
+  post_count: number;
+}): CommunitySummary {
+  return {
+    id: community.id,
+    name: community.name,
+    slug: community.slug,
+    description: community.description ?? '',
+    icon: community.name
+      .split(' ')
+      .map((chunk) => chunk[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase(),
+    memberCount: community.member_count,
+    postCount: community.post_count,
+    accent: 'var(--accent)',
+  };
+}
+
+function toUserSummary(profile: {
+  user_id: string;
+  username: string;
+  full_name: string | null;
+  headline: string | null;
+  avatar_url: string | null;
+  location: string | null;
+  current_company: string | null;
+}): UserSummary {
+  return {
+    id: profile.user_id,
+    username: profile.username,
+    fullName: profile.full_name ?? profile.username,
+    headline: profile.headline ?? '',
+    avatarUrl: profile.avatar_url ?? '',
+    skills: [],
+    location: profile.location ?? undefined,
+    currentCompany: profile.current_company ?? undefined,
+    reputation: [],
+  };
+}
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const query = (searchParams.get('q') ?? '').toLowerCase();
+  try {
+    const { searchParams } = new URL(request.url);
+    const query = (searchParams.get('q') ?? '').trim();
 
-  const posts = mockPosts.filter((post) => post.title.toLowerCase().includes(query));
-  const communities = mockCommunities.filter((community) =>
-    community.name.toLowerCase().includes(query),
-  );
-  const people = mockUsers.filter((user) =>
-    `${user.fullName} ${user.username}`.toLowerCase().includes(query),
-  );
+    if (query.length < 2) {
+      return ok({ posts: [], communities: [], people: [] });
+    }
 
-  return ok({ posts, communities, people });
+    const pattern = `%${query}%`;
+    const supabase = await createServerSupabaseClient();
+
+    const [postsResult, communitiesResult, profilesResult] = await Promise.all([
+      supabase
+        .from('posts')
+        .select('*')
+        .eq('status', 'published')
+        .or(`title.ilike.${pattern},body_md.ilike.${pattern}`)
+        .order('created_at', { ascending: false })
+        .limit(8),
+      supabase
+        .from('communities')
+        .select('id, name, slug, description, member_count, post_count')
+        .eq('status', 'active')
+        .or(`name.ilike.${pattern},description.ilike.${pattern}`)
+        .order('member_count', { ascending: false })
+        .limit(8),
+      supabase
+        .from('profiles')
+        .select('user_id, username, full_name, headline, avatar_url, location, current_company')
+        .or(`username.ilike.${pattern},full_name.ilike.${pattern},headline.ilike.${pattern}`)
+        .order('created_at', { ascending: false })
+        .limit(8),
+    ]);
+
+    if (postsResult.error) {
+      throw new Error(postsResult.error.message);
+    }
+
+    if (communitiesResult.error) {
+      throw new Error(communitiesResult.error.message);
+    }
+
+    if (profilesResult.error) {
+      throw new Error(profilesResult.error.message);
+    }
+
+    const posts = await toPostSummaries(supabase, postsResult.data ?? []);
+    const communities = (communitiesResult.data ?? []).map(toCommunitySummary);
+    const people = (profilesResult.data ?? []).map(toUserSummary);
+
+    return ok({ posts, communities, people });
+  } catch (error) {
+    return handleApiError(error);
+  }
 }

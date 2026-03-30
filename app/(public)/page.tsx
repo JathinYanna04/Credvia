@@ -1,9 +1,29 @@
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { mockCommunities, mockPosts } from '@/lib/mock-data';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { toPostSummaries } from '@/lib/supabase/query-helpers';
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const supabase = await createServerSupabaseClient();
+  const [communitiesResult, postsResult] = await Promise.all([
+    supabase
+      .from('communities')
+      .select('id, name, slug, description, member_count')
+      .eq('status', 'active')
+      .order('member_count', { ascending: false })
+      .limit(6),
+    supabase
+      .from('posts')
+      .select('*')
+      .eq('status', 'published')
+      .order('created_at', { ascending: false })
+      .limit(2),
+  ]);
+
+  const communities = communitiesResult.data ?? [];
+  const featuredPosts = await toPostSummaries(supabase, postsResult.data ?? []);
+
   return (
     <div className="min-h-screen overflow-hidden">
       <section className="relative border-b border-border-subtle">
@@ -33,17 +53,20 @@ export default function LandingPage() {
           </div>
 
           <div className="mt-16 grid gap-4 md:grid-cols-3">
-            {mockCommunities.map((community, index) => (
-              <article
-                key={community.id}
-                className="surface-panel card-lift p-5"
-                style={{ animationDelay: `${index * 50}ms` }}
-              >
-                <div className="text-sm text-accent">{community.icon}</div>
+            {communities.map((community) => (
+              <article key={community.id} className="surface-panel card-lift p-5">
+                <div className="text-sm text-accent">
+                  {community.name
+                    .split(' ')
+                    .map((chunk: string) => chunk[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase()}
+                </div>
                 <h2 className="mt-4 text-xl font-semibold">{community.name}</h2>
                 <p className="mt-2 text-sm text-text-secondary">{community.description}</p>
                 <p className="mt-6 text-xs uppercase tracking-[0.2em] text-text-tertiary">
-                  {community.memberCount.toLocaleString()} members
+                  {community.member_count.toLocaleString()} members
                 </p>
               </article>
             ))}
@@ -53,20 +76,28 @@ export default function LandingPage() {
 
       <section className="mx-auto max-w-shell px-4 py-20 sm:px-6">
         <div className="grid gap-4 md:grid-cols-3">
-          {[
-            ['18k+', 'Active users'],
-            ['240k+', 'Knowledge exchanges'],
-            ['7', 'Launch communities'],
-          ].map(([value, label]) => (
-            <div key={label} className="surface-panel p-6">
-              <div className="font-display text-4xl font-semibold text-accent">{value}</div>
-              <div className="mt-2 text-sm text-text-secondary">{label}</div>
+          <div className="surface-panel p-6">
+            <div className="font-display text-4xl font-semibold text-accent">
+              {communities.length}
             </div>
-          ))}
+            <div className="mt-2 text-sm text-text-secondary">Active launch communities</div>
+          </div>
+          <div className="surface-panel p-6">
+            <div className="font-display text-4xl font-semibold text-accent">
+              {featuredPosts.length}
+            </div>
+            <div className="mt-2 text-sm text-text-secondary">Fresh public conversations featured now</div>
+          </div>
+          <div className="surface-panel p-6">
+            <div className="font-display text-4xl font-semibold text-accent">
+              Real
+            </div>
+            <div className="mt-2 text-sm text-text-secondary">Profiles, posts, communities, and startup ideas</div>
+          </div>
         </div>
 
         <div className="mt-16 grid gap-4 lg:grid-cols-2">
-          {mockPosts.slice(0, 2).map((post) => (
+          {featuredPosts.map((post) => (
             <article key={post.id} className="surface-panel p-6">
               <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
                 Featured from {post.community.name}

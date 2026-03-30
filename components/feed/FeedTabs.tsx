@@ -14,7 +14,6 @@ export function FeedTabs({ value, onValueChange }: FeedTabsProps) {
       <TabsList className="w-full justify-start rounded-none border-b border-border-subtle bg-transparent p-0">
         <TabsTrigger value="for-you">For You</TabsTrigger>
         <TabsTrigger value="communities">Communities</TabsTrigger>
-        <TabsTrigger value="following">Following</TabsTrigger>
       </TabsList>
     </Tabs>
   );

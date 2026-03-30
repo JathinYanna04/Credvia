@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,6 +23,7 @@ export interface ProfileSetupProps {
 
 export function ProfileSetup({ onComplete }: ProfileSetupProps) {
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
   const { register, handleSubmit } = useForm<FormValues>({
     resolver: zodResolver(OnboardingProfileSchema),
     defaultValues: {
@@ -34,14 +36,22 @@ export function ProfileSetup({ onComplete }: ProfileSetupProps) {
   return (
     <form
       onSubmit={handleSubmit(async (values) => {
-        await fetch('/api/v1/users/me', {
-          method: 'PATCH',
+        setError(null);
+
+        const response = await fetch('/api/v1/users/me/onboarding', {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ...values,
+            profile: values,
             onboarding_complete: true,
           }),
         });
+
+        if (!response.ok) {
+          const payload = (await response.json()) as { error?: { message?: string } };
+          setError(payload.error?.message ?? 'Could not complete onboarding.');
+          return;
+        }
 
         onComplete?.();
         router.push('/feed');
@@ -54,17 +64,28 @@ export function ProfileSetup({ onComplete }: ProfileSetupProps) {
       <Input placeholder="Headline" {...register('headline')} />
       <Textarea placeholder="Bio" {...register('bio')} />
       <Input placeholder="Location" {...register('location')} />
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="flex gap-3">
         <Button type="submit">Complete onboarding</Button>
         <Button
           type="button"
           variant="ghost"
           onClick={async () => {
-            await fetch('/api/v1/users/me', {
-              method: 'PATCH',
+            setError(null);
+            const response = await fetch('/api/v1/users/me/onboarding', {
+              method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ onboarding_complete: true }),
+              body: JSON.stringify({
+                profile: {},
+                onboarding_complete: true,
+              }),
             });
+
+            if (!response.ok) {
+              const payload = (await response.json()) as { error?: { message?: string } };
+              setError(payload.error?.message ?? 'Could not skip onboarding.');
+              return;
+            }
 
             onComplete?.();
             router.push('/feed');

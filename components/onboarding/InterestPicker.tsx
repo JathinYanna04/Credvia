@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { createClient } from '@/lib/supabase/client';
 
 interface SkillOption {
   id: string;
@@ -19,41 +18,40 @@ export function InterestPicker({ onContinue }: InterestPickerProps) {
   const [skills, setSkills] = useState<SkillOption[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    const supabase = createClient();
-
-    void supabase
-      .from('skills')
-      .select('id, name')
-      .order('name', { ascending: true })
-      .then(({ data }) => {
-        setSkills(data ?? []);
+    void fetch('/api/v1/users/me')
+      .then((response) => response.json())
+      .then((payload: { data?: { availableSkills?: SkillOption[]; selectedSkillIds?: string[] } }) => {
+        setSkills(payload.data?.availableSkills ?? []);
+        setSelected(payload.data?.selectedSkillIds ?? []);
+      })
+      .catch(() => {
+        setError('Could not load available skills.');
       });
   }, []);
 
   const handleContinue = async () => {
     setLoading(true);
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    setError(null);
 
-    if (!user) {
-      router.push('/login');
+    const response = await fetch('/api/v1/users/me/onboarding', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        skills: selected,
+        profile: {},
+        onboarding_complete: false,
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json()) as { error?: { message?: string } };
+      setError(payload.error?.message ?? 'Could not save your interests.');
+      setLoading(false);
       return;
-    }
-
-    await supabase.from('user_skills').delete().eq('user_id', user.id);
-
-    if (selected.length > 0) {
-      await supabase.from('user_skills').insert(
-        selected.map((skillId) => ({
-          user_id: user.id,
-          skill_id: skillId,
-        })),
-      );
     }
 
     onContinue?.();
@@ -84,6 +82,7 @@ export function InterestPicker({ onContinue }: InterestPickerProps) {
           );
         })}
       </div>
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
       <Button onClick={handleContinue} disabled={loading}>
         {loading ? 'Saving...' : 'Continue'}
       </Button>

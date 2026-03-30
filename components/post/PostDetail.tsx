@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Bookmark, ExternalLink, Share2 } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { CommentEditor } from '@/components/comments/CommentEditor';
 import { CommentThread } from '@/components/comments/CommentThread';
 import { PostTypeBadge } from '@/components/post/PostTypeBadge';
@@ -97,14 +97,6 @@ export function PostDetail({ post, comments }: PostDetailProps) {
           ) : null}
 
           <div className="grid gap-2 text-sm text-text-secondary sm:flex sm:flex-wrap sm:items-center">
-            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-border-subtle px-4 py-2">
-              <Bookmark className="h-4 w-4" />
-              Save
-            </button>
-            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-border-subtle px-4 py-2">
-              <Share2 className="h-4 w-4" />
-              Share
-            </button>
             <ReportIdeaButton postId={post.id} />
           </div>
         </div>

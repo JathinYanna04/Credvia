@@ -1,5 +1,5 @@
-import { ok } from '@/lib/api';
+import { fail } from '@/lib/api';
 
 export async function GET() {
-  return ok({ id: 'comment', status: 'published' });
+  return fail('NOT_FOUND', 'Standalone comment detail is not exposed in V1.', 404);
 }

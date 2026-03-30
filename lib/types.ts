@@ -92,6 +92,8 @@ export interface NotificationSummary {
   type: NotificationType;
   actor: UserSummary;
   description: string;
+  entityId?: string;
+  entityType?: string;
   createdAt: string;
   unread: boolean;
 }

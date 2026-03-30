@@ -1,6 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/supabase/types';
-import type { CommentSummary, CommunitySummary, PostSummary, UserSummary } from '@/lib/types';
+import type {
+  CommentSummary,
+  CommunitySummary,
+  NotificationSummary,
+  PostSummary,
+  UserSummary,
+} from '@/lib/types';
 import { computeIdeaValidationScore } from '@/lib/utils/idea-score';
 
 export type TypedSupabaseClient = SupabaseClient;
@@ -11,6 +17,7 @@ type PostRow = Database['public']['Tables']['posts']['Row'];
 type CommentRow = Database['public']['Tables']['comments']['Row'];
 type CommunityReputationRow = Database['public']['Tables']['community_reputation']['Row'];
 type StartupIdeaRow = Database['public']['Tables']['startup_ideas']['Row'];
+type NotificationRow = Database['public']['Tables']['notifications']['Row'];
 type StartupIdeaStage = NonNullable<PostSummary['startupIdea']>['stage'];
 
 function unique(values: string[]) {
@@ -330,4 +337,63 @@ export async function toCommentSummaries(
   });
 
   return roots.map(({ parentId: _parentId, ...comment }) => comment);
+}
+
+function toNotificationDescription(notification: NotificationRow) {
+  switch (notification.notif_type) {
+    case 'reply':
+      return 'replied to your post.';
+    case 'vote':
+      return 'voted on your post.';
+    case 'mod_action':
+      return 'took moderation action on reported content.';
+    default:
+      return 'interacted with your work.';
+  }
+}
+
+export async function toNotificationSummaries(
+  supabase: TypedSupabaseClient,
+  notifications: NotificationRow[],
+): Promise<NotificationSummary[]> {
+  const actorIds = notifications
+    .map((notification) => notification.actor_user_id)
+    .filter((value): value is string => Boolean(value));
+  const profiles = await getProfilesByUserIds(supabase, actorIds);
+
+  return notifications.map((notification) => {
+    const actorId = notification.actor_user_id ?? 'system';
+    const actorProfile = profiles.get(actorId);
+
+    return {
+      id: notification.id,
+      type: notification.notif_type as NotificationSummary['type'],
+      actor: actorProfile
+        ? {
+            id: actorId,
+            username: actorProfile.username,
+            fullName: actorProfile.full_name ?? actorProfile.username,
+            headline: actorProfile.headline ?? '',
+            avatarUrl: actorProfile.avatar_url ?? '',
+            skills: [],
+            location: actorProfile.location ?? undefined,
+            currentCompany: actorProfile.current_company ?? undefined,
+            reputation: [],
+          }
+        : {
+            id: actorId,
+            username: 'credvia',
+            fullName: 'Credvia',
+            headline: '',
+            avatarUrl: '',
+            skills: [],
+            reputation: [],
+          },
+      description: toNotificationDescription(notification),
+      entityId: notification.entity_id ?? undefined,
+      entityType: notification.entity_type ?? undefined,
+      createdAt: notification.created_at,
+      unread: !notification.read_at,
+    };
+  });
 }

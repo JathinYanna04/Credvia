@@ -1,11 +1,5 @@
-import { handleApiError, ok, parseJson } from '@/lib/api';
-import { BestAnswerSchema } from '@/lib/schemas/comment';
+import { fail } from '@/lib/api';
 
-export async function POST(request: Request) {
-  try {
-    const body = await parseJson(request, BestAnswerSchema);
-    return ok(body);
-  } catch (error) {
-    return handleApiError(error);
-  }
+export async function POST() {
+  return fail('NOT_FOUND', 'Best-answer flow is not part of V1.', 404);
 }

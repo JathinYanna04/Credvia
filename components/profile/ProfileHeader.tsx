@@ -6,9 +6,10 @@ import { ReputationBadge } from '@/components/reputation/ReputationBadge';
 
 export interface ProfileHeaderProps {
   user: UserSummary;
+  showFollowAction?: boolean;
 }
 
-export function ProfileHeader({ user }: ProfileHeaderProps) {
+export function ProfileHeader({ user, showFollowAction = false }: ProfileHeaderProps) {
   return (
     <header className="surface-panel p-6">
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
@@ -43,7 +44,7 @@ export function ProfileHeader({ user }: ProfileHeaderProps) {
           </div>
         </div>
 
-        <Button variant="secondary">Follow</Button>
+        {showFollowAction ? <Button variant="secondary">Follow</Button> : null}
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2">
