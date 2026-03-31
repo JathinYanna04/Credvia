@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-<<<<<<< HEAD
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -26,34 +25,10 @@ async function getAvailablePort() {
       server.close(() => resolve(port));
     });
 
-=======
-import net from 'node:net';
-
-function findOpenPort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address === 'string') {
-        reject(new Error('Could not determine an open port.'));
-        return;
-      }
-
-      const { port } = address;
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve(port);
-      });
-    });
->>>>>>> 7b6b28a (`Refactor career routes and jobs pages to use new career path canonicalization`)
     server.on('error', reject);
   });
 }
 
-<<<<<<< HEAD
 const checks = [
   {
     path: '/career',
@@ -149,53 +124,10 @@ async function waitForServerReady(childProcess, port) {
 
 async function stopProcessTree(childProcess) {
   if (!childProcess.pid) {
-=======
-async function waitForServerReady(url) {
-  const timeoutAt = Date.now() + 30_000;
-
-  while (Date.now() < timeoutAt) {
-    try {
-      const response = await fetch(url, { redirect: 'manual' });
-      if (response.status >= 200) {
-        return;
-      }
-    } catch {}
-
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-
-  throw new Error(`Timed out waiting for Next server at ${url}`);
-}
-
-async function expectRequest(baseUrl, path, expectations) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    redirect: 'manual',
-    signal: AbortSignal.timeout(15_000),
-    headers: expectations.headers ?? {},
-  });
-
-  if (response.status !== expectations.status) {
-    throw new Error(`${path} returned ${response.status}, expected ${expectations.status}`);
-  }
-
-  if (expectations.locationPrefix) {
-    const location = response.headers.get('location');
-    if (!location || !location.startsWith(expectations.locationPrefix)) {
-      throw new Error(`${path} redirected to ${location ?? '<none>'}, expected prefix ${expectations.locationPrefix}`);
-    }
-  }
-
-  console.log(`${path} -> ${response.status}${response.headers.get('location') ? ` ${response.headers.get('location')}` : ''}`);
-}
-
-async function stopProcessTree(child) {
-  if (!child.pid) {
->>>>>>> 7b6b28a (`Refactor career routes and jobs pages to use new career path canonicalization`)
     return;
   }
 
   if (process.platform === 'win32') {
-<<<<<<< HEAD
     const killer = spawn('taskkill', ['/pid', String(childProcess.pid), '/t', '/f'], {
       stdio: 'ignore',
     });
@@ -247,65 +179,3 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-=======
-    await new Promise((resolve) => {
-      const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
-        stdio: 'ignore',
-        shell: true,
-      });
-      killer.on('exit', () => resolve());
-      killer.on('error', () => resolve());
-    });
-    return;
-  }
-
-  child.kill('SIGTERM');
-}
-
-const port = await findOpenPort();
-const baseUrl = `http://127.0.0.1:${port}`;
-const child = spawn('npm', ['run', 'start', '--', '-p', String(port)], {
-  cwd: process.cwd(),
-  env: { ...process.env, PORT: String(port) },
-  shell: true,
-  stdio: 'pipe',
-});
-
-child.stdout.on('data', (chunk) => process.stdout.write(chunk));
-child.stderr.on('data', (chunk) => process.stderr.write(chunk));
-
-try {
-  await waitForServerReady(`${baseUrl}/`);
-
-  await expectRequest(baseUrl, '/career', {
-    status: 307,
-    locationPrefix: '/login',
-  });
-
-  await expectRequest(baseUrl, '/career?_rsc=test', {
-    status: 307,
-    locationPrefix: '/login',
-  });
-
-  await expectRequest(baseUrl, '/career/jobs', {
-    status: 200,
-  });
-
-  await expectRequest(baseUrl, '/jobs', {
-    status: 307,
-    locationPrefix: '/career/jobs',
-  });
-
-  await expectRequest(baseUrl, '/careers', {
-    status: 307,
-    locationPrefix: '/career',
-  });
-
-  await expectRequest(baseUrl, '/carreers', {
-    status: 307,
-    locationPrefix: '/career',
-  });
-} finally {
-  await stopProcessTree(child);
-}
->>>>>>> 7b6b28a (`Refactor career routes and jobs pages to use new career path canonicalization`)

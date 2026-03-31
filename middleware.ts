@@ -3,12 +3,7 @@ import { NextResponse } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 import { logInfo } from '@/lib/utils/logger';
 
-<<<<<<< HEAD
 const BUILD_SHA = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || 'unknown';
-=======
-const VERBOSE_MIDDLEWARE_LOGGING = process.env.CREDVIA_VERBOSE_MIDDLEWARE === 'true';
-const BUILD_SHA = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? 'unknown';
->>>>>>> 7b6b28a (`Refactor career routes and jobs pages to use new career path canonicalization`)
 
 const PUBLIC_PATHS = [
   '/',
@@ -17,7 +12,6 @@ const PUBLIC_PATHS = [
   '/forgot-password',
   '/reset-password',
   '/communities',
-  '/career/jobs',
   '/jobs',
   '/career/jobs',
   '/careers',
@@ -118,69 +112,10 @@ function isApiPath(pathname: string) {
   return pathname.startsWith('/api/');
 }
 
-<<<<<<< HEAD
-=======
-function isCareerDebugPath(pathname: string) {
-  return (
-    pathname === '/career' ||
-    pathname.startsWith('/career/') ||
-    pathname === '/jobs' ||
-    pathname.startsWith('/jobs/') ||
-    pathname === '/careers' ||
-    pathname.startsWith('/careers/') ||
-    pathname === '/carreers' ||
-    pathname.startsWith('/carreers/')
-  );
-}
-
-function stripInternalSearchParams(url: URL) {
-  const nextUrl = new URL(url.toString());
-  nextUrl.searchParams.delete('_rsc');
-  return nextUrl;
-}
-
-function applyCareerDebugHeaders(
-  response: NextResponse,
-  canonicalPath: '/career' | '/career/jobs',
-  authDecision: 'pass' | 'public' | 'redirect-login' | 'canonical-redirect',
-) {
-  response.headers.set('x-credvia-middleware', 'hit');
-  response.headers.set('x-credvia-build-sha', BUILD_SHA);
-  response.headers.set('x-credvia-route-canonical', canonicalPath);
-  response.headers.set('x-credvia-auth-decision', authDecision);
-  return response;
-}
-
-function getCanonicalCareerPath(pathname: string) {
-  if (pathname === '/jobs' || pathname.startsWith('/jobs/')) {
-    return pathname.replace(/^\/jobs/, '/career/jobs');
-  }
-
-  if (pathname === '/careers' || pathname.startsWith('/careers/')) {
-    return pathname.replace(/^\/careers/, '/career');
-  }
-
-  if (pathname === '/carreers' || pathname.startsWith('/carreers/')) {
-    return pathname.replace(/^\/carreers/, '/career');
-  }
-
-  return null;
-}
-
-function logMiddlewareInfo(message: string, meta?: Record<string, unknown>) {
-  if (!VERBOSE_MIDDLEWARE_LOGGING) {
-    return;
-  }
-
-  logInfo('middleware', message, meta);
-}
-
->>>>>>> 7b6b28a (`Refactor career routes and jobs pages to use new career path canonicalization`)
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const method = request.method;
 
-<<<<<<< HEAD
   if (pathname === '/jobs' || pathname.startsWith('/jobs/')) {
     const url = stripInternalSearchParams(request.nextUrl);
     url.pathname = pathname.replace('/jobs', '/career/jobs');
@@ -197,17 +132,6 @@ export async function middleware(request: NextRequest) {
     const url = stripInternalSearchParams(request.nextUrl);
     url.pathname = pathname.replace('/carreers', '/career');
     return applyCareerDebugHeaders(NextResponse.redirect(url), pathname, 'public');
-=======
-  const canonicalCareerPath = getCanonicalCareerPath(pathname);
-  if (canonicalCareerPath) {
-    const redirectUrl = stripInternalSearchParams(request.nextUrl);
-    redirectUrl.pathname = canonicalCareerPath;
-    return applyCareerDebugHeaders(
-      NextResponse.redirect(redirectUrl),
-      canonicalCareerPath.startsWith('/career/jobs') ? '/career/jobs' : '/career',
-      'canonical-redirect',
-    );
->>>>>>> 7b6b28a (`Refactor career routes and jobs pages to use new career path canonicalization`)
   }
 
   if (shouldBypassMiddleware(pathname)) {
@@ -242,15 +166,7 @@ export async function middleware(request: NextRequest) {
     logInfo('middleware', 'Redirecting unauthenticated request to login', {
       pathname,
     });
-<<<<<<< HEAD
     return applyCareerDebugHeaders(NextResponse.redirect(new URL('/login', request.url)), pathname, 'redirect-login');
-=======
-    const loginRedirect = NextResponse.redirect(new URL('/login', stripInternalSearchParams(request.nextUrl)));
-    if (pathname === '/career' || pathname.startsWith('/career/')) {
-      return applyCareerDebugHeaders(loginRedirect, '/career', 'redirect-login');
-    }
-    return loginRedirect;
->>>>>>> 7b6b28a (`Refactor career routes and jobs pages to use new career path canonicalization`)
   }
 
   if (!isApiPath(pathname) && user && (pathname === '/login' || pathname === '/signup')) {
@@ -264,20 +180,7 @@ export async function middleware(request: NextRequest) {
     pathname,
     hasUser: Boolean(user),
   });
-<<<<<<< HEAD
   return applyCareerDebugHeaders(response, pathname, user ? 'pass' : 'public');
-=======
-
-  if (isCareerDebugPath(pathname)) {
-    return applyCareerDebugHeaders(
-      response,
-      pathname.startsWith('/career/jobs') ? '/career/jobs' : '/career',
-      isPublicPath(pathname) ? 'public' : 'pass',
-    );
-  }
-
-  return response;
->>>>>>> 7b6b28a (`Refactor career routes and jobs pages to use new career path canonicalization`)
 }
 
 export const config = {
