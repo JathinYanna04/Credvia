@@ -13,6 +13,7 @@ async function getAvailablePort() {
 
   return await new Promise((resolve, reject) => {
     const server = createServer();
+
     server.listen(0, () => {
       const address = server.address();
       if (!address || typeof address === 'string') {
@@ -20,9 +21,10 @@ async function getAvailablePort() {
         return;
       }
 
-      const availablePort = String(address.port);
-      server.close(() => resolve(availablePort));
+      const port = String(address.port);
+      server.close(() => resolve(port));
     });
+
     server.on('error', reject);
   });
 }
@@ -33,6 +35,17 @@ const checks = [
     assert: (response) => {
       if (response.status !== 307 || response.headers.get('location') !== '/login') {
         throw new Error(`Expected /career to redirect to /login, got ${response.status} ${response.headers.get('location') ?? ''}`);
+      }
+    },
+  },
+  {
+    path: '/career?_rsc=test',
+    assert: (response) => {
+      if (response.status === 404) {
+        throw new Error('Expected /career?_rsc=test to avoid 404.');
+      }
+      if (response.status !== 307 || response.headers.get('location') !== '/login') {
+        throw new Error(`Expected /career?_rsc=test to redirect to /login, got ${response.status} ${response.headers.get('location') ?? ''}`);
       }
     },
   },
@@ -74,7 +87,7 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForServerReady(childProcess) {
+async function waitForServerReady(childProcess, port) {
   let output = '';
 
   return await new Promise((resolve, reject) => {
@@ -82,24 +95,52 @@ async function waitForServerReady(childProcess) {
       reject(new Error(`Timed out waiting for next start on port ${port}.\n${output}`));
     }, 60000);
 
+    function cleanup() {
+      clearTimeout(timeout);
+      childProcess.stdout?.off('data', onData);
+      childProcess.stderr?.off('data', onData);
+      childProcess.off('exit', onExit);
+    }
+
     function onData(chunk) {
       output += chunk.toString();
 
-      if (output.includes('Ready in')) {
-        clearTimeout(timeout);
-        childProcess.stdout?.off('data', onData);
-        childProcess.stderr?.off('data', onData);
+      if (output.includes('Ready in') || output.includes('started server on')) {
+        cleanup();
         resolve(output);
       }
     }
 
+    function onExit(code) {
+      cleanup();
+      reject(new Error(`next start exited early with code ${code}.\n${output}`));
+    }
+
     childProcess.stdout?.on('data', onData);
     childProcess.stderr?.on('data', onData);
-    childProcess.on('exit', (code) => {
-      clearTimeout(timeout);
-      reject(new Error(`next start exited early with code ${code}.\n${output}`));
-    });
+    childProcess.on('exit', onExit);
   });
+}
+
+async function stopProcessTree(childProcess) {
+  if (!childProcess.pid) {
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/pid', String(childProcess.pid), '/t', '/f'], {
+      stdio: 'ignore',
+    });
+    await new Promise((resolve) => killer.on('exit', resolve));
+    return;
+  }
+
+  childProcess.kill('SIGTERM');
+  await wait(500);
+
+  if (!childProcess.killed) {
+    childProcess.kill('SIGKILL');
+  }
 }
 
 async function main() {
@@ -112,7 +153,7 @@ async function main() {
   });
 
   try {
-    await waitForServerReady(childProcess);
+    await waitForServerReady(childProcess, port);
     await wait(1000);
 
     for (const check of checks) {
@@ -129,11 +170,7 @@ async function main() {
       console.log(`[verify-career-routes] ${check.path} OK -> ${response.status} ${response.headers.get('location') ?? ''}`.trim());
     }
   } finally {
-    childProcess.kill('SIGTERM');
-    await wait(500);
-    if (!childProcess.killed) {
-      childProcess.kill('SIGKILL');
-    }
+    await stopProcessTree(childProcess);
   }
 }
 

@@ -36,6 +36,40 @@ const nextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: '/jobs',
+        destination: '/career/jobs',
+        permanent: false,
+      },
+      {
+        source: '/jobs/:path*',
+        destination: '/career/jobs/:path*',
+        permanent: false,
+      },
+      {
+        source: '/careers',
+        destination: '/career',
+        permanent: false,
+      },
+      {
+        source: '/careers/:path*',
+        destination: '/career/:path*',
+        permanent: false,
+      },
+      {
+        source: '/carreers',
+        destination: '/career',
+        permanent: false,
+      },
+      {
+        source: '/carreers/:path*',
+        destination: '/career/:path*',
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

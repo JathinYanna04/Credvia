@@ -49,6 +49,12 @@ function getCanonicalCareerPath(pathname: string) {
   return pathname;
 }
 
+function stripInternalSearchParams(url: URL) {
+  const nextUrl = new URL(url.toString());
+  nextUrl.searchParams.delete('_rsc');
+  return nextUrl;
+}
+
 function applyCareerDebugHeaders(response: NextResponse, pathname: string, authDecision: 'public' | 'redirect-login' | 'pass') {
   if (!isCareerDebugPath(pathname)) {
     return response;
@@ -111,19 +117,19 @@ export async function middleware(request: NextRequest) {
   const method = request.method;
 
   if (pathname === '/jobs' || pathname.startsWith('/jobs/')) {
-    const url = request.nextUrl.clone();
+    const url = stripInternalSearchParams(request.nextUrl);
     url.pathname = pathname.replace('/jobs', '/career/jobs');
     return applyCareerDebugHeaders(NextResponse.redirect(url), pathname, 'public');
   }
 
   if (pathname === '/careers' || pathname.startsWith('/careers/')) {
-    const url = request.nextUrl.clone();
+    const url = stripInternalSearchParams(request.nextUrl);
     url.pathname = pathname.replace('/careers', '/career');
     return applyCareerDebugHeaders(NextResponse.redirect(url), pathname, 'public');
   }
 
   if (pathname === '/carreers' || pathname.startsWith('/carreers/')) {
-    const url = request.nextUrl.clone();
+    const url = stripInternalSearchParams(request.nextUrl);
     url.pathname = pathname.replace('/carreers', '/career');
     return applyCareerDebugHeaders(NextResponse.redirect(url), pathname, 'public');
   }

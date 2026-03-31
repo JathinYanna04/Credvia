@@ -46,6 +46,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify career manifest
+        run: npm run verify:career-manifest
+
       - name: Verify career routes
         run: npm run verify:career-routes
 
