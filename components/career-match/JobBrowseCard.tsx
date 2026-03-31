@@ -5,9 +5,10 @@ import { Badge } from '@/components/ui/badge';
 
 export interface JobBrowseCardProps {
   job: CareerJob;
+  detailHrefBase?: string;
 }
 
-export function JobBrowseCard({ job }: JobBrowseCardProps) {
+export function JobBrowseCard({ job, detailHrefBase = '/career/jobs' }: JobBrowseCardProps) {
   return (
     <article className="surface-panel space-y-4 p-5">
       <div className="flex flex-wrap items-center gap-2">
@@ -17,12 +18,12 @@ export function JobBrowseCard({ job }: JobBrowseCardProps) {
       </div>
 
       <div>
-        <Link href={`/jobs/${job.id}`} className="text-xl font-semibold text-text-primary hover:text-accent">
+        <Link href={`${detailHrefBase}/${job.id}`} className="text-xl font-semibold text-text-primary hover:text-accent">
           {job.title}
         </Link>
         <p className="mt-1 text-sm text-text-secondary">
           {job.company?.company_name ?? 'Unknown company'}
-          {job.location ? ` · ${job.location}` : ''}
+          {job.location ? ` - ${job.location}` : ''}
         </p>
       </div>
 

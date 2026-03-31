@@ -46,6 +46,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify career routes
+        run: npm run verify:career-routes
+
   supabase-migrate:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -103,6 +106,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Log deploy commit
+        run: echo "Deploying commit $GITHUB_SHA"
+
       - name: Skip Vercel deploy
         if: ${{ env.VERCEL_TOKEN == '' || env.VERCEL_ORG_ID == '' || env.VERCEL_PROJECT_ID == '' }}
         run: echo "Skipping Vercel deploy because required secrets are missing."
@@ -117,4 +123,24 @@ jobs:
 
       - name: Deploy to Vercel
         if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
-        run: npx vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"
+        id: vercel_deploy
+        shell: bash
+        run: |
+          npx vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN" 2>&1 | tee /tmp/vercel-deploy.log
+          DEPLOYMENT_URL="$(grep -Eo 'https://[^ ]+\.vercel\.app' /tmp/vercel-deploy.log | tail -n 1)"
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "Could not determine Vercel deployment URL."
+            exit 1
+          fi
+          echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed URL: $DEPLOYMENT_URL"
+
+      - name: Inspect deployed production build
+        if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
+        run: npx vercel inspect "${{ steps.vercel_deploy.outputs.deployment_url }}" --logs --token "$VERCEL_TOKEN"
+
+      - name: Probe deployed career routes
+        if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
+        env:
+          EXPECTED_BUILD_SHA: ${{ github.sha }}
+        run: node scripts/probe-production-career-routes.mjs "${{ steps.vercel_deploy.outputs.deployment_url }}"

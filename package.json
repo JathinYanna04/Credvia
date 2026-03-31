@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "node scripts/type-check.mjs",
+    "probe:career-production": "node scripts/probe-production-career-routes.mjs",
+    "verify:career-routes": "node scripts/verify-career-routes.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write ."

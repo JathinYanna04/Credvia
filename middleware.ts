@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 import { logInfo } from '@/lib/utils/logger';
 
-const VERBOSE_MIDDLEWARE_LOGGING = process.env.CREDVIA_VERBOSE_MIDDLEWARE === 'true';
+const BUILD_SHA = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || 'unknown';
 
 const PUBLIC_PATHS = [
   '/',
@@ -13,9 +13,53 @@ const PUBLIC_PATHS = [
   '/reset-password',
   '/communities',
   '/jobs',
+  '/career/jobs',
+  '/careers',
+  '/carreers',
   '/legal',
   '/auth/callback',
 ];
+
+function isCareerDebugPath(pathname: string) {
+  return (
+    pathname === '/career' ||
+    pathname.startsWith('/career/') ||
+    pathname === '/jobs' ||
+    pathname.startsWith('/jobs/') ||
+    pathname === '/careers' ||
+    pathname.startsWith('/careers/') ||
+    pathname === '/carreers' ||
+    pathname.startsWith('/carreers/')
+  );
+}
+
+function getCanonicalCareerPath(pathname: string) {
+  if (pathname === '/jobs' || pathname.startsWith('/jobs/')) {
+    return pathname.replace('/jobs', '/career/jobs');
+  }
+
+  if (pathname === '/careers' || pathname.startsWith('/careers/')) {
+    return pathname.replace('/careers', '/career');
+  }
+
+  if (pathname === '/carreers' || pathname.startsWith('/carreers/')) {
+    return pathname.replace('/carreers', '/career');
+  }
+
+  return pathname;
+}
+
+function applyCareerDebugHeaders(response: NextResponse, pathname: string, authDecision: 'public' | 'redirect-login' | 'pass') {
+  if (!isCareerDebugPath(pathname)) {
+    return response;
+  }
+
+  response.headers.set('x-credvia-middleware', 'hit');
+  response.headers.set('x-credvia-build-sha', BUILD_SHA);
+  response.headers.set('x-credvia-route-canonical', getCanonicalCareerPath(pathname));
+  response.headers.set('x-credvia-auth-decision', authDecision);
+  return response;
+}
 
 function isPublicPath(pathname: string) {
   return (
@@ -62,26 +106,36 @@ function isApiPath(pathname: string) {
   return pathname.startsWith('/api/');
 }
 
-function logMiddlewareInfo(message: string, meta?: Record<string, unknown>) {
-  if (!VERBOSE_MIDDLEWARE_LOGGING) {
-    return;
-  }
-
-  logInfo('middleware', message, meta);
-}
-
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const method = request.method;
 
+  if (pathname === '/jobs' || pathname.startsWith('/jobs/')) {
+    const url = request.nextUrl.clone();
+    url.pathname = pathname.replace('/jobs', '/career/jobs');
+    return applyCareerDebugHeaders(NextResponse.redirect(url), pathname, 'public');
+  }
+
+  if (pathname === '/careers' || pathname.startsWith('/careers/')) {
+    const url = request.nextUrl.clone();
+    url.pathname = pathname.replace('/careers', '/career');
+    return applyCareerDebugHeaders(NextResponse.redirect(url), pathname, 'public');
+  }
+
+  if (pathname === '/carreers' || pathname.startsWith('/carreers/')) {
+    const url = request.nextUrl.clone();
+    url.pathname = pathname.replace('/carreers', '/career');
+    return applyCareerDebugHeaders(NextResponse.redirect(url), pathname, 'public');
+  }
+
   if (shouldBypassMiddleware(pathname)) {
-    logMiddlewareInfo('Bypassing middleware for asset/system request', {
+    logInfo('middleware', 'Bypassing middleware for asset/system request', {
       pathname,
     });
     return NextResponse.next();
   }
 
-  logMiddlewareInfo('Middleware handling request', {
+  logInfo('middleware', 'Middleware handling request', {
     pathname,
   });
 
@@ -89,10 +143,10 @@ export async function middleware(request: NextRequest) {
 
   if (!user && !isPublicPath(pathname) && !isPublicApiRequest(pathname, method)) {
     if (isApiPath(pathname)) {
-      logMiddlewareInfo('Returning JSON 401 for unauthenticated API request', {
+      logInfo('middleware', 'Returning JSON 401 for unauthenticated API request', {
         pathname,
       });
-      return NextResponse.json(
+      return applyCareerDebugHeaders(NextResponse.json(
         {
           error: {
             code: 'UNAUTHORIZED',
@@ -100,27 +154,27 @@ export async function middleware(request: NextRequest) {
           },
         },
         { status: 401 },
-      );
+      ), pathname, 'redirect-login');
     }
 
-    logMiddlewareInfo('Redirecting unauthenticated request to login', {
+    logInfo('middleware', 'Redirecting unauthenticated request to login', {
       pathname,
     });
-    return NextResponse.redirect(new URL('/login', request.url));
+    return applyCareerDebugHeaders(NextResponse.redirect(new URL('/login', request.url)), pathname, 'redirect-login');
   }
 
   if (!isApiPath(pathname) && user && (pathname === '/login' || pathname === '/signup')) {
-    logMiddlewareInfo('Redirecting authenticated user away from auth page', {
+    logInfo('middleware', 'Redirecting authenticated user away from auth page', {
       pathname,
     });
     return NextResponse.redirect(new URL('/feed', request.url));
   }
 
-  logMiddlewareInfo('Allowing request to continue', {
+  logInfo('middleware', 'Allowing request to continue', {
     pathname,
     hasUser: Boolean(user),
   });
-  return response;
+  return applyCareerDebugHeaders(response, pathname, user ? 'pass' : 'public');
 }
 
 export const config = {
