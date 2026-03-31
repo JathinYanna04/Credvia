@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, Compass, Home, User, Users } from 'lucide-react';
+import { Bell, Compass, Home, Plus, User, Users } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 const iconMap = {
   home: Home,
   explore: Compass,
+  create: Plus,
   communities: Users,
   notifications: Bell,
   profile: User,
@@ -21,6 +22,7 @@ export interface PrimaryNavItem {
   label: string;
   icon: PrimaryNavIcon;
   badge?: number;
+  accent?: boolean;
 }
 
 export function PrimaryNav({
@@ -34,7 +36,7 @@ export function PrimaryNav({
 
   if (mobile) {
     return (
-      <>
+      <div className="grid w-full grid-cols-5 gap-1">
         {items.map((item) => {
           const Icon = iconMap[item.icon];
           const active =
@@ -47,22 +49,38 @@ export function PrimaryNav({
               href={item.href}
               aria-label={item.label}
               className={cn(
-                'relative inline-flex h-11 w-11 items-center justify-center rounded-2xl transition-colors',
-                active
-                  ? 'bg-accent/12 text-accent shadow-sm'
-                  : 'text-text-secondary hover:bg-bg-surface hover:text-text-primary',
+                'relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[11px] font-medium transition-all duration-200 active:scale-[0.97]',
+                item.accent
+                  ? 'text-accent'
+                  : active
+                    ? 'bg-accent/12 text-accent shadow-sm'
+                    : 'text-text-secondary hover:bg-bg-surface hover:text-text-primary',
               )}
             >
-              <Icon className="h-5 w-5" />
+              <div
+                className={cn(
+                  'relative flex h-11 w-11 items-center justify-center rounded-2xl transition-all duration-200',
+                  item.accent
+                    ? 'bg-accent text-white shadow-[0_12px_28px_rgba(79,70,229,0.28)]'
+                    : active
+                      ? 'bg-accent/12 text-accent'
+                      : 'bg-transparent',
+                )}
+              >
+                <Icon className={cn('h-5 w-5', item.accent && 'h-5 w-5')} />
+              </div>
+              <span className={cn('truncate', item.accent && 'font-semibold text-text-primary')}>
+                {item.label}
+              </span>
               {item.badge && item.badge > 0 ? (
-                <span className="absolute right-1 top-1 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] font-semibold text-white">
+                <span className="absolute right-2 top-1 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] font-semibold text-white">
                   {item.badge > 9 ? '9+' : item.badge}
                 </span>
               ) : null}
             </Link>
           );
         })}
-      </>
+      </div>
     );
   }
 

@@ -75,7 +75,7 @@ export function VoteButtons({
           type="button"
           disabled={loading}
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition hover:bg-bg-overlay hover:text-accent',
+            'flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition hover:bg-bg-overlay hover:text-accent active:scale-[0.97]',
             vote === 1 && 'bg-[rgba(34,211,238,0.12)] text-accent',
           )}
           onClick={() => void applyVote(1)}
@@ -96,7 +96,7 @@ export function VoteButtons({
           type="button"
           disabled={loading}
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition hover:bg-bg-overlay hover:text-danger',
+            'flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition hover:bg-bg-overlay hover:text-danger active:scale-[0.97]',
             vote === -1 && 'bg-[rgba(248,113,113,0.12)] text-danger',
           )}
           onClick={() => void applyVote(-1)}

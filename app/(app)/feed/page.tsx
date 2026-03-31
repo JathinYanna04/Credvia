@@ -33,12 +33,12 @@ export default function FeedPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-feed space-y-6">
-      <header className="space-y-2">
+    <div className="mx-auto max-w-feed space-y-4 pb-24 sm:space-y-6 sm:pb-8">
+      <header className="space-y-2 px-1">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-semibold">Home</h1>
-            <p className="mt-2 max-w-2xl text-sm text-text-secondary">
+            <h1 className="text-2xl font-semibold sm:text-3xl">Home</h1>
+            <p className="mt-1 max-w-2xl text-sm text-text-secondary">
               Read strong questions, help someone move forward, and build reputation where your work is strongest.
             </p>
           </div>
@@ -49,7 +49,7 @@ export default function FeedPage() {
       </header>
 
       {showOnboardingPrompt ? (
-        <div className="surface-panel flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="surface-panel flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div>
             <div className="text-sm font-semibold text-text-primary">Make your feed sharper</div>
             <p className="mt-1 text-sm text-text-secondary">
@@ -67,14 +67,7 @@ export default function FeedPage() {
         </div>
       ) : null}
 
-      <section className="surface-panel p-2 sm:p-3">
-        <div className="mb-1 px-3 pt-2 text-xs uppercase tracking-[0.16em] text-text-tertiary">
-          Your contribution loop
-        </div>
-        <div className="px-3 pb-1">
-          <FeedTabs value={tab} onValueChange={setTab} />
-        </div>
-      </section>
+      <FeedTabs value={tab} onValueChange={setTab} />
 
       <div className="space-y-4">
         {authExpired ? (
@@ -101,12 +94,6 @@ export default function FeedPage() {
         ) : null}
         {isEmpty ? <FeedEmpty /> : null}
         {posts?.map((post) => <PostCard key={post.id} post={post} />)}
-      </div>
-
-      <div className="pb-20 sm:hidden">
-        <Button asChild className="w-full">
-          <Link href="/post/new">Ask or share</Link>
-        </Button>
       </div>
 
       <InfiniteScroll />

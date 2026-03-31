@@ -1,6 +1,6 @@
 'use client';
 
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollablePillTabs } from '@/components/ui/ScrollablePillTabs';
 import type { FeedTab } from '@/lib/types';
 
 export interface FeedTabsProps {
@@ -10,11 +10,13 @@ export interface FeedTabsProps {
 
 export function FeedTabs({ value, onValueChange }: FeedTabsProps) {
   return (
-    <Tabs value={value} onValueChange={(next) => onValueChange(next as FeedTab)}>
-      <TabsList className="w-full justify-start gap-2 rounded-2xl bg-transparent p-0">
-        <TabsTrigger value="for-you">For You</TabsTrigger>
-        <TabsTrigger value="communities">Communities</TabsTrigger>
-      </TabsList>
-    </Tabs>
+    <ScrollablePillTabs
+      value={value}
+      onValueChange={onValueChange}
+      items={[
+        { value: 'for-you', label: 'For You' },
+        { value: 'communities', label: 'Communities' },
+      ]}
+    />
   );
 }

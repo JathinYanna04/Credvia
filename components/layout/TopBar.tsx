@@ -33,14 +33,14 @@ export async function TopBar() {
           </Link>
           <Link
             href="/post/new"
-            className="inline-flex h-11 items-center gap-2 rounded-2xl bg-accent px-4 text-sm font-medium text-white shadow-[0_12px_24px_rgba(79,70,229,0.18)] transition-colors hover:bg-accent-dim"
+            className="hidden h-11 items-center gap-2 rounded-2xl bg-accent px-4 text-sm font-medium text-white shadow-[0_12px_24px_rgba(79,70,229,0.18)] transition-colors hover:bg-accent-dim sm:inline-flex"
           >
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Ask or share</span>
+            <span>Ask or share</span>
           </Link>
           <Link
             href="/notifications"
-            className="relative inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-border-subtle bg-bg-surface text-text-secondary shadow-sm transition-colors hover:border-border-default hover:text-text-primary"
+            className="relative hidden h-11 w-11 items-center justify-center rounded-2xl border border-border-subtle bg-bg-surface text-text-secondary shadow-sm transition-colors hover:border-border-default hover:text-text-primary sm:inline-flex"
             aria-label="Notifications"
           >
             <Bell className="h-4 w-4" />

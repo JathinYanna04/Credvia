@@ -29,7 +29,7 @@ export function NotificationItem({ notification }: NotificationItemProps) {
             ? 'border-accent/25 bg-accent/10'
             : 'border-accent/15 bg-accent/5'
           : 'border-border-subtle bg-bg-surface'
-      }`}
+      } active:scale-[0.99]`}
     >
       <div className="flex gap-3">
         <div
@@ -53,7 +53,7 @@ export function NotificationItem({ notification }: NotificationItemProps) {
             ) : null}
           </div>
           <p className="text-sm leading-6 text-text-primary">
-            <span className="font-medium">{notification.actor.username}</span> {notification.description}
+            <span className="font-semibold">{notification.actor.username}</span> {notification.description}
           </p>
           <p className="mt-1 text-xs text-text-tertiary">
             {formatRelativeTime(notification.createdAt)}
