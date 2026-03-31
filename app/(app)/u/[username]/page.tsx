@@ -1,6 +1,7 @@
 import { PostCard } from '@/components/feed/PostCard';
 import { CommentThread } from '@/components/comments/CommentThread';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
+import { CareerProfileBlock } from '@/components/profile/CareerProfileBlock';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getPublicProfileBundle } from '@/lib/supabase/public-profile';
 
@@ -10,13 +11,14 @@ export default async function ProfilePage({ params }: { params: { username: stri
     data: { user: currentUser },
   } = await supabase.auth.getUser();
   const profile = await getPublicProfileBundle(params.username);
+  const isOwner = currentUser?.id === profile.user.id;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <ProfileHeader
         user={profile.user}
         showFollowAction={false}
-        editHref={currentUser?.id === profile.user.id ? '/settings' : null}
+        editHref={isOwner ? '/settings' : null}
         contributionCount={profile.posts.length}
         commentCount={profile.comments.length}
       />
@@ -43,6 +45,8 @@ export default async function ProfilePage({ params }: { params: { username: stri
                 The fastest way to understand who this person is, what they know, and where they are earning trust.
               </p>
             </div>
+
+            <CareerProfileBlock isOwner={isOwner} />
 
             <div className="surface-panel p-5">
               <h3 className="text-lg font-semibold text-text-primary">Skills</h3>

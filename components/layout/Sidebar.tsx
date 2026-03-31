@@ -17,6 +17,7 @@ export async function Sidebar() {
   const primaryItems: PrimaryNavItem[] = [
     { href: '/feed', label: 'Home', icon: 'home' },
     { href: '/explore', label: 'Explore', icon: 'explore' },
+    { href: '/career', label: 'Career', icon: 'career' },
     { href: '/communities', label: 'My Communities', icon: 'communities' },
     { href: '/notifications', label: 'Notifications', icon: 'notifications', badge: unreadNotifications },
     { href: `/u/${currentUser.username}`, label: 'Profile', icon: 'profile' },
@@ -31,6 +32,40 @@ export async function Sidebar() {
       </Link>
 
       <PrimaryNav items={primaryItems} />
+
+      <div className="mt-5 rounded-2xl border border-border-subtle bg-bg-surface p-4">
+        <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Career tools</div>
+        <div className="mt-3 space-y-1">
+          <Link
+            href="/resume"
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
+          >
+            <BriefcaseBusiness className="h-4 w-4" />
+            Resume
+          </Link>
+          <Link
+            href="/jobs"
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
+          >
+            <BriefcaseBusiness className="h-4 w-4" />
+            Job Search
+          </Link>
+          <Link
+            href="/career-match"
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
+          >
+            <BriefcaseBusiness className="h-4 w-4" />
+            Career Match
+          </Link>
+          <Link
+            href="/career#saved"
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
+          >
+            <BriefcaseBusiness className="h-4 w-4" />
+            Saved roles
+          </Link>
+        </div>
+      </div>
 
       {!onboardingComplete ? (
         <div className="surface-panel mt-5 space-y-3 p-4">
@@ -79,10 +114,6 @@ export async function Sidebar() {
             <Link href="/ideas" className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
               <Lightbulb className="h-4 w-4" />
               Startup Ideas
-            </Link>
-            <Link href="/career-match" className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
-              <BriefcaseBusiness className="h-4 w-4" />
-              Career Match
             </Link>
           </div>
         </div>

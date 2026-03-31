@@ -8,7 +8,7 @@ export async function MobileNav() {
   const items: PrimaryNavItem[] = [
     { href: '/feed', label: 'Home', icon: 'home' },
     { href: '/explore', label: 'Explore', icon: 'explore' },
-    { href: '/post/new', label: 'Create', icon: 'create', accent: true },
+    { href: '/career', label: 'Career', icon: 'career', accent: true },
     { href: '/notifications', label: 'Notifications', icon: 'notifications', badge: unreadNotifications },
     { href: currentUser ? `/u/${currentUser.username}` : '/login', label: 'Profile', icon: 'profile' },
   ];

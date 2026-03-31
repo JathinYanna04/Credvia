@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, Compass, Home, Plus, User, Users } from 'lucide-react';
+import { Bell, BriefcaseBusiness, Compass, Home, Plus, User, Users } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 const iconMap = {
   home: Home,
   explore: Compass,
   create: Plus,
+  career: BriefcaseBusiness,
   communities: Users,
   notifications: Bell,
   profile: User,

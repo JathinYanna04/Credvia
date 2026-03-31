@@ -174,6 +174,35 @@ export default async function ExplorePage({
         </section>
       ) : (
         <section className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Link href="/career" className="surface-panel card-lift block p-5">
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Career hub</div>
+              <h2 className="mt-3 text-xl font-semibold text-text-primary">Build credibility, then grow your career</h2>
+              <p className="mt-2 text-sm text-text-secondary">
+                Upload your resume, run Career Match, and browse startup roles in one flow.
+              </p>
+              <div className="mt-4 inline-flex items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+                Open Career Hub
+              </div>
+            </Link>
+            <div className="surface-panel p-5">
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Quick paths</div>
+              <div className="mt-4 space-y-2 text-sm">
+                <Link href="/resume" className="flex items-center justify-between rounded-xl border border-border-subtle px-4 py-3 text-text-secondary hover:border-border-default hover:text-text-primary">
+                  Resume
+                  <span className="text-xs text-text-tertiary">Upload or analyze</span>
+                </Link>
+                <Link href="/jobs" className="flex items-center justify-between rounded-xl border border-border-subtle px-4 py-3 text-text-secondary hover:border-border-default hover:text-text-primary">
+                  Job search
+                  <span className="text-xs text-text-tertiary">Browse roles</span>
+                </Link>
+                <Link href="/career-match" className="flex items-center justify-between rounded-xl border border-border-subtle px-4 py-3 text-text-secondary hover:border-border-default hover:text-text-primary">
+                  Career Match
+                  <span className="text-xs text-text-tertiary">See ranked fits</span>
+                </Link>
+              </div>
+            </div>
+          </div>
           <div>
             <h2 className="text-xl font-semibold">Popular communities</h2>
             <p className="mt-1 text-sm text-text-secondary">
