@@ -189,4 +189,117 @@ describe('resume analyze route', () => {
     });
     expect(recomputeMatchesForResume).not.toHaveBeenCalled();
   });
+
+  it('returns 409 when analysis is already in progress', async () => {
+    const supabase = createSupabaseMock({
+      latestRun: {
+        id: 'run-1',
+        resume_id: 'resume-1',
+        user_id: 'user-1',
+        status: 'running',
+        error_message: null,
+        started_at: new Date().toISOString(),
+        completed_at: null,
+        created_at: new Date().toISOString(),
+      },
+    });
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getOwnedResume.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'uploaded',
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.error).toEqual({
+      code: 'ANALYSIS_IN_PROGRESS',
+      message: 'Resume analysis is already running.',
+    });
+    expect(analyzeStoredResume).not.toHaveBeenCalled();
+    expect(recomputeMatchesForResume).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the resume does not exist', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getOwnedResume.mockResolvedValue(null);
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(payload.error).toEqual({
+      code: 'NOT_FOUND',
+      message: 'Resume not found.',
+    });
+    expect(analyzeStoredResume).not.toHaveBeenCalled();
+  });
+
+  it('returns 422 RESUME_FILE_MISSING when storage download fails', async () => {
+    const supabase = createSupabaseMock({
+      downloadError: { message: 'Object not found' },
+    });
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getOwnedResume.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'uploaded',
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error).toEqual({
+      code: 'RESUME_FILE_MISSING',
+      message: 'Upload a resume file before analysis.',
+    });
+    expect(analyzeStoredResume).not.toHaveBeenCalled();
+    expect(recomputeMatchesForResume).not.toHaveBeenCalled();
+  });
 });
