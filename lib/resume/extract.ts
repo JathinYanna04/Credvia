@@ -112,6 +112,11 @@ export function __setResumeExtractionTestOverrides(
   resumeExtractionTestOverrides = overrides;
 }
 
+export interface ExtractResumeTextOptions {
+  forceOcr?: boolean;
+  forceOCR?: boolean;
+}
+
 export function getResumeExtension(filename: string) {
   const extension = filename.toLowerCase().split('.').pop();
   return extension === 'pdf' || extension === 'docx' || extension === 'doc'
@@ -196,6 +201,10 @@ function mergeWrappedLines(text: string) {
   return merged.join('\n');
 }
 
+function dehyphenateWrappedWords(text: string) {
+  return text.replace(/([A-Za-z])-\n\s*(?=[A-Za-z])/g, '$1');
+}
+
 function normalizeExtractedText(text: string, source: 'pdf' | 'docx' = 'pdf') {
   let normalized = text;
 
@@ -214,6 +223,7 @@ function normalizeExtractedText(text: string, source: 'pdf' | 'docx' = 'pdf') {
     .replace(/[^\S\n]+$/gm, '')
     .trim();
 
+  normalized = dehyphenateWrappedWords(normalized);
   normalized = mergeWrappedLines(normalized)
     .replace(/[ \t]+/g, ' ')
     .replace(/[ \t]+\n/g, '\n')
@@ -504,7 +514,9 @@ export async function extractResumeText(
   fileBuffer: Buffer,
   mimeType: string,
   filename: string,
+  options: ExtractResumeTextOptions = {},
 ): Promise<ResumeExtractionResult> {
+  const forceOcrRequested = options.forceOcr ?? options.forceOCR ?? false;
   const attemptedMethods: ResumeExtractionMethod[] = [];
   const overrides = resumeExtractionTestOverrides;
 
@@ -573,14 +585,18 @@ export async function extractResumeText(
       });
       bestCandidate = chooseBetterCandidate(bestCandidate, candidate);
 
-      if (candidate.quality.isAcceptable && candidate.quality.confidenceTier !== 'low') {
+      if (
+        !forceOcrRequested &&
+        candidate.quality.isAcceptable &&
+        candidate.quality.confidenceTier !== 'low'
+      ) {
         return candidate;
       }
     } catch {
     }
   }
 
-  if (shouldAttemptOcr(bestCandidate)) {
+  if (forceOcrRequested || shouldAttemptOcr(bestCandidate)) {
     attemptedMethods.push('pdf-ocr');
 
     try {
@@ -596,6 +612,10 @@ export async function extractResumeText(
         source: 'pdf',
       });
       bestCandidate = chooseBetterCandidate(bestCandidate, candidate);
+
+      if (forceOcrRequested && candidate.quality.isAcceptable) {
+        return candidate;
+      }
     } catch {
     }
   }

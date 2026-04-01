@@ -9,6 +9,7 @@ import type { CareerResumeDetail, CareerResumeSummary } from '@/components/caree
 import { formatDateTime, humanizeParseStatus, parseStatusVariant } from '@/components/career-match/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import type { AnalyzeResumeRequest, AnalyzeResumeResponse, ApiResponse } from '@/lib/types';
 
 export default function ResumePage() {
   const [resumes, setResumes] = useState<CareerResumeSummary[] | null>(null);
@@ -19,6 +20,7 @@ export default function ResumePage() {
   const [authExpired, setAuthExpired] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
+  const [forceOCR, setForceOCR] = useState(false);
 
   useEffect(() => {
     setError(null);
@@ -106,12 +108,17 @@ export default function ResumePage() {
     setDetailError(null);
 
     try {
+      const analyzeRequest: AnalyzeResumeRequest = {
+        rerun: selectedResume?.parse_status === 'parsed',
+        forceOCR,
+      };
+
       const response = await fetch(`/api/v1/resumes/${selectedResumeId}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(analyzeRequest),
       });
-      const payload = (await response.json()) as { error?: { code?: string; message?: string } };
+      const payload = (await response.json()) as ApiResponse<AnalyzeResumeResponse>;
 
       if (response.status === 401) {
         setAuthExpired(true);
@@ -212,7 +219,16 @@ export default function ResumePage() {
               resume={selectedResume}
               latestRun={detail?.analysisRuns?.[0] ?? null}
               analysisReadiness={analysisReadiness}
+              extractionMeta={
+                detail?.profile?.raw_sections &&
+                typeof detail.profile.raw_sections === 'object' &&
+                '__meta' in detail.profile.raw_sections
+                  ? (detail.profile.raw_sections.__meta as Record<string, unknown>)
+                  : null
+              }
               analyzing={analyzing}
+              forceOCR={forceOCR}
+              onForceOCRChange={setForceOCR}
               onAnalyze={handleAnalyze}
             />
           ) : (

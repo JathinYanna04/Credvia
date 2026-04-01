@@ -19,7 +19,10 @@ export interface ResumeAnalysisStatusProps {
   resume: CareerResumeSummary;
   latestRun: CareerAnalysisRun | null;
   analysisReadiness: CareerResumeAnalysisReadiness;
+  extractionMeta?: Record<string, unknown> | null;
   analyzing: boolean;
+  forceOCR: boolean;
+  onForceOCRChange: (value: boolean) => void;
   onAnalyze: () => Promise<void> | void;
 }
 
@@ -27,11 +30,29 @@ export function ResumeAnalysisStatus({
   resume,
   latestRun,
   analysisReadiness,
+  extractionMeta,
   analyzing,
+  forceOCR,
+  onForceOCRChange,
   onAnalyze,
 }: ResumeAnalysisStatusProps) {
   const analysisMethod = describeAnalysisMethod(latestRun?.parser_version);
-  const usedOcr = Boolean(latestRun?.parser_version?.includes('pdf-ocr') || latestRun?.parser_version?.includes(':ocr'));
+  const metaUsedOcr = extractionMeta?.usedOcr;
+  const extractionQuality =
+    extractionMeta?.extractionQuality && typeof extractionMeta.extractionQuality === 'object'
+      ? (extractionMeta.extractionQuality as Record<string, unknown>)
+      : null;
+  const confidenceTier =
+    extractionQuality?.confidenceTier === 'high' ||
+    extractionQuality?.confidenceTier === 'medium' ||
+    extractionQuality?.confidenceTier === 'low'
+      ? extractionQuality.confidenceTier
+      : null;
+  const usedOcr = Boolean(
+    metaUsedOcr === true ||
+      latestRun?.parser_version?.includes('pdf-ocr') ||
+      latestRun?.parser_version?.includes(':ocr'),
+  );
   const analyzeDisabled = analyzing || !analysisReadiness.ready;
 
   return (
@@ -47,6 +68,15 @@ export function ResumeAnalysisStatus({
           <p className="text-sm text-text-secondary">
             Last upload: {formatDateTime(resume.uploaded_at)}
           </p>
+          <label className="mt-2 inline-flex items-center gap-2 text-xs text-text-secondary">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-border-default"
+              checked={forceOCR}
+              onChange={(event) => onForceOCRChange(event.target.checked)}
+            />
+            Force OCR for this run (slower, useful for scanned PDFs)
+          </label>
         </div>
         <Button type="button" variant="secondary" onClick={() => void onAnalyze()} disabled={analyzeDisabled}>
           {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
@@ -102,6 +132,12 @@ export function ResumeAnalysisStatus({
       {usedOcr && !latestRun?.error_message ? (
         <div className="rounded-2xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-info">
           OCR fallback was used for this resume because the original PDF text extraction was too weak.
+        </div>
+      ) : null}
+
+      {confidenceTier !== null && confidenceTier !== 'high' && !latestRun?.error_message ? (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          We analyzed your resume, but the text quality was limited. For best results, upload a text-based PDF.
         </div>
       ) : null}
     </section>
