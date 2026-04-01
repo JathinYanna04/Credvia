@@ -15,6 +15,17 @@ export async function getOwnedResume(
   return result.data;
 }
 
+export async function getResumeById(
+  supabase: TypedSupabaseClient,
+  resumeId: string,
+) {
+  const result = await supabase.from('resumes').select('*').eq('id', resumeId).maybeSingle();
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+  return result.data;
+}
+
 export async function getActiveResume(
   supabase: TypedSupabaseClient,
   userId: string,

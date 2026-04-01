@@ -142,3 +142,34 @@ export interface ApiResponse<T> {
     total?: number;
   };
 }
+
+export interface AnalyzeResumeRequest {
+  rerun?: boolean;
+  targetRole?: string;
+  jobDescription?: string;
+  forceOCR?: boolean;
+}
+
+export interface ResumeExtractionQualitySummary {
+  confidenceScore: number;
+  confidenceTier: 'high' | 'medium' | 'low';
+  likelyScannedPdf: boolean;
+  humanReadableRatio: number;
+  suspiciousTokenCount: number;
+  resumeHintCount: number;
+}
+
+export interface ResumeExtractionSummary {
+  method: string;
+  attemptedMethods: string[];
+  usedOcr: boolean;
+  ocrConfidence: number | null;
+  quality: ResumeExtractionQualitySummary;
+}
+
+export interface AnalyzeResumeResponse {
+  analyzed: boolean;
+  resumeId: string;
+  extraction?: ResumeExtractionSummary;
+  warning?: string | null;
+}

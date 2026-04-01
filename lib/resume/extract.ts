@@ -32,22 +32,28 @@ const RESUME_HINT_PATTERNS = [
   /\bmanager\b/gi,
   /\bportfolio\b/gi,
   /\bemail\b/gi,
+  /\+?\d[\d\s()+-]{7,}/g,
+  /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
 ];
 
 const OCR_PAGE_LIMIT = 3;
+const MIN_ACCEPTABLE_CONFIDENCE_SCORE = 45;
 
 export const RESUME_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
 
 export type ResumeExtractionMethod =
-  | 'docx-mammoth'
-  | 'pdfjs-text'
-  | 'pdf-parse-fallback'
+  | 'docx-direct'
+  | 'pdf-direct'
+  | 'pdf-cleaned'
   | 'pdf-token-fallback'
   | 'pdf-ocr';
 
 export interface ResumeTextQuality {
   isAcceptable: boolean;
   reason: string | null;
+  confidenceScore: number;
+  confidenceTier: 'high' | 'medium' | 'low';
+  likelyScannedPdf: boolean;
   humanReadableRatio: number;
   alphaWordCount: number;
   totalWordCount: number;
@@ -60,6 +66,7 @@ export interface ResumeExtractionResult {
   text: string;
   method: ResumeExtractionMethod;
   usedOcr: boolean;
+  attemptedMethods: ResumeExtractionMethod[];
   ocrConfidence: number | null;
   quality: ResumeTextQuality;
 }
@@ -69,10 +76,38 @@ export class ResumeExtractionError extends Error {
     message: string,
     public readonly quality: ResumeTextQuality | null = null,
     public readonly method: ResumeExtractionMethod | null = null,
+    public readonly attemptedMethods: ResumeExtractionMethod[] = [],
   ) {
     super(message);
     this.name = 'ResumeExtractionError';
   }
+}
+
+interface ExtractionCandidate {
+  text: string;
+  method: ResumeExtractionMethod;
+  usedOcr: boolean;
+  ocrConfidence: number | null;
+  quality: ResumeTextQuality;
+}
+
+export interface ResumeExtractionTestOverrides {
+  docxText?: string;
+  pdfDirectText?: string;
+  pdfCleanedText?: string;
+  pdfTokenText?: string;
+  pdfOcrText?: string;
+  ocrConfidence?: number | null;
+}
+
+export interface ExtractResumeTextOptions {
+  forceOcr?: boolean;
+}
+
+let resumeExtractionTestOverrides: ResumeExtractionTestOverrides | null = null;
+
+export function __setResumeExtractionTestOverrides(overrides: ResumeExtractionTestOverrides | null) {
+  resumeExtractionTestOverrides = overrides;
 }
 
 export function getResumeExtension(filename: string) {
@@ -90,17 +125,6 @@ export function isSupportedResumeMimeType(mimeType: string, filename: string) {
   );
 }
 
-function normalizeExtractedText(text: string) {
-  return text
-    .replace(/\u0000/g, ' ')
-    .replace(/[\u0001-\u0008\u000B-\u001A\u007F]/g, ' ')
-    .replace(/\r/g, '\n')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[^\S\n]+$/gm, '')
-    .trim();
-}
-
 function countPatternMatches(text: string, patterns: RegExp[]) {
   let total = 0;
 
@@ -112,16 +136,95 @@ function countPatternMatches(text: string, patterns: RegExp[]) {
   return total;
 }
 
+function normalizeBulletsAndDashes(text: string) {
+  return text
+    .replace(/[\u2022\u2023\u25E6\u2043\u2219]/g, '-')
+    .replace(/[\u2012\u2013\u2014\u2015]/g, '-');
+}
+
+function stripBinaryLikeFragments(text: string) {
+  return text
+    .replace(/\u0000/g, ' ')
+    .replace(/[\u0001-\u0008\u000B-\u001A\u007F]/g, ' ')
+    .replace(/[A-Za-z0-9+/]{80,}={0,2}/g, ' ')
+    .replace(/[A-Fa-f0-9]{48,}/g, ' ');
+}
+
+function stripPdfObjectNoise(text: string) {
+  let cleaned = text;
+
+  cleaned = cleaned.replace(/\b\d+\s+\d+\s+obj\b[\s\S]*?\bendobj\b/gi, ' ');
+  cleaned = cleaned.replace(/\bstream\b[\s\S]*?\bendstream\b/gi, ' ');
+  cleaned = cleaned.replace(/<<[\s\S]*?>>/g, ' ');
+
+  for (const pattern of PDF_INTERNAL_PATTERNS) {
+    cleaned = cleaned.replace(pattern, ' ');
+  }
+
+  return cleaned;
+}
+
+function mergeWrappedLines(text: string) {
+  return text.replace(/([a-z0-9,])\n(?=[a-z0-9])/g, '$1 ');
+}
+
+function dehyphenateWrappedWords(text: string) {
+  return text.replace(/([A-Za-z])-\n\s*(?=[A-Za-z])/g, '$1');
+}
+
+function normalizeExtractedText(text: string, source: 'docx' | 'pdf' = 'pdf') {
+  let normalized = text;
+  normalized = normalizeBulletsAndDashes(normalized);
+  normalized = stripBinaryLikeFragments(normalized);
+
+  if (source === 'pdf') {
+    normalized = stripPdfObjectNoise(normalized);
+  }
+
+  normalized = normalized
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/[^\S\n]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n');
+
+  normalized = dehyphenateWrappedWords(normalized);
+  normalized = mergeWrappedLines(normalized);
+
+  return normalized.trim();
+}
+
 export function assessResumeTextQuality(text: string): ResumeTextQuality {
   const normalized = normalizeExtractedText(text);
   const tokens = normalized.split(/\s+/).filter(Boolean);
   const alphaWords = normalized.match(/\b[A-Za-z]{2,}\b/g) ?? [];
   const suspiciousTokens =
-    normalized.match(/\/[A-Za-z][A-Za-z0-9]+|[A-Fa-f0-9]{16,}|(?:\d+\s+0\s+R)|(?:\d+\.\d+)|(?:[A-Za-z0-9+/]{24,}={0,2})/g) ??
-    [];
+    normalized.match(
+      /\/[A-Za-z][A-Za-z0-9]+|[A-Fa-f0-9]{16,}|(?:\d+\s+0\s+R)|(?:\d+\.\d+)|(?:[A-Za-z0-9+/]{24,}={0,2})/g,
+    ) ?? [];
   const pdfInternalHitCount = countPatternMatches(normalized, PDF_INTERNAL_PATTERNS);
   const resumeHintCount = countPatternMatches(normalized, RESUME_HINT_PATTERNS);
   const humanReadableRatio = tokens.length > 0 ? alphaWords.length / tokens.length : 0;
+
+  const likelyScannedPdf =
+    alphaWords.length < 20 ||
+    (humanReadableRatio < 0.35 && resumeHintCount <= 2);
+
+  const confidenceScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        humanReadableRatio * 45 +
+          Math.min(alphaWords.length, 200) * 0.2 +
+          resumeHintCount * 4 -
+          suspiciousTokens.length * 1.5 -
+          pdfInternalHitCount * 2,
+      ),
+    ),
+  );
+
+  const confidenceTier =
+    confidenceScore >= 75 ? 'high' : confidenceScore >= 45 ? 'medium' : 'low';
 
   let reason: string | null = null;
 
@@ -133,13 +236,21 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
     reason = 'Extracted text is too short to build a reliable resume profile.';
   } else if (humanReadableRatio < 0.45) {
     reason = 'Extracted text is not human-readable enough to trust for resume parsing.';
-  } else if (suspiciousTokens.length > Math.max(12, Math.floor(tokens.length * 0.12)) && resumeHintCount <= 3) {
+  } else if (
+    suspiciousTokens.length > Math.max(12, Math.floor(tokens.length * 0.12)) &&
+    resumeHintCount <= 3
+  ) {
     reason = 'Extracted text is dominated by binary-like or document-object tokens.';
+  } else if (confidenceScore < MIN_ACCEPTABLE_CONFIDENCE_SCORE) {
+    reason = 'Extracted text quality is too low to trust for resume parsing.';
   }
 
   return {
     isAcceptable: reason === null,
     reason,
+    confidenceScore,
+    confidenceTier,
+    likelyScannedPdf,
     humanReadableRatio,
     alphaWordCount: alphaWords.length,
     totalWordCount: tokens.length,
@@ -161,17 +272,17 @@ function extractPdfTextFallback(fileBuffer: Buffer) {
   );
 
   if (textMatches.length > 0) {
-    return textMatches.join(' ').replace(/\s+/g, ' ').trim();
+    return textMatches.join(' ');
   }
 
-  const printable = raw.match(/[A-Za-z0-9][A-Za-z0-9 ,.+:/()_\-]{20,}/g) ?? [];
-  return printable.join(' ').replace(/\s+/g, ' ').trim();
+  const printable = raw.match(/[A-Za-z0-9][A-Za-z0-9 ,.+:/()_\-\n]{20,}/g) ?? [];
+  return printable.join(' ');
 }
 
 async function extractDocxText(fileBuffer: Buffer) {
   const mammoth = await import('mammoth');
   const parsed = await mammoth.extractRawText({ buffer: fileBuffer });
-  return normalizeExtractedText(parsed.value ?? '');
+  return parsed.value ?? '';
 }
 
 async function extractPdfTextWithPdfJs(fileBuffer: Buffer) {
@@ -194,15 +305,11 @@ async function extractPdfTextWithPdfJs(fileBuffer: Buffer) {
             return '';
           }
 
-          const suffix = item.hasEOL ? '\n' : ' ';
-          return `${item.str}${suffix}`;
+          return `${item.str}${item.hasEOL ? '\n' : ' '}`;
         })
-        .join('')
-        .replace(/[ \t]+\n/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
+        .join('');
 
-      if (pageText) {
+      if (pageText.trim()) {
         extracted += `${pageText}\n`;
       }
     }
@@ -210,7 +317,7 @@ async function extractPdfTextWithPdfJs(fileBuffer: Buffer) {
     await document.destroy();
   }
 
-  return normalizeExtractedText(extracted);
+  return extracted;
 }
 
 async function extractPdfTextWithPdfParse(fileBuffer: Buffer) {
@@ -219,7 +326,7 @@ async function extractPdfTextWithPdfParse(fileBuffer: Buffer) {
 
   try {
     const parsed = await parser.getText();
-    return normalizeExtractedText(parsed.text ?? '');
+    return parsed.text ?? '';
   } finally {
     await parser.destroy();
   }
@@ -256,7 +363,7 @@ async function extractPdfTextWithOcr(fileBuffer: Buffer) {
 
       const image = canvas.toBuffer('image/png');
       const result = await worker.recognize(image);
-      const pageText = normalizeExtractedText(result.data.text ?? '');
+      const pageText = normalizeExtractedText(result.data.text ?? '', 'pdf');
 
       if (pageText) {
         pageTexts.push(pageText);
@@ -277,91 +384,199 @@ async function extractPdfTextWithOcr(fileBuffer: Buffer) {
       : null;
 
   return {
-    text: normalizeExtractedText(pageTexts.join('\n\n')),
+    text: pageTexts.join('\n\n'),
     confidence: averageConfidence,
   };
 }
 
-function ensureAcceptedExtraction(
+function createExtractionCandidate(
   text: string,
   method: ResumeExtractionMethod,
+  attemptedMethods: ResumeExtractionMethod[],
   usedOcr = false,
   ocrConfidence: number | null = null,
+  source: 'docx' | 'pdf' = 'pdf',
 ) {
-  const normalized = normalizeExtractedText(text);
+  const normalized = normalizeExtractedText(text, source);
   const quality = assessResumeTextQuality(normalized);
 
-  if (!quality.isAcceptable) {
-    throw new ResumeExtractionError(quality.reason ?? 'Resume extraction quality was too low.', quality, method);
+  return {
+    candidate: {
+      text: normalized,
+      method,
+      usedOcr,
+      ocrConfidence,
+      quality,
+    } satisfies ExtractionCandidate,
+    attemptedMethods,
+  };
+}
+
+function chooseBetterCandidate(
+  current: ExtractionCandidate | null,
+  next: ExtractionCandidate,
+) {
+  if (!current) {
+    return next;
   }
 
+  if (next.quality.confidenceScore !== current.quality.confidenceScore) {
+    return next.quality.confidenceScore > current.quality.confidenceScore ? next : current;
+  }
+
+  if (next.quality.resumeHintCount !== current.quality.resumeHintCount) {
+    return next.quality.resumeHintCount > current.quality.resumeHintCount ? next : current;
+  }
+
+  if (next.text.length !== current.text.length) {
+    return next.text.length > current.text.length ? next : current;
+  }
+
+  return current;
+}
+
+function shouldAttemptOcr(bestCandidate: ExtractionCandidate | null) {
+  if (!bestCandidate) {
+    return true;
+  }
+
+  return (
+    !bestCandidate.quality.isAcceptable &&
+    (bestCandidate.quality.likelyScannedPdf ||
+      bestCandidate.quality.confidenceTier === 'low' ||
+      bestCandidate.quality.resumeHintCount <= 2)
+  );
+}
+
+function toExtractionResult(
+  candidate: ExtractionCandidate,
+  attemptedMethods: ResumeExtractionMethod[],
+): ResumeExtractionResult {
   return {
-    text: normalized,
-    method,
-    usedOcr,
-    ocrConfidence,
-    quality,
-  } satisfies ResumeExtractionResult;
+    text: candidate.text,
+    method: candidate.method,
+    usedOcr: candidate.usedOcr,
+    attemptedMethods,
+    ocrConfidence: candidate.ocrConfidence,
+    quality: candidate.quality,
+  };
 }
 
 export async function extractResumeText(
   fileBuffer: Buffer,
   mimeType: string,
   filename: string,
+  options: ExtractResumeTextOptions = {},
 ): Promise<ResumeExtractionResult> {
+  const attemptedMethods: ResumeExtractionMethod[] = [];
+
   if (mimeType !== 'application/pdf' && !filename.toLowerCase().endsWith('.pdf')) {
-    const docxText = await extractDocxText(fileBuffer);
-    return ensureAcceptedExtraction(docxText, 'docx-mammoth');
-  }
+    const docxText =
+      resumeExtractionTestOverrides?.docxText ??
+      (await extractDocxText(fileBuffer));
+    attemptedMethods.push('docx-direct');
+    const { candidate } = createExtractionCandidate(
+      docxText,
+      'docx-direct',
+      attemptedMethods,
+      false,
+      null,
+      'docx',
+    );
 
-  const attempts: Array<{
-    method: ResumeExtractionMethod;
-    run: () => Promise<{ text: string; ocrConfidence?: number | null }>;
-  }> = [
-    {
-      method: 'pdfjs-text',
-      run: async () => ({ text: await extractPdfTextWithPdfJs(fileBuffer) }),
-    },
-    {
-      method: 'pdf-parse-fallback',
-      run: async () => ({ text: await extractPdfTextWithPdfParse(fileBuffer) }),
-    },
-    {
-      method: 'pdf-token-fallback',
-      run: async () => ({ text: extractPdfTextFallback(fileBuffer) }),
-    },
-  ];
-
-  let lastQualityFailure: ResumeExtractionError | null = null;
-
-  for (const attempt of attempts) {
-    try {
-      const result = await attempt.run();
-      return ensureAcceptedExtraction(result.text, attempt.method);
-    } catch (error) {
-      if (error instanceof ResumeExtractionError) {
-        lastQualityFailure = error;
-        continue;
-      }
-    }
-  }
-
-  try {
-    const ocr = await extractPdfTextWithOcr(fileBuffer);
-    return ensureAcceptedExtraction(ocr.text, 'pdf-ocr', true, ocr.confidence ?? null);
-  } catch (error) {
-    if (error instanceof ResumeExtractionError) {
-      throw new ResumeExtractionError(
-        `${error.message} PDF parsing can be brittle for scanned or badly structured files. Try uploading a DOCX resume for the best results.`,
-        error.quality,
-        error.method,
-      );
+    if (candidate.quality.isAcceptable) {
+      return toExtractionResult(candidate, [...attemptedMethods]);
     }
 
     throw new ResumeExtractionError(
-      `${lastQualityFailure?.message ?? 'Could not extract readable text from this PDF.'} PDF parsing can be brittle for scanned or badly structured files. Try uploading a DOCX resume for the best results.`,
-      lastQualityFailure?.quality ?? null,
-      lastQualityFailure?.method ?? null,
+      'This resume could not be read reliably. Try a clearer PDF or DOCX.',
+      candidate.quality,
+      candidate.method,
+      [...attemptedMethods],
     );
   }
+
+  let bestCandidate: ExtractionCandidate | null = null;
+
+  const directText =
+    resumeExtractionTestOverrides?.pdfDirectText ??
+    (await extractPdfTextWithPdfJs(fileBuffer));
+  attemptedMethods.push('pdf-direct');
+  const directCandidate = createExtractionCandidate(
+    directText,
+    'pdf-direct',
+    attemptedMethods,
+  ).candidate;
+  bestCandidate = chooseBetterCandidate(bestCandidate, directCandidate);
+
+  if (!options.forceOcr && directCandidate.quality.isAcceptable) {
+    return toExtractionResult(directCandidate, [...attemptedMethods]);
+  }
+
+  if (!(options.forceOcr && directCandidate.quality.isAcceptable)) {
+    const cleanedText =
+      resumeExtractionTestOverrides?.pdfCleanedText ??
+      (await extractPdfTextWithPdfParse(fileBuffer));
+    attemptedMethods.push('pdf-cleaned');
+    const cleanedCandidate = createExtractionCandidate(
+      cleanedText,
+      'pdf-cleaned',
+      attemptedMethods,
+    ).candidate;
+    bestCandidate = chooseBetterCandidate(bestCandidate, cleanedCandidate);
+
+    if (!options.forceOcr && cleanedCandidate.quality.isAcceptable) {
+      return toExtractionResult(cleanedCandidate, [...attemptedMethods]);
+    }
+
+    const tokenText =
+      resumeExtractionTestOverrides?.pdfTokenText ??
+      extractPdfTextFallback(fileBuffer);
+    attemptedMethods.push('pdf-token-fallback');
+    const tokenCandidate = createExtractionCandidate(
+      tokenText,
+      'pdf-token-fallback',
+      attemptedMethods,
+    ).candidate;
+    bestCandidate = chooseBetterCandidate(bestCandidate, tokenCandidate);
+
+    if (!options.forceOcr && tokenCandidate.quality.isAcceptable) {
+      return toExtractionResult(tokenCandidate, [...attemptedMethods]);
+    }
+  }
+
+  if (options.forceOcr || shouldAttemptOcr(bestCandidate)) {
+    const ocrResult =
+      resumeExtractionTestOverrides?.pdfOcrText !== undefined
+        ? {
+            text: resumeExtractionTestOverrides.pdfOcrText,
+            confidence: resumeExtractionTestOverrides.ocrConfidence ?? null,
+          }
+        : await extractPdfTextWithOcr(fileBuffer);
+
+    attemptedMethods.push('pdf-ocr');
+    const ocrCandidate = createExtractionCandidate(
+      ocrResult.text,
+      'pdf-ocr',
+      attemptedMethods,
+      true,
+      ocrResult.confidence ?? null,
+    ).candidate;
+    bestCandidate = chooseBetterCandidate(bestCandidate, ocrCandidate);
+
+    if (options.forceOcr && ocrCandidate.quality.isAcceptable) {
+      return toExtractionResult(ocrCandidate, [...attemptedMethods]);
+    }
+
+    if (ocrCandidate.quality.isAcceptable) {
+      return toExtractionResult(ocrCandidate, [...attemptedMethods]);
+    }
+  }
+
+  throw new ResumeExtractionError(
+    'This resume could not be read reliably. Try a clearer PDF or DOCX.',
+    bestCandidate?.quality ?? null,
+    bestCandidate?.method ?? null,
+    [...attemptedMethods],
+  );
 }

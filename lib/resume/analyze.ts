@@ -1,9 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/supabase/types';
 import type { Json } from '@/lib/supabase/types';
+import type { AnalyzeResumeRequest } from '@/lib/types';
 import { getSkillEntryBySlug } from '@/lib/resume/skill-taxonomy';
 import { extractResumeText, ResumeExtractionError } from '@/lib/resume/extract';
 import { parseResumeText } from '@/lib/resume/parse';
+import { logError, logInfo } from '@/lib/utils/logger';
 
 type TypedSupabaseClient = SupabaseClient<Database>;
 
@@ -11,6 +13,7 @@ export async function analyzeStoredResume(
   supabase: TypedSupabaseClient,
   resume: Database['public']['Tables']['resumes']['Row'],
   fileBuffer: Buffer,
+  requestBody: AnalyzeResumeRequest = {},
 ) {
   const insertAnalysisRun = await supabase
     .from('resume_analysis_runs')
@@ -29,10 +32,26 @@ export async function analyzeStoredResume(
   }
 
   try {
-    const extraction = await extractResumeText(fileBuffer, resume.mime_type, resume.file_name);
+    const extraction = await extractResumeText(fileBuffer, resume.mime_type, resume.file_name, {
+      forceOcr: requestBody.forceOCR,
+    });
     const rawText = extraction.text.trim();
+
+    logInfo('resume-analyze', 'Extraction completed', {
+      resumeId: resume.id,
+      method: extraction.method,
+      attemptedMethods: extraction.attemptedMethods,
+      textLength: rawText.length,
+      usedOcr: extraction.usedOcr,
+      ocrConfidence: extraction.ocrConfidence,
+      confidenceScore: extraction.quality.confidenceScore,
+      confidenceTier: extraction.quality.confidenceTier,
+      likelyScannedPdf: extraction.quality.likelyScannedPdf,
+    });
+
     const parsed = parseResumeText(rawText, {
       extractionMethod: extraction.method,
+      attemptedMethods: extraction.attemptedMethods,
       extractionQuality: extraction.quality as unknown as Record<string, unknown>,
       usedOcr: extraction.usedOcr,
       ocrConfidence: extraction.ocrConfidence,
@@ -122,8 +141,19 @@ export async function analyzeStoredResume(
     return {
       parsed,
       matchedSkillRows,
+      extraction,
     };
   } catch (error) {
+    if (error instanceof ResumeExtractionError) {
+      logError('resume-analyze', 'Extraction failed', {
+        resumeId: resume.id,
+        method: error.method,
+        attemptedMethods: error.attemptedMethods,
+        reason: error.message,
+        quality: error.quality,
+      });
+    }
+
     await supabase
       .from('resume_analysis_runs')
       .update({

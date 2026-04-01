@@ -6,7 +6,16 @@ export interface CareerSkill {
 
 export interface CareerResumeExtractionMeta {
   extractionMethod?: string;
-  extractionQuality?: Record<string, unknown>;
+  attemptedMethods?: string[];
+  extractionQuality?: {
+    confidenceScore?: number;
+    confidenceTier?: 'high' | 'medium' | 'low';
+    likelyScannedPdf?: boolean;
+    humanReadableRatio?: number;
+    suspiciousTokenCount?: number;
+    resumeHintCount?: number;
+    [key: string]: unknown;
+  };
   usedOcr?: boolean;
   ocrConfidence?: number | null;
 }

@@ -11,6 +11,7 @@ export interface ParsedResumeSections {
 
 export interface ParsedResumeMeta {
   extractionMethod?: string;
+  attemptedMethods?: string[];
   extractionQuality?: Record<string, unknown>;
   usedOcr?: boolean;
   ocrConfidence?: number | null;

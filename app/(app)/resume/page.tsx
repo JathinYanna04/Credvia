@@ -6,6 +6,7 @@ import { ParsedResumeInsights } from '@/components/career-match/ParsedResumeInsi
 import { ResumeAnalysisStatus } from '@/components/career-match/ResumeAnalysisStatus';
 import { ResumeUploadCard } from '@/components/career-match/ResumeUploadCard';
 import type { CareerResumeDetail, CareerResumeSummary } from '@/components/career-match/types';
+import type { AnalyzeResumeRequest, AnalyzeResumeResponse, ApiResponse } from '@/lib/types';
 import { formatDateTime, humanizeParseStatus, parseStatusVariant } from '@/components/career-match/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -109,9 +110,12 @@ export default function ResumePage() {
       const response = await fetch(`/api/v1/resumes/${selectedResumeId}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          rerun: selectedResume?.parse_status === 'parsed',
+          forceOCR: false,
+        } satisfies AnalyzeResumeRequest),
       });
-      const payload = (await response.json()) as { error?: { code?: string; message?: string } };
+      const payload = (await response.json()) as ApiResponse<AnalyzeResumeResponse>;
 
       if (response.status === 401) {
         setAuthExpired(true);
@@ -211,6 +215,7 @@ export default function ResumePage() {
             <ResumeAnalysisStatus
               resume={selectedResume}
               latestRun={detail?.analysisRuns?.[0] ?? null}
+              extractionMeta={detail?.profile?.raw_sections?.__meta ?? null}
               analysisReadiness={analysisReadiness}
               analyzing={analyzing}
               onAnalyze={handleAnalyze}

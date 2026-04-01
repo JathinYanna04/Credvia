@@ -1,7 +1,7 @@
 'use client';
 
 import { Loader2, RefreshCcw } from 'lucide-react';
-import type { CareerAnalysisRun, CareerResumeSummary } from '@/components/career-match/types';
+import type { CareerAnalysisRun, CareerResumeExtractionMeta, CareerResumeSummary } from '@/components/career-match/types';
 import {
   describeAnalysisMethod,
   formatDateTime,
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 export interface ResumeAnalysisStatusProps {
   resume: CareerResumeSummary;
   latestRun: CareerAnalysisRun | null;
+  extractionMeta?: CareerResumeExtractionMeta | null;
   analysisReadiness: {
     ready: boolean;
     code: string | null;
@@ -26,6 +27,7 @@ export interface ResumeAnalysisStatusProps {
 export function ResumeAnalysisStatus({
   resume,
   latestRun,
+  extractionMeta,
   analysisReadiness,
   analyzing,
   onAnalyze,
@@ -33,6 +35,11 @@ export function ResumeAnalysisStatus({
   const analysisMethod = describeAnalysisMethod(latestRun?.parser_version);
   const usedOcr = Boolean(latestRun?.parser_version?.includes('pdf-ocr') || latestRun?.parser_version?.includes(':ocr'));
   const analyzeDisabled = analyzing || !analysisReadiness.ready;
+  const extractionQuality = extractionMeta?.extractionQuality;
+  const qualityWarning =
+    extractionQuality?.confidenceTier && extractionQuality.confidenceTier !== 'high'
+      ? 'We analyzed your resume, but the text quality was limited. For best results, upload a text-based PDF.'
+      : null;
 
   return (
     <section className="surface-panel space-y-4 p-5">
@@ -97,6 +104,12 @@ export function ResumeAnalysisStatus({
       {usedOcr && !latestRun?.error_message ? (
         <div className="rounded-2xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-info">
           OCR fallback was used for this resume because the original PDF text extraction was too weak.
+        </div>
+      ) : null}
+
+      {qualityWarning ? (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          {qualityWarning}
         </div>
       ) : null}
     </section>

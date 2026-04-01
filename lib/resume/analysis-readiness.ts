@@ -24,9 +24,10 @@ function getUnreadableResumeMessage(errorMessage: string) {
     normalized.includes('not human-readable enough') ||
     normalized.includes('raw pdf internals') ||
     normalized.includes('binary-like') ||
-    normalized.includes('ocr')
+    normalized.includes('ocr') ||
+    normalized.includes('could not be read reliably')
   ) {
-    return 'Upload or parse resume content before analysis. Try a text-based DOCX or a more readable PDF.';
+    return 'This resume could not be read reliably. Try a clearer PDF or DOCX.';
   }
 
   return null;
