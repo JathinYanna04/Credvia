@@ -1,41 +1,39 @@
 import type { Database } from '@/lib/supabase/types';
-import { getResumeExtension, isSupportedResumeMimeType } from '@/lib/resume/extract';
+import { isSupportedResumeMimeType } from '@/lib/resume/extract';
 
 type ResumeRow = Database['public']['Tables']['resumes']['Row'];
 type AnalysisRunRow = Database['public']['Tables']['resume_analysis_runs']['Row'];
-type ResumeAnalysisReadinessCode =
+
+export type ResumeAnalysisReadinessCode =
   | 'RESUME_FILE_MISSING'
   | 'RESUME_FILE_UNSUPPORTED'
   | 'RESUME_TEXT_MISSING'
-  | 'ANALYSIS_IN_PROGRESS';
+  | 'ANALYSIS_IN_PROGRESS'
+  | null;
 
 export interface ResumeAnalysisReadiness {
   ready: boolean;
-  code: ResumeAnalysisReadinessCode | null;
+  code: ResumeAnalysisReadinessCode;
   message: string | null;
 }
 
-function getUnreadableResumeMessage(errorMessage: string) {
-  const normalized = errorMessage.toLowerCase();
+function isUnreadableResumeError(message: string | null | undefined) {
+  const normalized = (message ?? '').toLowerCase();
 
-  if (
+  return (
     normalized.includes('no readable text') ||
     normalized.includes('too short to build a reliable resume profile') ||
     normalized.includes('not human-readable enough') ||
     normalized.includes('raw pdf internals') ||
     normalized.includes('binary-like') ||
-    normalized.includes('ocr') ||
+    normalized.includes('image-based') ||
     normalized.includes('could not be read reliably')
-  ) {
-    return 'This resume could not be read reliably. Try a clearer PDF or DOCX.';
-  }
-
-  return null;
+  );
 }
 
 export function getResumeAnalysisReadiness(
   resume: Pick<ResumeRow, 'file_name' | 'file_path' | 'mime_type' | 'parse_status'>,
-  latestRun?: Pick<AnalysisRunRow, 'status' | 'error_message'> | null,
+  latestRun: Pick<AnalysisRunRow, 'status' | 'error_message'> | null,
 ): ResumeAnalysisReadiness {
   if (!resume.file_path || !resume.file_name) {
     return {
@@ -45,7 +43,7 @@ export function getResumeAnalysisReadiness(
     };
   }
 
-  if (!isSupportedResumeMimeType(resume.mime_type, resume.file_name) || !getResumeExtension(resume.file_name)) {
+  if (!isSupportedResumeMimeType(resume.mime_type, resume.file_name)) {
     return {
       ready: false,
       code: 'RESUME_FILE_UNSUPPORTED',
@@ -61,15 +59,15 @@ export function getResumeAnalysisReadiness(
     };
   }
 
-  if (latestRun?.status === 'failed' && latestRun.error_message) {
-    const unreadableMessage = getUnreadableResumeMessage(latestRun.error_message);
-    if (unreadableMessage) {
-      return {
-        ready: false,
-        code: 'RESUME_TEXT_MISSING',
-        message: unreadableMessage,
-      };
-    }
+  if (
+    latestRun?.status === 'failed' &&
+    isUnreadableResumeError(latestRun.error_message)
+  ) {
+    return {
+      ready: false,
+      code: 'RESUME_TEXT_MISSING',
+      message: 'This resume could not be read reliably. Try a clearer PDF or DOCX.',
+    };
   }
 
   return {

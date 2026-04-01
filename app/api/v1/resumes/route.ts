@@ -3,6 +3,7 @@ import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
+import { logInfo } from '@/lib/utils/logger';
 import {
   getResumeExtension,
   isSupportedResumeMimeType,
@@ -136,6 +137,12 @@ export async function POST(request: Request) {
         fileExtension: extension,
         fileSizeBytes: buffer.byteLength,
       },
+    });
+    logInfo('resume-upload', 'Upload completed', {
+      userId: user.id,
+      resumeId,
+      mimeType: resumeInsert.data.mime_type,
+      bytes: buffer.byteLength,
     });
 
     return ok(resumeInsert.data);

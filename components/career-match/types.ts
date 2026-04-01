@@ -20,6 +20,17 @@ export interface CareerResumeExtractionMeta {
   ocrConfidence?: number | null;
 }
 
+export interface CareerResumeAnalysisReadiness {
+  ready: boolean;
+  code:
+    | 'RESUME_FILE_MISSING'
+    | 'RESUME_FILE_UNSUPPORTED'
+    | 'RESUME_TEXT_MISSING'
+    | 'ANALYSIS_IN_PROGRESS'
+    | null;
+  message: string | null;
+}
+
 export interface CareerResumeSections {
   summary: string[];
   skills: string[];
@@ -163,12 +174,8 @@ export interface CareerMatch {
 
 export interface CareerResumeDetail {
   resume: CareerResumeSummary;
+  analysisReadiness: CareerResumeAnalysisReadiness;
   profile: CareerResumeProfile | null;
-  analysisReadiness: {
-    ready: boolean;
-    code: string | null;
-    message: string | null;
-  };
   skills: Array<{
     source: string;
     confidence: number;

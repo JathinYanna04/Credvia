@@ -44,7 +44,7 @@ export async function Sidebar() {
             Resume
           </Link>
           <Link
-            href="/jobs"
+            href="/career/jobs"
             className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
           >
             <BriefcaseBusiness className="h-4 w-4" />

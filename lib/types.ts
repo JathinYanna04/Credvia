@@ -124,12 +124,12 @@ export interface ApiError {
     | 'FORBIDDEN'
     | 'NOT_FOUND'
     | 'VALIDATION_ERROR'
+    | 'ANALYSIS_IN_PROGRESS'
     | 'RESUME_FILE_MISSING'
     | 'RESUME_FILE_UNSUPPORTED'
     | 'RESUME_TEXT_MISSING'
-    | 'ANALYSIS_IN_PROGRESS'
-    | 'ANALYSIS_SERVICE_UNAVAILABLE'
     | 'RATE_LIMITED'
+    | 'ANALYSIS_SERVICE_UNAVAILABLE'
     | 'INTERNAL_ERROR';
   message: string;
 }
@@ -148,6 +148,7 @@ export interface AnalyzeResumeRequest {
   targetRole?: string;
   jobDescription?: string;
   forceOCR?: boolean;
+  forceOcr?: boolean;
 }
 
 export interface ResumeExtractionQualitySummary {
