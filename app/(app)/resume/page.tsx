@@ -89,9 +89,18 @@ export default function ResumePage() {
     () => resumes?.find((resume) => resume.id === selectedResumeId) ?? null,
     [resumes, selectedResumeId],
   );
+  const analysisReadiness = detail?.analysisReadiness ?? {
+    ready: false,
+    code: null,
+    message: selectedResume ? 'Loading resume readiness...' : null,
+  };
 
   async function handleAnalyze() {
     if (!selectedResumeId) return;
+    if (!analysisReadiness.ready) {
+      setDetailError(analysisReadiness.message ?? 'Resume is not ready for analysis.');
+      return;
+    }
 
     setAnalyzing(true);
     setDetailError(null);
@@ -102,7 +111,7 @@ export default function ResumePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
-      const payload = (await response.json()) as { error?: { message?: string } };
+      const payload = (await response.json()) as { error?: { code?: string; message?: string } };
 
       if (response.status === 401) {
         setAuthExpired(true);
@@ -202,6 +211,7 @@ export default function ResumePage() {
             <ResumeAnalysisStatus
               resume={selectedResume}
               latestRun={detail?.analysisRuns?.[0] ?? null}
+              analysisReadiness={analysisReadiness}
               analyzing={analyzing}
               onAnalyze={handleAnalyze}
             />

@@ -48,6 +48,9 @@ export type ResumeExtractionMethod =
 export interface ResumeTextQuality {
   isAcceptable: boolean;
   reason: string | null;
+  likelyScannedPdf: boolean;
+  confidenceScore: number;
+  confidenceTier: 'high' | 'medium' | 'low';
   humanReadableRatio: number;
   alphaWordCount: number;
   totalWordCount: number;
@@ -122,6 +125,24 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
   const pdfInternalHitCount = countPatternMatches(normalized, PDF_INTERNAL_PATTERNS);
   const resumeHintCount = countPatternMatches(normalized, RESUME_HINT_PATTERNS);
   const humanReadableRatio = tokens.length > 0 ? alphaWords.length / tokens.length : 0;
+  const likelyScannedPdf =
+    alphaWords.length < 20 ||
+    (humanReadableRatio < 0.35 && resumeHintCount <= 2);
+  const confidenceScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        humanReadableRatio * 45 +
+        Math.min(alphaWords.length, 200) * 0.2 +
+        resumeHintCount * 4 -
+        suspiciousTokens.length * 1.5 -
+        pdfInternalHitCount * 2,
+      ),
+    ),
+  );
+  const confidenceTier =
+    confidenceScore >= 75 ? 'high' : confidenceScore >= 45 ? 'medium' : 'low';
 
   let reason: string | null = null;
 
@@ -135,11 +156,16 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
     reason = 'Extracted text is not human-readable enough to trust for resume parsing.';
   } else if (suspiciousTokens.length > Math.max(12, Math.floor(tokens.length * 0.12)) && resumeHintCount <= 3) {
     reason = 'Extracted text is dominated by binary-like or document-object tokens.';
+  } else if (likelyScannedPdf && confidenceTier === 'low') {
+    reason = 'This PDF looks image-based or too low-quality for reliable text extraction.';
   }
 
   return {
     isAcceptable: reason === null,
     reason,
+    likelyScannedPdf,
+    confidenceScore,
+    confidenceTier,
     humanReadableRatio,
     alphaWordCount: alphaWords.length,
     totalWordCount: tokens.length,

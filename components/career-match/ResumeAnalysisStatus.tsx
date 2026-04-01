@@ -1,7 +1,11 @@
 'use client';
 
 import { Loader2, RefreshCcw } from 'lucide-react';
-import type { CareerAnalysisRun, CareerResumeSummary } from '@/components/career-match/types';
+import type {
+  CareerAnalysisRun,
+  CareerResumeAnalysisReadiness,
+  CareerResumeSummary,
+} from '@/components/career-match/types';
 import {
   describeAnalysisMethod,
   formatDateTime,
@@ -14,6 +18,7 @@ import { Button } from '@/components/ui/button';
 export interface ResumeAnalysisStatusProps {
   resume: CareerResumeSummary;
   latestRun: CareerAnalysisRun | null;
+  analysisReadiness: CareerResumeAnalysisReadiness;
   analyzing: boolean;
   onAnalyze: () => Promise<void> | void;
 }
@@ -21,11 +26,13 @@ export interface ResumeAnalysisStatusProps {
 export function ResumeAnalysisStatus({
   resume,
   latestRun,
+  analysisReadiness,
   analyzing,
   onAnalyze,
 }: ResumeAnalysisStatusProps) {
   const analysisMethod = describeAnalysisMethod(latestRun?.parser_version);
   const usedOcr = Boolean(latestRun?.parser_version?.includes('pdf-ocr') || latestRun?.parser_version?.includes(':ocr'));
+  const analyzeDisabled = analyzing || !analysisReadiness.ready;
 
   return (
     <section className="surface-panel space-y-4 p-5">
@@ -41,11 +48,22 @@ export function ResumeAnalysisStatus({
             Last upload: {formatDateTime(resume.uploaded_at)}
           </p>
         </div>
-        <Button type="button" variant="secondary" onClick={() => void onAnalyze()} disabled={analyzing}>
+        <Button type="button" variant="secondary" onClick={() => void onAnalyze()} disabled={analyzeDisabled}>
           {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
           {resume.parse_status === 'parsed' ? 'Rerun analysis' : 'Analyze resume'}
         </Button>
       </div>
+
+      {!analysisReadiness.ready && analysisReadiness.message ? (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          {analysisReadiness.message}
+          {analysisReadiness.code === 'RESUME_TEXT_MISSING' ? (
+            <div className="mt-2 text-xs text-warning/90">
+              This file may be image-based, empty, or too low-quality to parse reliably. Upload a clearer PDF or a DOCX resume.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
