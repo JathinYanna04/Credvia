@@ -1,10 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@/lib/supabase/types';
-import type { Json } from '@/lib/supabase/types';
+import type { Database, Json } from '@/lib/supabase/types';
 import type { AnalyzeResumeRequest } from '@/lib/types';
-import { getSkillEntryBySlug } from '@/lib/resume/skill-taxonomy';
 import { extractResumeText, ResumeExtractionError } from '@/lib/resume/extract';
 import { parseResumeText } from '@/lib/resume/parse';
+import { getSkillEntryBySlug } from '@/lib/resume/skill-taxonomy';
 import { logError, logInfo } from '@/lib/utils/logger';
 
 type TypedSupabaseClient = SupabaseClient<Database>;
@@ -32,13 +31,11 @@ export async function analyzeStoredResume(
   }
 
   try {
-    const extraction = await extractResumeText(
-      fileBuffer,
-      resume.mime_type,
-      resume.file_name,
-      { forceOcr: requestBody.forceOCR ?? requestBody.forceOcr },
-    );
+    const extraction = await extractResumeText(fileBuffer, resume.mime_type, resume.file_name, {
+      forceOcr: requestBody.forceOCR ?? requestBody.forceOcr,
+    });
     const rawText = extraction.text.trim();
+
     logInfo('resume-analyze', 'Extraction completed', {
       resumeId: resume.id,
       method: extraction.method,
@@ -50,6 +47,7 @@ export async function analyzeStoredResume(
       confidenceTier: extraction.quality.confidenceTier,
       likelyScannedPdf: extraction.quality.likelyScannedPdf,
     });
+
     const parsed = parseResumeText(rawText, {
       extractionMethod: extraction.method,
       attemptedMethods: extraction.attemptedMethods,
@@ -61,6 +59,7 @@ export async function analyzeStoredResume(
       textLength: extraction.textLength,
       readiness: extraction.readiness,
     });
+
     const matchedSkillRows = [
       ...parsed.directSkillSlugs.map((slug) => ({ slug, source: 'direct' as const, confidence: 1 })),
       ...parsed.inferredSkillSlugs.map((slug) => ({ slug, source: 'inferred' as const, confidence: 0.7 })),
@@ -69,26 +68,33 @@ export async function analyzeStoredResume(
         const skill = getSkillEntryBySlug(entry.slug);
         return skill ? { skill, source: entry.source, confidence: entry.confidence } : null;
       })
-      .filter(Boolean) as Array<{ skill: { slug: string; name: string }; source: 'direct' | 'inferred'; confidence: number }>;
+      .filter(Boolean) as Array<{
+      skill: { slug: string; name: string };
+      source: 'direct' | 'inferred';
+      confidence: number;
+    }>;
 
     const [profileUpsert, deleteSkills] = await Promise.all([
-      supabase.from('resume_profiles').upsert({
-        resume_id: resume.id,
-        user_id: resume.user_id,
-        full_name: parsed.fullName,
-        email: parsed.email,
-        phone: parsed.phone,
-        current_title: parsed.currentTitle,
-        summary: parsed.summary,
-        location: parsed.locationText,
-        years_experience: parsed.experienceYears,
-        projects: parsed.projects,
-        experience: parsed.experience,
-        education: parsed.education,
-        raw_sections: parsed.parsedSections as unknown as Json,
-        parsed_text: rawText,
-        parsed_at: new Date().toISOString(),
-      }, { onConflict: 'resume_id' }),
+      supabase.from('resume_profiles').upsert(
+        {
+          resume_id: resume.id,
+          user_id: resume.user_id,
+          full_name: parsed.fullName,
+          email: parsed.email,
+          phone: parsed.phone,
+          current_title: parsed.currentTitle,
+          summary: parsed.summary,
+          location: parsed.locationText,
+          years_experience: parsed.experienceYears,
+          projects: parsed.projects,
+          experience: parsed.experience,
+          education: parsed.education,
+          raw_sections: parsed.parsedSections as unknown as Json,
+          parsed_text: rawText,
+          parsed_at: new Date().toISOString(),
+        },
+        { onConflict: 'resume_id' },
+      ),
       supabase.from('resume_skills').delete().eq('resume_id', resume.id),
     ]);
 
@@ -134,9 +140,7 @@ export async function analyzeStoredResume(
 
     const resumeUpdate = await supabase
       .from('resumes')
-      .update({
-        parse_status: 'parsed',
-      })
+      .update({ parse_status: 'parsed' })
       .eq('id', resume.id);
 
     if (resumeUpdate.error) {
@@ -160,6 +164,7 @@ export async function analyzeStoredResume(
         diagnostics: error.diagnostics,
       });
     }
+
     await supabase
       .from('resume_analysis_runs')
       .update({
@@ -173,6 +178,7 @@ export async function analyzeStoredResume(
               : 'Resume analysis failed.',
       })
       .eq('id', insertAnalysisRun.data.id);
+
     throw error;
   }
 }

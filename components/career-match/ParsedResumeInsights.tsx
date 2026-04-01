@@ -10,6 +10,8 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
   const profile = detail.profile;
   const skills = detail.skills;
   const extractionMeta = profile?.raw_sections?.__meta;
+  const latestRun = detail.analysisRuns[0] ?? null;
+  const showStaleParsedBanner = Boolean(profile && latestRun?.status === 'failed');
 
   return (
     <section className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
@@ -23,6 +25,11 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
             <p className="mt-2 text-xs text-text-tertiary">
               OCR fallback was used for this extraction because native PDF text quality was too low.
             </p>
+          ) : null}
+          {showStaleParsedBanner ? (
+            <div className="mt-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+              Latest extraction failed. Showing the most recent successful parsed content.
+            </div>
           ) : null}
         </div>
 

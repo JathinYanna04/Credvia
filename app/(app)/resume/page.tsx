@@ -5,11 +5,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { ParsedResumeInsights } from '@/components/career-match/ParsedResumeInsights';
 import { ResumeAnalysisStatus } from '@/components/career-match/ResumeAnalysisStatus';
 import { ResumeUploadCard } from '@/components/career-match/ResumeUploadCard';
+import {
+  formatDateTime,
+  humanizeParseStatus,
+  parseStatusVariant,
+} from '@/components/career-match/utils';
 import type { CareerResumeDetail, CareerResumeSummary } from '@/components/career-match/types';
-import { formatDateTime, humanizeParseStatus, parseStatusVariant } from '@/components/career-match/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import type { AnalyzeResumeRequest, AnalyzeResumeResponse, ApiResponse } from '@/lib/types';
+import type {
+  AnalyzeResumeRequest,
+  AnalyzeResumeResponse,
+  ApiResponse,
+} from '@/lib/types';
 
 type ResumeAnalyzeErrorState = {
   code: string;
@@ -53,12 +61,17 @@ export default function ResumePage() {
 
         const nextResumes = payload.data ?? [];
         setResumes(nextResumes);
-        const activeResume = nextResumes.find((resume) => resume.is_active) ?? nextResumes[0] ?? null;
+        const activeResume =
+          nextResumes.find((resume) => resume.is_active) ?? nextResumes[0] ?? null;
         setSelectedResumeId((current) => current ?? activeResume?.id ?? null);
       })
       .catch((fetchError) => {
         setResumes([]);
-        setError(fetchError instanceof Error ? fetchError.message : 'Could not load your resumes.');
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : 'Could not load your resumes.',
+        );
       });
   }, [refreshKey]);
 
@@ -91,7 +104,11 @@ export default function ResumePage() {
         setDetail(payload.data);
       })
       .catch((fetchError) => {
-        setDetailError(fetchError instanceof Error ? fetchError.message : 'Could not load this resume.');
+        setDetailError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : 'Could not load this resume.',
+        );
       });
   }, [selectedResumeId, refreshKey]);
 
@@ -99,14 +116,18 @@ export default function ResumePage() {
     () => resumes?.find((resume) => resume.id === selectedResumeId) ?? null,
     [resumes, selectedResumeId],
   );
-  const analysisReadiness = detail?.analysisReadiness ?? {
-    ready: false,
-    code: null,
-    message: selectedResume ? 'Loading resume readiness...' : null,
-  };
+
+  const analysisReadiness =
+    detail?.analysisReadiness ??
+    ({
+      ready: true,
+      code: null,
+      message: null,
+    } as const);
 
   async function handleAnalyze() {
     if (!selectedResumeId) return;
+
     if (!analysisReadiness.ready) {
       setDetailError(analysisReadiness.message ?? 'Resume is not ready for analysis.');
       return;
@@ -235,14 +256,8 @@ export default function ResumePage() {
             <ResumeAnalysisStatus
               resume={selectedResume}
               latestRun={detail?.analysisRuns?.[0] ?? null}
+              extractionMeta={detail?.profile?.raw_sections?.__meta ?? null}
               analysisReadiness={analysisReadiness}
-              extractionMeta={
-                detail?.profile?.raw_sections &&
-                typeof detail.profile.raw_sections === 'object' &&
-                '__meta' in detail.profile.raw_sections
-                  ? (detail.profile.raw_sections.__meta as Record<string, unknown>)
-                  : null
-              }
               analyzing={analyzing}
               forceOCR={forceOCR}
               onForceOCRChange={setForceOCR}

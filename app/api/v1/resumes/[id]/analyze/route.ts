@@ -1,22 +1,22 @@
-import { z, ZodError } from 'zod';
 import { fail, handleApiError, ok } from '@/lib/api';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
-import { getActiveResume, getOwnedResume } from '@/lib/career-match/queries';
+import { getActiveResume, getResumeById } from '@/lib/career-match/queries';
 import { sendResumeAnalysisEmail } from '@/lib/email/send-resume-analysis-email';
 import { recomputeMatchesForResume } from '@/lib/matching/service';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { getResumeAnalysisReadiness } from '@/lib/resume/analysis-readiness';
-import { ResumeExtractionError } from '@/lib/resume/extract';
 import { analyzeStoredResume } from '@/lib/resume/analyze';
+import { ResumeExtractionError } from '@/lib/resume/extract';
+import { getRequiredUser } from '@/lib/supabase/helpers';
 import { createServiceRoleClient } from '@/lib/supabase/service';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { getRequiredUser } from '@/lib/supabase/helpers';
 import { logError, logInfo } from '@/lib/utils/logger';
 import type {
   AnalyzeResumeRequest,
   AnalyzeResumeResponse,
   ResumeExtractionErrorDetails,
 } from '@/lib/types';
+import { z, ZodError } from 'zod';
 
 const AnalyzeResumeRequestSchema = z
   .object({
@@ -28,43 +28,36 @@ const AnalyzeResumeRequestSchema = z
   })
   .strict();
 
-async function parseAnalyzeRequest(request: Request) {
+async function parseAnalyzeRequest(request: Request): Promise<AnalyzeResumeRequest> {
   const rawBody = await request.text();
+
   if (!rawBody.trim()) {
-    return {} satisfies AnalyzeResumeRequest;
+    return {};
   }
 
   const contentType = request.headers.get('content-type') ?? '';
   if (!contentType.includes('application/json')) {
     throw new ZodError([
-      {
-        code: 'custom',
-        message: 'Request body must be valid JSON.',
-        path: [],
-      },
+      { code: 'custom', message: 'Request body must be valid JSON.', path: [] },
     ]);
   }
 
   try {
-    const parsedBody = AnalyzeResumeRequestSchema.parse(JSON.parse(rawBody)) as AnalyzeResumeRequest;
-    const normalizedForceOcr = parsedBody.forceOCR ?? parsedBody.forceOcr;
+    const parsed = AnalyzeResumeRequestSchema.parse(JSON.parse(rawBody));
+    const normalizedForceOcr = parsed.forceOCR ?? parsed.forceOcr;
 
     if (normalizedForceOcr === undefined) {
-      return parsedBody;
+      return parsed;
     }
 
     return {
-      ...parsedBody,
+      ...parsed,
       forceOCR: normalizedForceOcr,
     };
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new ZodError([
-        {
-          code: 'custom',
-          message: 'Request body must be valid JSON.',
-          path: [],
-        },
+        { code: 'custom', message: 'Request body must be valid JSON.', path: [] },
       ]);
     }
 
@@ -156,7 +149,8 @@ export async function POST(
       return fail('RATE_LIMITED', 'Too many resume analyses. Try again shortly.', 429);
     }
 
-    const resume = await getOwnedResume(supabase, user.id, params.id);
+    const resume = await getResumeById(supabase, params.id);
+
     if (!resume) {
       const existingResume = await supabase
         .from('resumes')
@@ -172,6 +166,10 @@ export async function POST(
         return fail('NOT_FOUND', 'Resume not found.', 404);
       }
 
+      return fail('FORBIDDEN', 'You do not have access to this resume.', 403);
+    }
+
+    if (resume.user_id !== user.id) {
       return fail('FORBIDDEN', 'You do not have access to this resume.', 403);
     }
 
@@ -197,8 +195,13 @@ export async function POST(
         message: readiness.message,
         parseStatus: resume.parse_status,
         mimeType: resume.mime_type,
+        filePath: resume.file_path,
       });
-      return fail(readiness.code ?? 'VALIDATION_ERROR', readiness.message ?? 'Resume is not ready for analysis.', status);
+      return fail(
+        readiness.code ?? 'VALIDATION_ERROR',
+        readiness.message ?? 'Resume is not ready for analysis.',
+        status,
+      );
     }
 
     const processingUpdate = await supabase
@@ -213,23 +216,21 @@ export async function POST(
     await captureServerEvent({
       event: 'resume_analysis_started',
       distinctId: user.id,
-      properties: {
-        resumeId: resume.id,
-      },
+      properties: { resumeId: resume.id },
     });
 
     const download = await supabase.storage.from('resumes').download(resume.file_path);
     if (download.error || !download.data) {
+      await supabase
+        .from('resumes')
+        .update({ parse_status: 'failed' })
+        .eq('id', resume.id);
       logError('resume-analyze', 'Storage download failed', {
         userId: user.id,
         resumeId: resume.id,
         filePath: resume.file_path,
         storageError: download.error?.message ?? null,
       });
-      await supabase
-        .from('resumes')
-        .update({ parse_status: 'failed' })
-        .eq('id', resume.id);
       return fail('RESUME_FILE_MISSING', 'Upload a resume file before analysis.', 422);
     }
 
@@ -248,6 +249,7 @@ export async function POST(
       const analysisClient = createServiceRoleClient() ?? supabase;
       const analysis = await analyzeStoredResume(analysisClient, resume, buffer, body);
       const activeResume = await getActiveResume(supabase, user.id);
+
       if (activeResume?.id === resume.id) {
         await recomputeMatchesForResume(supabase, user.id, resume.id);
       }
@@ -335,10 +337,9 @@ export async function POST(
 
       await supabase
         .from('resumes')
-        .update({
-          parse_status: 'failed',
-        })
+        .update({ parse_status: 'failed' })
         .eq('id', resume.id);
+
       await captureServerEvent({
         event: 'resume_analysis_failed',
         distinctId: user.id,

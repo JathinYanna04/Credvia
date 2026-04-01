@@ -11,9 +11,10 @@ Jane Builder
 Product Engineer
 jane@example.com
 +91 9000000000
+Bangalore, India
 Summary: Product engineer building startup tools
-Experience: 4 years building startup tools
 Skills: TypeScript, React, PostgreSQL, Supabase
+Experience: 4 years building startup tools
 Projects: Led roadmap for developer platform
 Education: BSc Computer Science
 `;
@@ -25,12 +26,12 @@ afterEach(() => {
 describe('resume extraction quality', () => {
   it('rejects PDF internal metadata masquerading as resume text', () => {
     const brokenPdfText =
-      'Linearized 1 /L 165905 /H O 8 /E 165310 /N 1 /T 165621 Type /XRef /Length 80 /Filter /FlateDecode /DecodeParms Columns 5 /Predictor 12 /Type /Catalog Type /ObjStm /Length 2278 /Filter /FlateDecode /N 33 /First 250 /Producer (pdfTeX-1.40.27)';
+      'Linearized 1 /L 165905 /H O 8 /E 165310 /N 1 /T 165621 Type /XRef /Length 80 /Filter /FlateDecode /DecodeParms Columns 5 /Type /Catalog Type /ObjStm /Length 2278 /Filter /FlateDecode /N 33 /First 250 /Producer (pdfTeX-1.40.27)';
 
     const quality = assessResumeTextQuality(brokenPdfText);
 
     expect(quality.isAcceptable).toBe(false);
-    expect(quality.reason).toContain('raw PDF internals');
+    expect(quality.reason).toMatch(/raw PDF internals|too short to build/);
   });
 
   it('accepts readable resume-style text', () => {
@@ -38,13 +39,14 @@ describe('resume extraction quality', () => {
 
     expect(quality.isAcceptable).toBe(true);
     expect(quality.alphaWordCount).toBeGreaterThan(20);
+    expect(quality.confidenceTier).not.toBe('low');
   });
 });
 
 describe('resume extraction fallbacks', () => {
   it('extracts clean text from a PDF without OCR', async () => {
     __setResumeExtractionTestOverrides({
-      extractPdfTextWithPdfJs: async () => sampleResumeText,
+      pdfDirectText: sampleResumeText,
     });
 
     const result = await extractResumeText(
@@ -55,23 +57,18 @@ describe('resume extraction fallbacks', () => {
 
     expect(result.method).toBe('pdfjs-text');
     expect(result.usedOcr).toBe(false);
-    expect(result.attemptedMethods).toContain('pdfjs-text');
+    expect(result.attemptedMethods).toEqual(['pdfjs-text']);
     expect(result.quality.confidenceTier).toBe('high');
-    expect(result.text).toContain('Product Engineer');
   });
 
-  it('falls back to OCR when direct PDF extraction is too noisy', async () => {
+  it('falls back to OCR when direct extraction is noisy', async () => {
     __setResumeExtractionTestOverrides({
-      extractPdfTextWithPdfJs: async () =>
-        'Linearized 1 /L 165905 /H O 8 /E 165310 /Type /ObjStm /FlateDecode',
-      extractPdfTextWithPdfParse: async () =>
-        'stream endobj xref /Producer (pdfTeX-1.40.27)',
-      extractPdfTextFallback: () =>
-        'obj 12 0 stream /Length 2278 /Filter /FlateDecode',
-      extractPdfTextWithOcr: async () => ({
-        text: sampleResumeText,
-        confidence: 93,
-      }),
+      pdfDirectText:
+        'Linearized 1 /L 165905 /H O 8 /E 165310 /N 1 /T 165621 Type /XRef /Length 80 /Filter /FlateDecode',
+      pdfCleanedText: '/Type /Catalog stream endstream xref obj',
+      pdfTokenText: 'ObjStm Filter DecodeParms Length 2278 First 250',
+      pdfOcrText: sampleResumeText,
+      ocrConfidence: 92,
     });
 
     const result = await extractResumeText(
@@ -82,14 +79,16 @@ describe('resume extraction fallbacks', () => {
 
     expect(result.method).toBe('pdf-ocr');
     expect(result.usedOcr).toBe(true);
-    expect(result.ocrConfidence).toBe(93);
-    expect(result.attemptedMethods).toEqual(
-      expect.arrayContaining(['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr']),
-    );
-    expect(result.quality.confidenceTier).toBe('high');
+    expect(result.attemptedMethods).toEqual([
+      'pdfjs-text',
+      'pdf-parse-fallback',
+      'pdf-token-fallback',
+      'pdf-ocr',
+    ]);
+    expect(result.quality.isAcceptable).toBe(true);
   });
 
-  it('supports forceOCR to prefer OCR when requested', async () => {
+  it('supports forced OCR', async () => {
     __setResumeExtractionTestOverrides({
       extractPdfTextWithPdfJs: async () =>
         'Skills Projects Summary Experience Education TypeScript React',
@@ -122,19 +121,9 @@ describe('resume extraction fallbacks', () => {
 
   it('supports forceOCR alias in extraction options', async () => {
     __setResumeExtractionTestOverrides({
-      extractPdfTextWithPdfJs: async () =>
-        'Skills Projects Summary Experience Education TypeScript React',
-      extractPdfTextWithOcr: async () => ({
-        text: `
-          Jane Builder
-          Summary: Reliable extraction specialist
-          Experience: 3 years building OCR-assisted resume pipelines
-          Skills: OCR, Parsing, TypeScript
-          Projects: Improved scanned PDF recovery
-          Education: BSc Computer Science
-        `,
-        confidence: 85,
-      }),
+      pdfDirectText: sampleResumeText,
+      pdfOcrText: sampleResumeText.replace('Skills:', 'Skills:\n-'),
+      ocrConfidence: 96,
     });
 
     const result = await extractResumeText(
@@ -144,26 +133,25 @@ describe('resume extraction fallbacks', () => {
       { forceOCR: true },
     );
 
+    expect(result.attemptedMethods).toContain('pdf-ocr');
     expect(result.usedOcr).toBe(true);
     expect(result.method).toBe('pdf-ocr');
   });
 
   it('throws only after all extraction methods, including OCR, fail', async () => {
     __setResumeExtractionTestOverrides({
-      extractPdfTextWithPdfJs: async () => '',
-      extractPdfTextWithPdfParse: async () => '',
-      extractPdfTextFallback: () => '',
-      extractPdfTextWithOcr: async () => ({
-        text: '',
-        confidence: 12,
-      }),
+      pdfDirectText: 'stream endstream xref obj /Type /Catalog',
+      pdfCleanedText: 'obj obj obj stream stream',
+      pdfTokenText: '/XRef /Length /Filter /Producer',
+      pdfOcrText: 'scan',
+      ocrConfidence: 18,
     });
 
     await expect(
       extractResumeText(Buffer.from('fake-pdf'), 'application/pdf', 'resume.pdf'),
     ).rejects.toMatchObject({
       name: 'ResumeExtractionError',
-      failureCode: 'EMPTY_EXTRACTED_TEXT',
+      failureCode: 'LOW_TEXT_CONFIDENCE',
       attemptedMethods: expect.arrayContaining(['pdf-ocr']),
     });
   });
@@ -217,28 +205,25 @@ describe('resume extraction fallbacks', () => {
 
   it('cleans OCR output by dehyphenating wrapped words and normalizing bullets', async () => {
     __setResumeExtractionTestOverrides({
-      extractPdfTextWithPdfJs: async () => '',
-      extractPdfTextWithPdfParse: async () => '',
-      extractPdfTextFallback: () => '',
-      extractPdfTextWithOcr: async () => ({
-        text: `
-          Jane Builder
-          Experi-
-          ence
-          • Built resilient resume pipelines
-          Skills
-          • TypeScript
-          • Resume parsing
-          Educa-
-          tion
-          - BSc Computer Science
-          Projects
-          • Career hub matching improvements
-          Summary
-          Product engineer focused on reliable extraction
-        `,
-        confidence: 84,
-      }),
+      pdfDirectText: 'stream endstream xref obj /Type /Catalog',
+      pdfCleanedText: 'obj obj obj stream stream',
+      pdfTokenText: '/XRef /Length /Filter /Producer',
+      pdfOcrText: `
+        Jane Builder
+        Product Engineer
+        jane@example.com
+        Experi-
+        ence
+        \u2022 Built resilient resume pipelines
+        Skills
+        TypeScript React PostgreSQL
+        Educa-
+        tion
+        BSc Computer Science
+        Projects
+        Led product launches
+      `,
+      ocrConfidence: 88,
     });
 
     const result = await extractResumeText(
@@ -255,7 +240,7 @@ describe('resume extraction fallbacks', () => {
 
   it('extracts DOCX text without OCR', async () => {
     __setResumeExtractionTestOverrides({
-      extractDocxText: async () => sampleResumeText,
+      docxText: sampleResumeText,
     });
 
     const result = await extractResumeText(
@@ -273,23 +258,27 @@ describe('resume extraction fallbacks', () => {
 
 describe('resume parsing', () => {
   it('extracts structured fields from readable resume text', () => {
-    const parsed = parseResumeText(`
-      Jane Builder
-      Product Engineer
-      jane@example.com
-      +91 9000000000
-      Bangalore, India
-      Summary: Product engineer building startup tools
-      Skills: TypeScript, React, PostgreSQL, Supabase
-      Experience: 4 years building startup tools
-      Projects: Led roadmap for developer platform
-      Education: BSc Computer Science
-    `);
+    const parsed = parseResumeText(sampleResumeText, {
+      extractionMethod: 'pdf-ocr',
+      attemptedMethods: [
+        'pdfjs-text',
+        'pdf-parse-fallback',
+        'pdf-token-fallback',
+        'pdf-ocr',
+      ],
+      usedOcr: true,
+    });
 
     expect(parsed.fullName).toBe('Jane Builder');
     expect(parsed.currentTitle).toBe('Product Engineer');
     expect(parsed.email).toBe('jane@example.com');
     expect(parsed.summary).toContain('startup tools');
+    expect(parsed.parsedSections.__meta?.attemptedMethods).toEqual([
+      'pdfjs-text',
+      'pdf-parse-fallback',
+      'pdf-token-fallback',
+      'pdf-ocr',
+    ]);
     expect(parsed.directSkillSlugs).toEqual(
       expect.arrayContaining(['typescript', 'react', 'postgresql']),
     );

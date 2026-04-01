@@ -3,6 +3,9 @@ import { z } from 'zod';
 export const ResumeAnalyzeSchema = z
   .object({
     rerun: z.boolean().optional(),
+    targetRole: z.string().trim().min(1).max(160).optional(),
+    jobDescription: z.string().trim().min(1).max(12000).optional(),
+    forceOCR: z.boolean().optional(),
   })
   .strict();
 

@@ -2,8 +2,8 @@ import { fail, handleApiError, ok } from '@/lib/api';
 import { getJobCardsByIds, getOwnedResume } from '@/lib/career-match/queries';
 import { getResumeAnalysisReadiness } from '@/lib/resume/analysis-readiness';
 import { assessResumeTextQuality } from '@/lib/resume/extract';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 export async function GET(
   _request: Request,
@@ -20,9 +20,23 @@ export async function GET(
 
     const [profileResult, skillsResult, analysesResult, matchesResult] = await Promise.all([
       supabase.from('resume_profiles').select('*').eq('resume_id', resume.id).maybeSingle(),
-      supabase.from('resume_skills').select('source_type, confidence, skill_slug, skill_name').eq('resume_id', resume.id),
-      supabase.from('resume_analysis_runs').select('*').eq('resume_id', resume.id).order('started_at', { ascending: false }).limit(10),
-      supabase.from('job_matches').select('*').eq('resume_id', resume.id).eq('user_id', user.id).order('overall_score', { ascending: false }).limit(10),
+      supabase
+        .from('resume_skills')
+        .select('source_type, confidence, skill_slug, skill_name')
+        .eq('resume_id', resume.id),
+      supabase
+        .from('resume_analysis_runs')
+        .select('*')
+        .eq('resume_id', resume.id)
+        .order('started_at', { ascending: false })
+        .limit(10),
+      supabase
+        .from('job_matches')
+        .select('*')
+        .eq('resume_id', resume.id)
+        .eq('user_id', user.id)
+        .order('overall_score', { ascending: false })
+        .limit(10),
     ]);
 
     if (profileResult.error) throw new Error(profileResult.error.message);
@@ -34,6 +48,7 @@ export async function GET(
       profileResult.data?.parsed_text &&
         assessResumeTextQuality(profileResult.data.parsed_text).isAcceptable,
     );
+
     const jobs = await getJobCardsByIds(
       supabase,
       profileLooksValid ? (matchesResult.data ?? []).map((match) => match.job_id) : [],

@@ -4,6 +4,7 @@ import { Loader2, RefreshCcw } from 'lucide-react';
 import type {
   CareerAnalysisRun,
   CareerResumeAnalysisReadiness,
+  CareerResumeExtractionMeta,
   CareerResumeSummary,
 } from '@/components/career-match/types';
 import {
@@ -19,7 +20,7 @@ export interface ResumeAnalysisStatusProps {
   resume: CareerResumeSummary;
   latestRun: CareerAnalysisRun | null;
   analysisReadiness: CareerResumeAnalysisReadiness;
-  extractionMeta?: Record<string, unknown> | null;
+  extractionMeta?: CareerResumeExtractionMeta | null;
   analyzing: boolean;
   forceOCR: boolean;
   onForceOCRChange: (value: boolean) => void;
@@ -45,32 +46,20 @@ export function ResumeAnalysisStatus({
   const showDeveloperDetails =
     process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_RESUME_DEBUG === 'true';
   const analysisMethod = describeAnalysisMethod(latestRun?.parser_version);
-  const metaUsedOcr = extractionMeta?.usedOcr;
   const metaOcrAttempted = extractionMeta?.ocrAttempted;
   const metaOcrImproved = extractionMeta?.ocrImprovedQuality;
   const analyzeDetails =
     analyzeError?.details && typeof analyzeError.details === 'object'
       ? (analyzeError.details as Record<string, unknown>)
       : null;
-  const extractionQuality =
-    extractionMeta?.extractionQuality && typeof extractionMeta.extractionQuality === 'object'
-      ? (extractionMeta.extractionQuality as Record<string, unknown>)
-      : null;
-  const confidenceTier =
-    extractionQuality?.confidenceTier === 'high' ||
-    extractionQuality?.confidenceTier === 'medium' ||
-    extractionQuality?.confidenceTier === 'low'
-      ? extractionQuality.confidenceTier
-      : null;
+  const confidenceTier = extractionMeta?.extractionQuality?.confidenceTier ?? null;
   const usedOcr = Boolean(
-    metaUsedOcr === true ||
+    extractionMeta?.usedOcr === true ||
       latestRun?.parser_version?.includes('pdf-ocr') ||
       latestRun?.parser_version?.includes(':ocr'),
   );
   const ocrAttempted =
-    metaOcrAttempted === true ||
-    usedOcr ||
-    Boolean(analyzeDetails?.ocrAttempted);
+    metaOcrAttempted === true || usedOcr || Boolean(analyzeDetails?.ocrAttempted);
   const ocrImprovedQuality =
     typeof metaOcrImproved === 'boolean'
       ? metaOcrImproved
@@ -106,8 +95,18 @@ export function ResumeAnalysisStatus({
             Force OCR for this run (slower, useful for scanned PDFs)
           </label>
         </div>
-        <Button type="button" variant="secondary" onClick={() => void onAnalyze()} disabled={analyzeDisabled}>
-          {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => void onAnalyze()}
+          disabled={analyzeDisabled}
+        >
+          {analyzing ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCcw className="h-4 w-4" />
+          )}
           {resume.parse_status === 'parsed' ? 'Rerun analysis' : 'Analyze resume'}
         </Button>
       </div>
@@ -155,7 +154,9 @@ export function ResumeAnalysisStatus({
             {latestRun ? latestRun.status : 'No analysis run yet'}
           </div>
           <div className="mt-1 text-xs text-text-tertiary">
-            {latestRun ? formatDateTime(latestRun.created_at) : 'Upload and analyze to populate your profile.'}
+            {latestRun
+              ? formatDateTime(latestRun.created_at)
+              : 'Upload and analyze to populate your profile.'}
           </div>
           {analysisMethod ? (
             <div className="mt-2 text-xs text-text-secondary">
@@ -179,7 +180,7 @@ export function ResumeAnalysisStatus({
 
       {usedOcr && !latestRun?.error_message ? (
         <div className="rounded-2xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-info">
-          OCR fallback was used for this resume because the original PDF text extraction was too weak.
+          OCR fallback was used for this resume because native PDF text extraction was too weak.
         </div>
       ) : null}
 

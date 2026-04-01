@@ -30,17 +30,17 @@ function isUnreadableResumeError(message: string | null | undefined) {
     normalized.includes('too short to build a reliable resume profile') ||
     normalized.includes('not human-readable enough') ||
     normalized.includes('raw pdf internals') ||
-    normalized.includes('binary-like or document-object tokens') ||
-    normalized.includes('could not extract readable text') ||
-    normalized.includes('pdf parsing can be brittle')
+    normalized.includes('binary-like') ||
+    normalized.includes('image-based') ||
+    normalized.includes('could not be read reliably')
   );
 }
 
 export function getResumeAnalysisReadiness(
-  resume: ResumeRow,
-  latestRun: AnalysisRunRow | null,
+  resume: Pick<ResumeRow, 'file_name' | 'file_path' | 'mime_type' | 'parse_status'>,
+  latestRun: Pick<AnalysisRunRow, 'status' | 'error_message'> | null,
 ): ResumeAnalysisReadiness {
-  if (!resume.file_path) {
+  if (!resume.file_path || !resume.file_name) {
     return {
       ready: false,
       code: 'RESUME_FILE_MISSING',
@@ -65,7 +65,6 @@ export function getResumeAnalysisReadiness(
   }
 
   if (
-    resume.parse_status === 'failed' &&
     latestRun?.status === 'failed' &&
     isUnreadableResumeError(latestRun.error_message)
   ) {
