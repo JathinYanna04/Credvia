@@ -1,15 +1,42 @@
-import { fail, handleApiError, ok, parseJson } from '@/lib/api';
+import { fail, handleApiError, ok } from '@/lib/api';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { getActiveResume, getOwnedResume } from '@/lib/career-match/queries';
 import { sendResumeAnalysisEmail } from '@/lib/email/send-resume-analysis-email';
 import { recomputeMatchesForResume } from '@/lib/matching/service';
 import { enforceRateLimit } from '@/lib/rate-limit';
+import { getResumeAnalysisReadiness } from '@/lib/resume/analysis-readiness';
 import { ResumeExtractionError } from '@/lib/resume/extract';
 import { analyzeStoredResume } from '@/lib/resume/analyze';
 import { ResumeAnalyzeSchema } from '@/lib/schemas/career-match';
 import { createServiceRoleClient } from '@/lib/supabase/service';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
+import { ZodError } from 'zod';
+
+async function parseAnalyzeRequest(request: Request) {
+  const contentLength = request.headers.get('content-length');
+  if (!contentLength || contentLength === '0') {
+    return {};
+  }
+
+  const contentType = request.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    throw new ZodError([
+      {
+        code: 'custom',
+        message: 'Request body must be valid JSON.',
+        path: [],
+      },
+    ]);
+  }
+
+  const rawBody = await request.text();
+  if (!rawBody.trim()) {
+    return {};
+  }
+
+  return ResumeAnalyzeSchema.parse(JSON.parse(rawBody));
+}
 
 export async function POST(
   request: Request,
@@ -18,7 +45,7 @@ export async function POST(
   try {
     const supabase = await createServerSupabaseClient();
     const user = await getRequiredUser(supabase);
-    await parseJson(request, ResumeAnalyzeSchema);
+    await parseAnalyzeRequest(request);
     const limit = await enforceRateLimit('resume_analyze', user.id);
 
     if (!limit.success) {
@@ -28,6 +55,33 @@ export async function POST(
     const resume = await getOwnedResume(supabase, user.id, params.id);
     if (!resume) {
       return fail('NOT_FOUND', 'Resume not found.', 404);
+    }
+
+    const latestRunResult = await supabase
+      .from('resume_analysis_runs')
+      .select('status, error_message')
+      .eq('resume_id', resume.id)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestRunResult.error) {
+      throw new Error(latestRunResult.error.message);
+    }
+
+    const readiness = getResumeAnalysisReadiness(resume, latestRunResult.data ?? null);
+    if (!readiness.ready) {
+      const status = readiness.code === 'ANALYSIS_IN_PROGRESS' ? 409 : 422;
+      console.warn('[resume-analyze] rejected before analysis', {
+        userId: user.id,
+        resumeId: resume.id,
+        code: readiness.code,
+        message: readiness.message,
+        parseStatus: resume.parse_status,
+        mimeType: resume.mime_type,
+        filePath: resume.file_path,
+      });
+      return fail(readiness.code ?? 'VALIDATION_ERROR', readiness.message ?? 'Resume is not ready for analysis.', status);
     }
 
     const processingUpdate = await supabase
@@ -49,7 +103,13 @@ export async function POST(
 
     const download = await supabase.storage.from('resumes').download(resume.file_path);
     if (download.error || !download.data) {
-      throw new Error(download.error?.message ?? 'Could not download stored resume.');
+      console.error('[resume-analyze] storage download failed', {
+        userId: user.id,
+        resumeId: resume.id,
+        filePath: resume.file_path,
+        storageError: download.error?.message ?? null,
+      });
+      return fail('RESUME_FILE_MISSING', 'Upload a resume file before analysis.', 422);
     }
 
     const buffer = Buffer.from(await download.data.arrayBuffer());
@@ -119,6 +179,14 @@ export async function POST(
               : 'Resume analysis failed.',
         },
       });
+      console.error('[resume-analyze] analysis failed', {
+        userId: user.id,
+        resumeId: resume.id,
+        parseStatus: resume.parse_status,
+        mimeType: resume.mime_type,
+        message: analysisError instanceof Error ? analysisError.message : 'Resume analysis failed.',
+        errorName: analysisError instanceof Error ? analysisError.name : null,
+      });
       throw analysisError;
     }
 
@@ -129,7 +197,19 @@ export async function POST(
     }
 
     if (error instanceof ResumeExtractionError) {
-      return fail('VALIDATION_ERROR', error.message, 422);
+      return fail(
+        'RESUME_TEXT_MISSING',
+        'Upload or parse resume content before analysis.',
+        422,
+      );
+    }
+
+    if (error instanceof ZodError) {
+      return fail(
+        'VALIDATION_ERROR',
+        error.issues[0]?.message ?? 'Validation error.',
+        400,
+      );
     }
 
     return handleApiError(error);

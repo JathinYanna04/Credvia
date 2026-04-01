@@ -14,6 +14,11 @@ import { Button } from '@/components/ui/button';
 export interface ResumeAnalysisStatusProps {
   resume: CareerResumeSummary;
   latestRun: CareerAnalysisRun | null;
+  analysisReadiness: {
+    ready: boolean;
+    code: string | null;
+    message: string | null;
+  };
   analyzing: boolean;
   onAnalyze: () => Promise<void> | void;
 }
@@ -21,11 +26,13 @@ export interface ResumeAnalysisStatusProps {
 export function ResumeAnalysisStatus({
   resume,
   latestRun,
+  analysisReadiness,
   analyzing,
   onAnalyze,
 }: ResumeAnalysisStatusProps) {
   const analysisMethod = describeAnalysisMethod(latestRun?.parser_version);
   const usedOcr = Boolean(latestRun?.parser_version?.includes('pdf-ocr') || latestRun?.parser_version?.includes(':ocr'));
+  const analyzeDisabled = analyzing || !analysisReadiness.ready;
 
   return (
     <section className="surface-panel space-y-4 p-5">
@@ -41,7 +48,7 @@ export function ResumeAnalysisStatus({
             Last upload: {formatDateTime(resume.uploaded_at)}
           </p>
         </div>
-        <Button type="button" variant="secondary" onClick={() => void onAnalyze()} disabled={analyzing}>
+        <Button type="button" variant="secondary" onClick={() => void onAnalyze()} disabled={analyzeDisabled}>
           {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
           {resume.parse_status === 'parsed' ? 'Rerun analysis' : 'Analyze resume'}
         </Button>
@@ -78,6 +85,12 @@ export function ResumeAnalysisStatus({
               DOCX usually parses more reliably than PDF if this keeps failing.
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {!analysisReadiness.ready && analysisReadiness.message ? (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          {analysisReadiness.message}
         </div>
       ) : null}
 

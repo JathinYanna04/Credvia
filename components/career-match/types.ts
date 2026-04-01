@@ -155,6 +155,11 @@ export interface CareerMatch {
 export interface CareerResumeDetail {
   resume: CareerResumeSummary;
   profile: CareerResumeProfile | null;
+  analysisReadiness: {
+    ready: boolean;
+    code: string | null;
+    message: string | null;
+  };
   skills: Array<{
     source: string;
     confidence: number;

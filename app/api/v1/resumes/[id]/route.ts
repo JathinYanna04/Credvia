@@ -1,5 +1,6 @@
 import { fail, handleApiError, ok } from '@/lib/api';
 import { getJobCardsByIds, getOwnedResume } from '@/lib/career-match/queries';
+import { getResumeAnalysisReadiness } from '@/lib/resume/analysis-readiness';
 import { assessResumeTextQuality } from '@/lib/resume/extract';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
@@ -38,10 +39,12 @@ export async function GET(
       profileLooksValid ? (matchesResult.data ?? []).map((match) => match.job_id) : [],
     );
     const jobLookup = new Map(jobs.map((job) => [job.id, job]));
+    const latestRun = analysesResult.data?.[0] ?? null;
 
     return ok({
       resume,
       profile: profileLooksValid ? profileResult.data ?? null : null,
+      analysisReadiness: getResumeAnalysisReadiness(resume, latestRun),
       skills: (profileLooksValid ? skillsResult.data ?? [] : []).map((row) => ({
         source: row.source_type,
         confidence: row.confidence,

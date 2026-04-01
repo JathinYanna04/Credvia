@@ -124,6 +124,11 @@ export interface ApiError {
     | 'FORBIDDEN'
     | 'NOT_FOUND'
     | 'VALIDATION_ERROR'
+    | 'RESUME_FILE_MISSING'
+    | 'RESUME_FILE_UNSUPPORTED'
+    | 'RESUME_TEXT_MISSING'
+    | 'ANALYSIS_IN_PROGRESS'
+    | 'ANALYSIS_SERVICE_UNAVAILABLE'
     | 'RATE_LIMITED'
     | 'INTERNAL_ERROR';
   message: string;
