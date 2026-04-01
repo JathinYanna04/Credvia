@@ -12,7 +12,11 @@ import { createServiceRoleClient } from '@/lib/supabase/service';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 import { logError, logInfo } from '@/lib/utils/logger';
-import type { AnalyzeResumeRequest, AnalyzeResumeResponse } from '@/lib/types';
+import type {
+  AnalyzeResumeRequest,
+  AnalyzeResumeResponse,
+  ResumeExtractionErrorDetails,
+} from '@/lib/types';
 
 const AnalyzeResumeRequestSchema = z
   .object({
@@ -66,6 +70,76 @@ async function parseAnalyzeRequest(request: Request) {
 
     throw error;
   }
+}
+
+function normalizeExtractionFailure(error: ResumeExtractionError): {
+  code:
+    | 'EXTRACTION_FAILED'
+    | 'IMAGE_BASED_PDF'
+    | 'LOW_TEXT_CONFIDENCE'
+    | 'OCR_FAILED'
+    | 'EMPTY_EXTRACTED_TEXT';
+  message: string;
+  details: ResumeExtractionErrorDetails;
+} {
+  const details: ResumeExtractionErrorDetails = {
+    reason: error.diagnostics?.reason ?? error.quality?.reason ?? error.message,
+    attemptedMethods: error.attemptedMethods,
+    method: error.method,
+    usedOcr: error.diagnostics?.usedOcr ?? false,
+    ocrAttempted:
+      error.diagnostics?.ocrAttempted ?? error.attemptedMethods.includes('pdf-ocr'),
+    ocrImprovedQuality: error.diagnostics?.ocrImprovedQuality ?? null,
+    ocrConfidence: error.diagnostics?.ocrConfidence ?? null,
+    textLength: error.diagnostics?.textLength ?? 0,
+    readiness: error.diagnostics?.readiness ?? 'failed',
+    confidenceScore: error.diagnostics?.confidenceScore ?? 0,
+    confidenceTier: error.diagnostics?.confidenceTier ?? 'low',
+    likelyScannedPdf: error.diagnostics?.likelyScannedPdf ?? false,
+  };
+
+  const code = error.failureCode;
+
+  if (code === 'IMAGE_BASED_PDF') {
+    return {
+      code,
+      message:
+        'This PDF appears image-based and could not be parsed reliably. Try a clearer text PDF or DOCX.',
+      details,
+    };
+  }
+
+  if (code === 'LOW_TEXT_CONFIDENCE') {
+    return {
+      code,
+      message:
+        'We extracted text from your resume, but the structure quality was lower than expected.',
+      details,
+    };
+  }
+
+  if (code === 'OCR_FAILED') {
+    return {
+      code,
+      message:
+        'OCR fallback was attempted but did not recover enough usable text. Try a clearer text PDF or DOCX.',
+      details,
+    };
+  }
+
+  if (code === 'EMPTY_EXTRACTED_TEXT') {
+    return {
+      code,
+      message: 'No readable text could be extracted from this resume. Upload a text PDF or DOCX.',
+      details,
+    };
+  }
+
+  return {
+    code: 'EXTRACTION_FAILED',
+    message: 'This resume could not be read reliably. Try a clearer PDF or DOCX.',
+    details,
+  };
 }
 
 export async function POST(
@@ -230,7 +304,11 @@ export async function POST(
           method: analysis.extraction.method,
           attemptedMethods: analysis.extraction.attemptedMethods,
           usedOcr: analysis.extraction.usedOcr,
+          ocrAttempted: analysis.extraction.ocrAttempted,
+          ocrImprovedQuality: analysis.extraction.ocrImprovedQuality,
           ocrConfidence: analysis.extraction.ocrConfidence,
+          textLength: analysis.extraction.textLength,
+          readiness: analysis.extraction.readiness,
           quality: {
             confidenceScore: analysis.extraction.quality.confidenceScore,
             confidenceTier: analysis.extraction.quality.confidenceTier,
@@ -277,13 +355,24 @@ export async function POST(
         mimeType: resume.mime_type,
         message: errorMessage,
         errorName: analysisError instanceof Error ? analysisError.name : 'UnknownError',
+        forceOcrRequested: body.forceOCR ?? false,
+        extractionFailureCode:
+          analysisError instanceof ResumeExtractionError
+            ? analysisError.failureCode
+            : null,
+        extractionDiagnostics:
+          analysisError instanceof ResumeExtractionError
+            ? analysisError.diagnostics
+            : null,
       });
 
       if (analysisError instanceof ResumeExtractionError) {
+        const extractionFailure = normalizeExtractionFailure(analysisError);
         return fail(
-          'RESUME_TEXT_MISSING',
-          'This resume could not be read reliably. Try a clearer PDF or DOCX.',
+          extractionFailure.code,
+          extractionFailure.message,
           422,
+          extractionFailure.details,
         );
       }
 

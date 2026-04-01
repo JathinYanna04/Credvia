@@ -11,6 +11,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { AnalyzeResumeRequest, AnalyzeResumeResponse, ApiResponse } from '@/lib/types';
 
+type ResumeAnalyzeErrorState = {
+  code: string;
+  message: string;
+  details?: unknown;
+};
+
 export default function ResumePage() {
   const [resumes, setResumes] = useState<CareerResumeSummary[] | null>(null);
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
@@ -21,6 +27,7 @@ export default function ResumePage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
   const [forceOCR, setForceOCR] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<ResumeAnalyzeErrorState | null>(null);
 
   useEffect(() => {
     setError(null);
@@ -63,6 +70,7 @@ export default function ResumePage() {
 
     setDetail(null);
     setDetailError(null);
+    setAnalyzeError(null);
 
     fetch(`/api/v1/resumes/${selectedResumeId}`)
       .then(async (response) => {
@@ -106,6 +114,7 @@ export default function ResumePage() {
 
     setAnalyzing(true);
     setDetailError(null);
+    setAnalyzeError(null);
 
     try {
       const analyzeRequest: AnalyzeResumeRequest = {
@@ -126,12 +135,20 @@ export default function ResumePage() {
       }
 
       if (!response.ok) {
-        throw new Error(payload.error?.message ?? 'Could not analyze this resume.');
+        setAnalyzeError({
+          code: payload.error?.code ?? 'EXTRACTION_FAILED',
+          message: payload.error?.message ?? 'Could not analyze this resume.',
+          details: payload.error?.details,
+        });
+        return;
       }
 
       setRefreshKey((current) => current + 1);
     } catch (analyzeError) {
-      setDetailError(analyzeError instanceof Error ? analyzeError.message : 'Could not analyze this resume.');
+      setAnalyzeError({
+        code: 'EXTRACTION_FAILED',
+        message: analyzeError instanceof Error ? analyzeError.message : 'Could not analyze this resume.',
+      });
     } finally {
       setAnalyzing(false);
     }
@@ -229,6 +246,7 @@ export default function ResumePage() {
               analyzing={analyzing}
               forceOCR={forceOCR}
               onForceOCRChange={setForceOCR}
+              analyzeError={analyzeError}
               onAnalyze={handleAnalyze}
             />
           ) : (

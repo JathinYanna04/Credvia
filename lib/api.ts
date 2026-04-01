@@ -9,9 +9,10 @@ export function fail(
   code: NonNullable<ApiResponse<never>['error']>['code'],
   message: string,
   status: number,
+  details?: unknown,
 ) {
   return Response.json(
-    { error: { code, message } } satisfies ApiResponse<never>,
+    { error: { code, message, details } } satisfies ApiResponse<never>,
     { status },
   );
 }

@@ -1,3 +1,5 @@
+import type { ResumeExtractionErrorDetails } from '@/lib/types';
+
 const DOCX_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/msword',
@@ -77,10 +79,26 @@ export interface ResumeExtractionResult {
   text: string;
   method: ResumeExtractionMethod;
   usedOcr: boolean;
+  ocrAttempted: boolean;
+  ocrImprovedQuality: boolean | null;
   ocrConfidence: number | null;
   attemptedMethods: ResumeExtractionMethod[];
+  textLength: number;
+  readiness: 'good' | 'partial' | 'poor' | 'failed';
   quality: ResumeTextQuality;
 }
+
+export type ResumeExtractionFailureCode =
+  | 'EXTRACTION_FAILED'
+  | 'IMAGE_BASED_PDF'
+  | 'LOW_TEXT_CONFIDENCE'
+  | 'OCR_FAILED'
+  | 'EMPTY_EXTRACTED_TEXT';
+
+type ResumeExtractionDiagnostics = Omit<ResumeExtractionErrorDetails, 'attemptedMethods' | 'method'> & {
+  attemptedMethods: ResumeExtractionMethod[];
+  method: ResumeExtractionMethod | null;
+};
 
 export class ResumeExtractionError extends Error {
   constructor(
@@ -88,6 +106,8 @@ export class ResumeExtractionError extends Error {
     public readonly quality: ResumeTextQuality | null = null,
     public readonly method: ResumeExtractionMethod | null = null,
     public readonly attemptedMethods: ResumeExtractionMethod[] = [],
+    public readonly failureCode: ResumeExtractionFailureCode = 'EXTRACTION_FAILED',
+    public readonly diagnostics: ResumeExtractionDiagnostics | null = null,
   ) {
     super(message);
     this.name = 'ResumeExtractionError';
@@ -453,6 +473,8 @@ function createExtractionCandidate(args: {
   method: ResumeExtractionMethod;
   attemptedMethods: ResumeExtractionMethod[];
   usedOcr?: boolean;
+  ocrAttempted?: boolean;
+  ocrImprovedQuality?: boolean | null;
   ocrConfidence?: number | null;
   source?: 'pdf' | 'docx';
 }) {
@@ -463,10 +485,76 @@ function createExtractionCandidate(args: {
     text: cleanedText,
     method: args.method,
     usedOcr: args.usedOcr ?? false,
+    ocrAttempted: args.ocrAttempted ?? false,
+    ocrImprovedQuality: args.ocrImprovedQuality ?? null,
     ocrConfidence: args.ocrConfidence ?? null,
     attemptedMethods: [...args.attemptedMethods],
+    textLength: cleanedText.length,
+    readiness: deriveReadiness(quality),
     quality,
   } satisfies ResumeExtractionResult;
+}
+
+function deriveReadiness(
+  quality: ResumeTextQuality,
+): 'good' | 'partial' | 'poor' | 'failed' {
+  if (!quality.isAcceptable && quality.confidenceTier === 'low') {
+    return 'failed';
+  }
+
+  if (quality.confidenceTier === 'high') {
+    return 'good';
+  }
+
+  if (quality.isAcceptable) {
+    return 'partial';
+  }
+
+  return 'poor';
+}
+
+function classifyExtractionFailure(
+  quality: ResumeTextQuality | null,
+  attemptedMethods: ResumeExtractionMethod[],
+  ocrAttempted: boolean,
+): ResumeExtractionFailureCode {
+  if (!quality || quality.totalWordCount === 0 || quality.alphaWordCount === 0) {
+    return ocrAttempted || attemptedMethods.includes('pdf-ocr')
+      ? 'EMPTY_EXTRACTED_TEXT'
+      : 'EXTRACTION_FAILED';
+  }
+
+  if (quality.likelyScannedPdf && quality.confidenceTier === 'low') {
+    return 'IMAGE_BASED_PDF';
+  }
+
+  if (!quality.isAcceptable || quality.confidenceTier !== 'high') {
+    return 'LOW_TEXT_CONFIDENCE';
+  }
+
+  return 'EXTRACTION_FAILED';
+}
+
+function buildDiagnostics(
+  candidate: ResumeExtractionResult | null,
+  attemptedMethods: ResumeExtractionMethod[],
+  ocrAttempted: boolean,
+  ocrImprovedQuality: boolean | null,
+): ResumeExtractionDiagnostics {
+  return {
+    reason: candidate?.quality.reason ?? null,
+    attemptedMethods,
+    method: candidate?.method ?? null,
+    usedOcr: candidate?.usedOcr ?? false,
+    ocrAttempted,
+    ocrImprovedQuality,
+    ocrConfidence: candidate?.ocrConfidence ?? null,
+    textLength: candidate?.textLength ?? 0,
+    readiness: candidate?.readiness ?? 'failed',
+    confidenceScore: candidate?.quality.confidenceScore ?? 0,
+    confidenceTier: candidate?.quality.confidenceTier ?? 'low',
+    likelyScannedPdf: candidate?.quality.likelyScannedPdf ?? false,
+  };
 }
 
 function chooseBetterCandidate(
@@ -519,6 +607,8 @@ export async function extractResumeText(
   const forceOcrRequested = options.forceOcr ?? options.forceOCR ?? false;
   const attemptedMethods: ResumeExtractionMethod[] = [];
   const overrides = resumeExtractionTestOverrides;
+  let bestNonOcrCandidate: ResumeExtractionResult | null = null;
+  let ocrAttempted = false;
 
   if (mimeType !== 'application/pdf' && !filename.toLowerCase().endsWith('.pdf')) {
     attemptedMethods.push('docx-mammoth');
@@ -527,6 +617,7 @@ export async function extractResumeText(
       text: docxText,
       method: 'docx-mammoth',
       attemptedMethods,
+      ocrAttempted: false,
       source: 'docx',
     });
 
@@ -534,11 +625,14 @@ export async function extractResumeText(
       return candidate;
     }
 
+    const failureCode = classifyExtractionFailure(candidate.quality, attemptedMethods, false);
     throw new ResumeExtractionError(
       'This resume could not be read reliably. Try a clearer PDF or DOCX.',
       candidate.quality,
       candidate.method,
       attemptedMethods,
+      failureCode,
+      buildDiagnostics(candidate, attemptedMethods, false, null),
     );
   }
 
@@ -581,9 +675,11 @@ export async function extractResumeText(
         text: result.text,
         method: attempt.method,
         attemptedMethods,
+        ocrAttempted: false,
         source: 'pdf',
       });
       bestCandidate = chooseBetterCandidate(bestCandidate, candidate);
+      bestNonOcrCandidate = chooseBetterCandidate(bestNonOcrCandidate, candidate);
 
       if (
         !forceOcrRequested &&
@@ -597,6 +693,7 @@ export async function extractResumeText(
   }
 
   if (forceOcrRequested || shouldAttemptOcr(bestCandidate)) {
+    ocrAttempted = true;
     attemptedMethods.push('pdf-ocr');
 
     try {
@@ -608,26 +705,78 @@ export async function extractResumeText(
         method: 'pdf-ocr',
         attemptedMethods,
         usedOcr: true,
+        ocrAttempted: true,
         ocrConfidence: ocr.confidence ?? null,
         source: 'pdf',
       });
+      candidate.ocrImprovedQuality =
+        bestNonOcrCandidate === null
+          ? true
+          : candidate.quality.confidenceScore >
+            bestNonOcrCandidate.quality.confidenceScore;
       bestCandidate = chooseBetterCandidate(bestCandidate, candidate);
 
       if (forceOcrRequested && candidate.quality.isAcceptable) {
         return candidate;
       }
     } catch {
+      const diagnostics = buildDiagnostics(
+        bestCandidate,
+        attemptedMethods,
+        true,
+        bestCandidate
+          ? bestNonOcrCandidate === null
+            ? true
+            : bestCandidate.quality.confidenceScore >
+              bestNonOcrCandidate.quality.confidenceScore
+          : null,
+      );
+      throw new ResumeExtractionError(
+        'OCR fallback failed. Please upload a clearer text-based PDF or a DOCX resume.',
+        bestCandidate?.quality ?? null,
+        bestCandidate?.method ?? null,
+        attemptedMethods,
+        'OCR_FAILED',
+        diagnostics,
+      );
     }
   }
 
   if (bestCandidate?.quality.isAcceptable) {
+    bestCandidate.ocrAttempted = ocrAttempted;
+    bestCandidate.ocrImprovedQuality =
+      ocrAttempted && bestCandidate.usedOcr
+        ? bestNonOcrCandidate === null
+          ? true
+          : bestCandidate.quality.confidenceScore >
+            bestNonOcrCandidate.quality.confidenceScore
+        : null;
     return bestCandidate;
   }
+
+  const failureCode = classifyExtractionFailure(
+    bestCandidate?.quality ?? null,
+    attemptedMethods,
+    ocrAttempted,
+  );
+  const diagnostics = buildDiagnostics(
+    bestCandidate,
+    attemptedMethods,
+    ocrAttempted,
+    ocrAttempted && bestCandidate
+      ? bestNonOcrCandidate === null
+        ? true
+        : bestCandidate.quality.confidenceScore >
+          bestNonOcrCandidate.quality.confidenceScore
+      : null,
+  );
 
   throw new ResumeExtractionError(
     'This resume could not be read reliably. Try a clearer PDF or DOCX.',
     bestCandidate?.quality ?? null,
     bestCandidate?.method ?? null,
     attemptedMethods,
+    failureCode,
+    diagnostics,
   );
 }

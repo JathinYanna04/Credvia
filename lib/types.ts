@@ -128,10 +128,16 @@ export interface ApiError {
     | 'RESUME_FILE_MISSING'
     | 'RESUME_FILE_UNSUPPORTED'
     | 'RESUME_TEXT_MISSING'
+    | 'EXTRACTION_FAILED'
+    | 'IMAGE_BASED_PDF'
+    | 'LOW_TEXT_CONFIDENCE'
+    | 'OCR_FAILED'
+    | 'EMPTY_EXTRACTED_TEXT'
     | 'RATE_LIMITED'
     | 'ANALYSIS_SERVICE_UNAVAILABLE'
     | 'INTERNAL_ERROR';
   message: string;
+  details?: unknown;
 }
 
 export interface ApiResponse<T> {
@@ -164,8 +170,27 @@ export interface ResumeExtractionSummary {
   method: string;
   attemptedMethods: string[];
   usedOcr: boolean;
+  ocrAttempted?: boolean;
+  ocrImprovedQuality?: boolean | null;
   ocrConfidence: number | null;
+  textLength?: number;
+  readiness?: 'good' | 'partial' | 'poor' | 'failed';
   quality: ResumeExtractionQualitySummary;
+}
+
+export interface ResumeExtractionErrorDetails {
+  reason?: string | null;
+  attemptedMethods: string[];
+  method: string | null;
+  usedOcr: boolean;
+  ocrAttempted: boolean;
+  ocrImprovedQuality: boolean | null;
+  ocrConfidence: number | null;
+  textLength: number;
+  readiness: 'good' | 'partial' | 'poor' | 'failed';
+  confidenceScore: number;
+  confidenceTier: 'high' | 'medium' | 'low';
+  likelyScannedPdf: boolean;
 }
 
 export interface AnalyzeResumeResponse {

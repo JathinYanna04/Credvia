@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AnalyzeResumeResponse } from '@/lib/types';
+import type { AnalyzeResumeResponse, ResumeExtractionErrorDetails } from '@/lib/types';
 import { ResumeExtractionError } from '@/lib/resume/extract';
 
 const createServerSupabaseClient = vi.fn();
@@ -251,7 +251,7 @@ describe('resume analyze route', () => {
     expect(analyzeStoredResume).not.toHaveBeenCalled();
   });
 
-  it('returns a structured RESUME_TEXT_MISSING error when all extraction methods fail', async () => {
+  it('returns IMAGE_BASED_PDF when extraction indicates a scanned/image-based PDF', async () => {
     const supabase = createSupabaseMock();
 
     createServerSupabaseClient.mockResolvedValue(supabase);
@@ -266,9 +266,28 @@ describe('resume analyze route', () => {
       parse_status: 'uploaded',
     });
     getActiveResume.mockResolvedValue({ id: 'resume-1' });
+    const details: ResumeExtractionErrorDetails = {
+      reason: 'This PDF looks image-based or too low-quality for reliable text extraction.',
+      attemptedMethods: ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
+      method: 'pdf-ocr',
+      usedOcr: true,
+      ocrAttempted: true,
+      ocrImprovedQuality: false,
+      ocrConfidence: 28,
+      textLength: 94,
+      readiness: 'failed',
+      confidenceScore: 24,
+      confidenceTier: 'low',
+      likelyScannedPdf: true,
+    };
     analyzeStoredResume.mockRejectedValue(
       new ResumeExtractionError(
-        'Extracted text looks like raw PDF internals instead of readable resume content.',
+        'This PDF looks image-based or too low-quality for reliable text extraction.',
+        null,
+        'pdf-ocr',
+        ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
+        'IMAGE_BASED_PDF',
+        details as any,
       ),
     );
 
@@ -285,11 +304,133 @@ describe('resume analyze route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(422);
-    expect(payload.error).toEqual({
-      code: 'RESUME_TEXT_MISSING',
-      message: 'This resume could not be read reliably. Try a clearer PDF or DOCX.',
+    expect(payload.error.code).toBe('IMAGE_BASED_PDF');
+    expect(payload.error.details).toMatchObject({
+      ocrAttempted: true,
+      ocrImprovedQuality: false,
+      likelyScannedPdf: true,
+      method: 'pdf-ocr',
     });
     expect(recomputeMatchesForResume).not.toHaveBeenCalled();
+  });
+
+  it('returns LOW_TEXT_CONFIDENCE when OCR is attempted but extraction quality is still poor', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getOwnedResume.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'uploaded',
+    });
+
+    const details: ResumeExtractionErrorDetails = {
+      reason: 'Extracted text is not human-readable enough to trust for resume parsing.',
+      attemptedMethods: ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
+      method: 'pdf-ocr',
+      usedOcr: true,
+      ocrAttempted: true,
+      ocrImprovedQuality: false,
+      ocrConfidence: 41,
+      textLength: 132,
+      readiness: 'poor',
+      confidenceScore: 39,
+      confidenceTier: 'low',
+      likelyScannedPdf: false,
+    };
+    analyzeStoredResume.mockRejectedValue(
+      new ResumeExtractionError(
+        'Extracted text is not human-readable enough to trust for resume parsing.',
+        null,
+        'pdf-ocr',
+        ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
+        'LOW_TEXT_CONFIDENCE',
+        details as any,
+      ),
+    );
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceOCR: true }),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error.code).toBe('LOW_TEXT_CONFIDENCE');
+    expect(payload.error.details).toMatchObject({
+      ocrAttempted: true,
+      ocrImprovedQuality: false,
+      textLength: 132,
+      confidenceTier: 'low',
+    });
+  });
+
+  it('returns EMPTY_EXTRACTED_TEXT when all methods recover no text', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getOwnedResume.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'uploaded',
+    });
+
+    const details: ResumeExtractionErrorDetails = {
+      reason: 'No readable text could be extracted from this file.',
+      attemptedMethods: ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
+      method: 'pdf-ocr',
+      usedOcr: true,
+      ocrAttempted: true,
+      ocrImprovedQuality: false,
+      ocrConfidence: 11,
+      textLength: 0,
+      readiness: 'failed',
+      confidenceScore: 0,
+      confidenceTier: 'low',
+      likelyScannedPdf: true,
+    };
+    analyzeStoredResume.mockRejectedValue(
+      new ResumeExtractionError(
+        'No readable text could be extracted from this file.',
+        null,
+        'pdf-ocr',
+        ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
+        'EMPTY_EXTRACTED_TEXT',
+        details as any,
+      ),
+    );
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error.code).toBe('EMPTY_EXTRACTED_TEXT');
+    expect(payload.error.details).toMatchObject({ textLength: 0, readiness: 'failed' });
   });
 
   it('returns 409 when analysis is already in progress', async () => {

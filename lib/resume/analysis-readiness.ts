@@ -21,6 +21,11 @@ function isUnreadableResumeError(message: string | null | undefined) {
   const normalized = (message ?? '').toLowerCase();
 
   return (
+    normalized.includes('empty_extracted_text') ||
+    normalized.includes('image_based_pdf') ||
+    normalized.includes('low_text_confidence') ||
+    normalized.includes('ocr_failed') ||
+    normalized.includes('extraction_failed') ||
     normalized.includes('no readable text') ||
     normalized.includes('too short to build a reliable resume profile') ||
     normalized.includes('not human-readable enough') ||
@@ -67,7 +72,10 @@ export function getResumeAnalysisReadiness(
     return {
       ready: false,
       code: 'RESUME_TEXT_MISSING',
-      message: 'Upload or parse resume content before analysis.',
+      message:
+        resume.mime_type === 'application/pdf'
+          ? 'This PDF could not be parsed reliably. Upload a clearer text PDF or DOCX.'
+          : 'This resume could not be parsed reliably. Upload a clearer file and try again.',
     };
   }
 

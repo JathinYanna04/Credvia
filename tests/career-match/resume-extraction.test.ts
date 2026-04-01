@@ -114,6 +114,8 @@ describe('resume extraction fallbacks', () => {
     );
 
     expect(result.usedOcr).toBe(true);
+    expect(result.ocrAttempted).toBe(true);
+    expect(result.ocrImprovedQuality).toBe(true);
     expect(result.method).toBe('pdf-ocr');
     expect(result.attemptedMethods).toContain('pdf-ocr');
   });
@@ -161,7 +163,55 @@ describe('resume extraction fallbacks', () => {
       extractResumeText(Buffer.from('fake-pdf'), 'application/pdf', 'resume.pdf'),
     ).rejects.toMatchObject({
       name: 'ResumeExtractionError',
+      failureCode: 'EMPTY_EXTRACTED_TEXT',
       attemptedMethods: expect.arrayContaining(['pdf-ocr']),
+    });
+  });
+
+  it('classifies image-based PDF failures when OCR still cannot recover quality text', async () => {
+    __setResumeExtractionTestOverrides({
+      extractPdfTextWithPdfJs: async () => '',
+      extractPdfTextWithPdfParse: async () => '',
+      extractPdfTextFallback: () => '',
+      extractPdfTextWithOcr: async () => ({
+        text: 'img 1 2 3 scan page',
+        confidence: 19,
+      }),
+    });
+
+    await expect(
+      extractResumeText(Buffer.from('fake-pdf'), 'application/pdf', 'resume.pdf', {
+        forceOCR: true,
+      }),
+    ).rejects.toMatchObject({
+      failureCode: 'IMAGE_BASED_PDF',
+    });
+  });
+
+  it('reports OCR attempted but not improved for low-quality OCR output', async () => {
+    __setResumeExtractionTestOverrides({
+      extractPdfTextWithPdfJs: async () =>
+        'Experience Education Skills Projects Summary LinkedIn GitHub',
+      extractPdfTextWithPdfParse: async () =>
+        'Experience Education Skills Projects Summary LinkedIn GitHub',
+      extractPdfTextFallback: () =>
+        'Experience Education Skills Projects Summary LinkedIn GitHub',
+      extractPdfTextWithOcr: async () => ({
+        text: 'page image scan block text',
+        confidence: 22,
+      }),
+    });
+
+    await expect(
+      extractResumeText(Buffer.from('fake-pdf'), 'application/pdf', 'resume.pdf', {
+        forceOCR: true,
+      }),
+    ).rejects.toMatchObject({
+      failureCode: 'LOW_TEXT_CONFIDENCE',
+      diagnostics: expect.objectContaining({
+        ocrAttempted: true,
+        ocrImprovedQuality: false,
+      }),
     });
   });
 

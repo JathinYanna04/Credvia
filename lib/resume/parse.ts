@@ -11,9 +11,14 @@ export interface ParsedResumeSections {
 
 export interface ParsedResumeMeta {
   extractionMethod?: string;
+  attemptedMethods?: string[];
   extractionQuality?: Record<string, unknown>;
   usedOcr?: boolean;
+  ocrAttempted?: boolean;
+  ocrImprovedQuality?: boolean | null;
   ocrConfidence?: number | null;
+  textLength?: number;
+  readiness?: 'good' | 'partial' | 'poor' | 'failed';
 }
 
 export interface ParsedResume {

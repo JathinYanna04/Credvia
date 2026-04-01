@@ -6,9 +6,14 @@ export interface CareerSkill {
 
 export interface CareerResumeExtractionMeta {
   extractionMethod?: string;
+  attemptedMethods?: string[];
   extractionQuality?: Record<string, unknown>;
   usedOcr?: boolean;
+  ocrAttempted?: boolean;
+  ocrImprovedQuality?: boolean | null;
   ocrConfidence?: number | null;
+  textLength?: number;
+  readiness?: 'good' | 'partial' | 'poor' | 'failed';
 }
 
 export interface CareerResumeAnalysisReadiness {

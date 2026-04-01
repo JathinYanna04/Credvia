@@ -23,6 +23,11 @@ export interface ResumeAnalysisStatusProps {
   analyzing: boolean;
   forceOCR: boolean;
   onForceOCRChange: (value: boolean) => void;
+  analyzeError?: {
+    code: string;
+    message: string;
+    details?: unknown;
+  } | null;
   onAnalyze: () => Promise<void> | void;
 }
 
@@ -34,10 +39,19 @@ export function ResumeAnalysisStatus({
   analyzing,
   forceOCR,
   onForceOCRChange,
+  analyzeError,
   onAnalyze,
 }: ResumeAnalysisStatusProps) {
+  const showDeveloperDetails =
+    process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_RESUME_DEBUG === 'true';
   const analysisMethod = describeAnalysisMethod(latestRun?.parser_version);
   const metaUsedOcr = extractionMeta?.usedOcr;
+  const metaOcrAttempted = extractionMeta?.ocrAttempted;
+  const metaOcrImproved = extractionMeta?.ocrImprovedQuality;
+  const analyzeDetails =
+    analyzeError?.details && typeof analyzeError.details === 'object'
+      ? (analyzeError.details as Record<string, unknown>)
+      : null;
   const extractionQuality =
     extractionMeta?.extractionQuality && typeof extractionMeta.extractionQuality === 'object'
       ? (extractionMeta.extractionQuality as Record<string, unknown>)
@@ -53,6 +67,20 @@ export function ResumeAnalysisStatus({
       latestRun?.parser_version?.includes('pdf-ocr') ||
       latestRun?.parser_version?.includes(':ocr'),
   );
+  const ocrAttempted =
+    metaOcrAttempted === true ||
+    usedOcr ||
+    Boolean(analyzeDetails?.ocrAttempted);
+  const ocrImprovedQuality =
+    typeof metaOcrImproved === 'boolean'
+      ? metaOcrImproved
+      : typeof analyzeDetails?.ocrImprovedQuality === 'boolean'
+        ? analyzeDetails.ocrImprovedQuality
+        : null;
+  const poorPdfExtractionError =
+    (analyzeError?.code === 'IMAGE_BASED_PDF' ||
+      analyzeError?.code === 'LOW_TEXT_CONFIDENCE') &&
+    resume.mime_type === 'application/pdf';
   const analyzeDisabled = analyzing || !analysisReadiness.ready;
 
   return (
@@ -95,6 +123,26 @@ export function ResumeAnalysisStatus({
         </div>
       ) : null}
 
+      {analyzeError ? (
+        <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+          <div>{analyzeError.message}</div>
+          <div className="mt-1 text-xs text-danger/90">Code: {analyzeError.code}</div>
+          {poorPdfExtractionError ? (
+            <div className="mt-2 text-xs text-danger/90">
+              This file appears low quality for text extraction. A DOCX upload usually parses more reliably.
+            </div>
+          ) : null}
+          {showDeveloperDetails ? (
+            <details className="mt-2 rounded-xl border border-danger/30 bg-danger/5 p-2 text-xs text-danger/90">
+              <summary className="cursor-pointer">Developer details</summary>
+              <pre className="mt-2 overflow-auto whitespace-pre-wrap break-words">
+                {JSON.stringify(analyzeDetails ?? {}, null, 2)}
+              </pre>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
           <div className="text-xs uppercase tracking-[0.18em] text-text-tertiary">Current file</div>
@@ -132,6 +180,20 @@ export function ResumeAnalysisStatus({
       {usedOcr && !latestRun?.error_message ? (
         <div className="rounded-2xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-info">
           OCR fallback was used for this resume because the original PDF text extraction was too weak.
+        </div>
+      ) : null}
+
+      {ocrAttempted ? (
+        <div className="rounded-2xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-info">
+          OCR was attempted.
+          {ocrImprovedQuality === true ? ' It improved extraction quality.' : ''}
+          {ocrImprovedQuality === false ? ' It did not improve extraction quality enough.' : ''}
+        </div>
+      ) : null}
+
+      {!usedOcr && resume.mime_type === 'application/pdf' && !latestRun?.error_message ? (
+        <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+          This looks like a text PDF. OCR was not needed.
         </div>
       ) : null}
 

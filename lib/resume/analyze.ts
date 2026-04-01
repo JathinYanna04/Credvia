@@ -52,9 +52,14 @@ export async function analyzeStoredResume(
     });
     const parsed = parseResumeText(rawText, {
       extractionMethod: extraction.method,
+      attemptedMethods: extraction.attemptedMethods,
       extractionQuality: extraction.quality as unknown as Record<string, unknown>,
       usedOcr: extraction.usedOcr,
+      ocrAttempted: extraction.ocrAttempted,
+      ocrImprovedQuality: extraction.ocrImprovedQuality,
       ocrConfidence: extraction.ocrConfidence,
+      textLength: extraction.textLength,
+      readiness: extraction.readiness,
     });
     const matchedSkillRows = [
       ...parsed.directSkillSlugs.map((slug) => ({ slug, source: 'direct' as const, confidence: 1 })),
@@ -149,8 +154,10 @@ export async function analyzeStoredResume(
         resumeId: resume.id,
         method: error.method,
         attemptedMethods: error.attemptedMethods,
+        failureCode: error.failureCode,
         reason: error.message,
         quality: error.quality,
+        diagnostics: error.diagnostics,
       });
     }
     await supabase
