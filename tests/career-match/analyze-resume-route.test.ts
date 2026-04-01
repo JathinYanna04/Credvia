@@ -9,6 +9,82 @@ const getActiveResume = vi.fn();
 const analyzeStoredResume = vi.fn();
 const recomputeMatchesForResume = vi.fn();
 
+function createSupabaseMock(options?: {
+  latestRun?: unknown;
+  latestRunError?: { message: string } | null;
+  downloadError?: { message: string } | null;
+}) {
+  const latestRun = options?.latestRun ?? null;
+  const latestRunError = options?.latestRunError ?? null;
+  const downloadError = options?.downloadError ?? null;
+
+  return {
+    from: vi.fn((table: string) => {
+      if (table === 'resumes') {
+        return {
+          update() {
+            return {
+              eq: async () => ({ error: null }),
+            };
+          },
+        };
+      }
+
+      if (table === 'resume_analysis_runs') {
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  order() {
+                    return {
+                      limit() {
+                        return {
+                          maybeSingle: async () => ({
+                            data: latestRun,
+                            error: latestRunError,
+                          }),
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+
+      if (table === 'profiles') {
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  maybeSingle: async () => ({
+                    data: null,
+                    error: null,
+                  }),
+                };
+              },
+            };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    }),
+    storage: {
+      from: vi.fn(() => ({
+        download: async () => ({
+          data: downloadError ? null : new Blob(['Resume body']),
+          error: downloadError,
+        }),
+      })),
+    },
+  };
+}
+
 vi.mock('@/lib/supabase/server', () => ({
   createServerSupabaseClient,
 }));
@@ -40,29 +116,7 @@ describe('resume analyze route', () => {
   });
 
   it('downloads the stored file, analyzes it, and recomputes matches for the active resume', async () => {
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'resumes') {
-          return {
-            update() {
-              return {
-                eq: async () => ({ error: null }),
-              };
-            },
-          };
-        }
-
-        throw new Error(`Unexpected table: ${table}`);
-      }),
-      storage: {
-        from: vi.fn(() => ({
-          download: async () => ({
-            data: new Blob(['Resume body']),
-            error: null,
-          }),
-        })),
-      },
-    };
+    const supabase = createSupabaseMock();
 
     createServerSupabaseClient.mockResolvedValue(supabase);
     getRequiredUser.mockResolvedValue({ id: 'user-1' });
@@ -96,30 +150,8 @@ describe('resume analyze route', () => {
     expect(recomputeMatchesForResume).toHaveBeenCalledWith(supabase, 'user-1', 'resume-1');
   }, 10000);
 
-  it('returns a validation error when extraction quality is too poor', async () => {
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'resumes') {
-          return {
-            update() {
-              return {
-                eq: async () => ({ error: null }),
-              };
-            },
-          };
-        }
-
-        throw new Error(`Unexpected table: ${table}`);
-      }),
-      storage: {
-        from: vi.fn(() => ({
-          download: async () => ({
-            data: new Blob(['Resume body']),
-            error: null,
-          }),
-        })),
-      },
-    };
+  it('returns a structured RESUME_TEXT_MISSING error when extraction quality is too poor', async () => {
+    const supabase = createSupabaseMock();
 
     createServerSupabaseClient.mockResolvedValue(supabase);
     getRequiredUser.mockResolvedValue({ id: 'user-1' });
@@ -151,7 +183,10 @@ describe('resume analyze route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(422);
-    expect(payload.error.message).toContain('raw PDF internals');
+    expect(payload.error).toEqual({
+      code: 'RESUME_TEXT_MISSING',
+      message: 'Upload or parse resume content before analysis.',
+    });
     expect(recomputeMatchesForResume).not.toHaveBeenCalled();
   });
 });
