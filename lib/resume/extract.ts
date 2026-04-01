@@ -438,8 +438,6 @@ async function extractPdfTextWithOcr(fileBuffer: Buffer) {
   };
 }
 
-interface ExtractionCandidate extends ResumeExtractionResult {}
-
 function createExtractionCandidate(args: {
   text: string;
   method: ResumeExtractionMethod;
@@ -458,12 +456,12 @@ function createExtractionCandidate(args: {
     ocrConfidence: args.ocrConfidence ?? null,
     attemptedMethods: [...args.attemptedMethods],
     quality,
-  } satisfies ExtractionCandidate;
+  } satisfies ResumeExtractionResult;
 }
 
 function chooseBetterCandidate(
-  current: ExtractionCandidate | null,
-  next: ExtractionCandidate,
+  current: ResumeExtractionResult | null,
+  next: ResumeExtractionResult,
 ) {
   if (!current) {
     return next;
@@ -490,7 +488,7 @@ function chooseBetterCandidate(
   return next.text.length > current.text.length ? next : current;
 }
 
-function shouldAttemptOcr(bestCandidate: ExtractionCandidate | null) {
+function shouldAttemptOcr(bestCandidate: ResumeExtractionResult | null) {
   if (!bestCandidate) {
     return true;
   }
@@ -560,8 +558,7 @@ export async function extractResumeText(
     },
   ];
 
-  let bestCandidate: ExtractionCandidate | null = null;
-  let lastError: Error | null = null;
+  let bestCandidate: ResumeExtractionResult | null = null;
 
   for (const attempt of attempts) {
     attemptedMethods.push(attempt.method);
@@ -579,8 +576,7 @@ export async function extractResumeText(
       if (candidate.quality.isAcceptable && candidate.quality.confidenceTier !== 'low') {
         return candidate;
       }
-    } catch (error) {
-      lastError = error instanceof Error ? error : null;
+    } catch {
     }
   }
 
@@ -600,8 +596,7 @@ export async function extractResumeText(
         source: 'pdf',
       });
       bestCandidate = chooseBetterCandidate(bestCandidate, candidate);
-    } catch (error) {
-      lastError = error instanceof Error ? error : null;
+    } catch {
     }
   }
 
