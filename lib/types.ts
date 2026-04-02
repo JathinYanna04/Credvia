@@ -173,6 +173,9 @@ export interface ResumeExtractionQualitySummary {
   humanReadableRatio: number;
   suspiciousTokenCount: number;
   resumeHintCount: number;
+  pdfInternalHitCount?: number;
+  contaminationScore?: number;
+  salvageScore?: number;
 }
 
 export interface ResumeExtractionSummary {
@@ -185,9 +188,19 @@ export interface ResumeExtractionSummary {
   ocrAvailable?: boolean;
   ocrUnavailableReason?: string | null;
   acceptedWithWarnings?: boolean;
-  warningCode?: 'LOW_TEXT_CONFIDENCE' | 'OCR_UNAVAILABLE' | 'OCR_DID_NOT_IMPROVE' | null;
+  warningCode?:
+    | 'LOW_TEXT_CONFIDENCE'
+    | 'OCR_UNAVAILABLE'
+    | 'OCR_DID_NOT_IMPROVE'
+    | 'SALVAGED_FROM_NOISE'
+    | 'CLEANED_TEXT_LOW_SIGNAL'
+    | null;
   warningMessage?: string | null;
   textLength?: number;
+  cleanedTextLength?: number;
+  contaminationScore?: number;
+  salvageScore?: number;
+  cleaningActions?: string[];
   readiness?: 'good' | 'partial' | 'poor' | 'failed';
   quality: ResumeExtractionQualitySummary;
 }
@@ -203,6 +216,7 @@ export interface ResumeExtractionErrorDetails {
   ocrAvailable?: boolean;
   ocrUnavailableReason?: string | null;
   textLength: number;
+  cleanedTextLength?: number;
   wordCount: number;
   readiness: 'good' | 'partial' | 'poor' | 'failed';
   confidenceScore: number;
@@ -210,6 +224,9 @@ export interface ResumeExtractionErrorDetails {
   detectedSectionCount: number;
   junkRatio: number;
   likelyScannedPdf: boolean;
+  contaminationScore?: number;
+  salvageScore?: number;
+  cleaningActions?: string[];
 }
 
 export interface AnalyzeResumeResponse {

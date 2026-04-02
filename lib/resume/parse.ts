@@ -13,6 +13,9 @@ export interface ParsedResumeMeta {
   extractionMethod?: string;
   attemptedMethods?: string[];
   extractionQuality?: Record<string, unknown>;
+  contaminationScore?: number;
+  salvageScore?: number;
+  cleaningActions?: string[];
   usedOcr?: boolean;
   ocrAttempted?: boolean;
   ocrImprovedQuality?: boolean | null;
@@ -20,10 +23,19 @@ export interface ParsedResumeMeta {
   ocrAvailable?: boolean;
   ocrUnavailableReason?: string | null;
   acceptedWithWarnings?: boolean;
-  warningCode?: 'LOW_TEXT_CONFIDENCE' | 'OCR_UNAVAILABLE' | 'OCR_DID_NOT_IMPROVE' | null;
+  warningCode?:
+    | 'LOW_TEXT_CONFIDENCE'
+    | 'OCR_UNAVAILABLE'
+    | 'OCR_DID_NOT_IMPROVE'
+    | 'SALVAGED_FROM_NOISE'
+    | 'CLEANED_TEXT_LOW_SIGNAL'
+    | null;
   warningMessage?: string | null;
   textLength?: number;
+  cleanedTextLength?: number;
   readiness?: 'good' | 'partial' | 'poor' | 'failed';
+  rawText?: string;
+  cleanedText?: string;
 }
 
 export interface ParsedResume {
@@ -45,10 +57,10 @@ export interface ParsedResume {
 
 const SECTION_HEADERS: Record<keyof ParsedResumeSections, string[]> = {
   summary: ['summary', 'profile', 'about', 'professional summary'],
-  skills: ['skills', 'technical skills', 'core skills', 'tooling'],
-  projects: ['projects', 'selected projects'],
+  skills: ['skills', 'technical skills', 'core skills', 'tooling', 'technologies', 'stack'],
+  projects: ['projects', 'selected projects', 'project experience'],
   experience: ['experience', 'work experience', 'professional experience', 'employment'],
-  education: ['education'],
+  education: ['education', 'certifications', 'certification', 'achievements', 'awards'],
   other: [],
 };
 
@@ -58,12 +70,18 @@ const INLINE_SECTION_HEADERS = [
   'Skills',
   'Technical Skills',
   'Core Skills',
+  'Technologies',
+  'Stack',
   'Projects',
   'Selected Projects',
+  'Project Experience',
   'Experience',
   'Work Experience',
   'Professional Experience',
   'Education',
+  'Certifications',
+  'Achievements',
+  'Awards',
   'Location',
 ];
 
@@ -72,6 +90,8 @@ const DEGREE_HINT = /\b(b\.?sc|bachelor|b\.?e|m\.?sc|master|m\.?tech|ph\.?d|mba|
 const PROJECT_HINT = /\b(project|built|developed|shipped|led|launched)\b/i;
 const EXPERIENCE_HINT = /\b(experience|intern|engineer|developer|manager|analyst|designer|consultant|architect|lead|director)\b/i;
 const DATE_HINT = /\b(20\d{2}|19\d{2})\b/;
+const PDF_INTERNAL_HINT = /\b(xref|flatedecode|objstm|endstream|startxref|endobj)\b/i;
+const PDF_METADATA_HINT = /\/(Type|Length|Filter|DecodeParms|Root|Info|Pages|Catalog|Page|Font|Contents|MediaBox|Resources)\b/i;
 
 function preprocessResumeText(rawText: string) {
   let normalized = rawText.replace(/\r/g, '\n');
@@ -87,6 +107,74 @@ function preprocessResumeText(rawText: string) {
     .replace(/\n{3,}/g, '\n\n');
 
   return normalized.trim();
+}
+
+function reconstructResumeText(rawText: string) {
+  let reconstructed = rawText;
+
+  reconstructed = reconstructed.replace(
+    /([a-z0-9])\s+(Summary|Profile|Skills|Technical Skills|Core Skills|Technologies|Stack|Projects|Project Experience|Experience|Work Experience|Professional Experience|Education|Certifications|Achievements|Awards)\s*:/gi,
+    '$1\n$2:',
+  );
+
+  reconstructed = reconstructed.replace(
+    /([a-z0-9])\s+(Summary|Profile|Skills|Technical Skills|Core Skills|Technologies|Stack|Projects|Project Experience|Experience|Work Experience|Professional Experience|Education|Certifications|Achievements|Awards)\b/gi,
+    '$1\n$2',
+  );
+
+  reconstructed = reconstructed.replace(/([^\n])\s+(\u2022|[-*])\s+/g, '$1\n- ');
+  reconstructed = reconstructed.replace(/([^\n])\s+(\b20\d{2}\b)/g, '$1\n$2');
+
+  reconstructed = reconstructed.replace(
+    /([^\n])\s+([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/gi,
+    '$1\n$2',
+  );
+  reconstructed = reconstructed.replace(
+    /([^\n])\s+(\+?\d[\d\s()+-]{7,})/g,
+    '$1\n$2',
+  );
+
+  return reconstructed;
+}
+
+function shouldDropPdfNoiseLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  if (!PDF_INTERNAL_HINT.test(trimmed) && !PDF_METADATA_HINT.test(trimmed)) {
+    return false;
+  }
+
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  if (tokens.length < 6) {
+    return false;
+  }
+
+  const alphaWords = trimmed.match(/\b[A-Za-z]{2,}\b/g) ?? [];
+  const alphaRatio = alphaWords.length / tokens.length;
+  const slashHits = trimmed.match(/\/[A-Za-z]/g)?.length ?? 0;
+  const internalHits =
+    (trimmed.match(/\b(xref|obj|stream|endstream|startxref|flatedecode)\b/gi)?.length ??
+      0) + slashHits;
+  const internalRatio = internalHits / tokens.length;
+
+  return (
+    internalRatio >= 0.35 ||
+    (slashHits >= 4 && alphaWords.length < 4) ||
+    (trimmed.length > 140 && alphaRatio < 0.35)
+  );
+}
+
+function stripPdfInternalLines(rawText: string) {
+  if (!PDF_INTERNAL_HINT.test(rawText) && !PDF_METADATA_HINT.test(rawText)) {
+    return rawText;
+  }
+
+  const lines = rawText.split('\n');
+  const filtered = lines.filter((line) => !shouldDropPdfNoiseLine(line));
+  return filtered.join('\n');
 }
 
 function normalizeLine(line: string) {
@@ -239,7 +327,8 @@ function inferProjectLines(lines: string[]) {
 }
 
 export function parseResumeText(rawText: string, meta?: ParsedResumeMeta): ParsedResume {
-  const cleaned = preprocessResumeText(rawText);
+  const reconstructed = reconstructResumeText(stripPdfInternalLines(rawText));
+  const cleaned = preprocessResumeText(reconstructed);
   const lines = cleaned
     .split('\n')
     .map(normalizeLine)

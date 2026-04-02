@@ -54,6 +54,14 @@ export function ResumeAnalysisStatus({
       ? (analyzeError.details as Record<string, unknown>)
       : null;
   const confidenceTier = extractionMeta?.extractionQuality?.confidenceTier ?? null;
+  const contaminationScore =
+    extractionMeta?.extractionQuality?.contaminationScore ??
+    (typeof extractionMeta?.contaminationScore === 'number'
+      ? extractionMeta.contaminationScore
+      : null);
+  const salvageScore =
+    extractionMeta?.extractionQuality?.salvageScore ??
+    (typeof extractionMeta?.salvageScore === 'number' ? extractionMeta.salvageScore : null);
   const extractionWarningCode =
     typeof extractionMeta?.warningCode === 'string' ? extractionMeta.warningCode : null;
   const extractionWarningMessage =
@@ -89,6 +97,8 @@ export function ResumeAnalysisStatus({
     extractionMeta?.acceptedWithWarnings === true ||
     extractionWarningCode !== null ||
     confidenceTier === 'low';
+  const recoveredFromNoise =
+    acceptedWithWarnings && typeof contaminationScore === 'number' && contaminationScore >= 70;
   const ocrUnavailableError =
     analyzeError?.code === 'OCR_UNAVAILABLE' || (ocrAttempted && !ocrAvailable);
   const poorPdfExtractionError =
@@ -247,6 +257,12 @@ export function ResumeAnalysisStatus({
           </div>
           {extractionWarningMessage ? (
             <div className="mt-2 text-xs text-warning/90">{extractionWarningMessage}</div>
+          ) : null}
+          {recoveredFromNoise ? (
+            <div className="mt-2 text-xs text-warning/90">
+              Recovered from noisy PDF content. Parsed sections may be incomplete.
+              {typeof salvageScore === 'number' ? ` Salvage score: ${salvageScore}.` : ''}
+            </div>
           ) : null}
         </div>
       ) : null}

@@ -125,6 +125,7 @@ export interface ResumeTextQuality {
 
 export interface ResumeExtractionResult {
   text: string;
+  rawText: string;
   method: ResumeExtractionMethod;
   usedOcr: boolean;
   ocrAttempted: boolean;
@@ -137,6 +138,10 @@ export interface ResumeExtractionResult {
   warningMessage: string | null;
   attemptedMethods: ResumeExtractionMethod[];
   textLength: number;
+  cleanedTextLength: number;
+  contaminationScore: number;
+  salvageScore: number;
+  cleaningActions: string[];
   readiness: 'good' | 'partial' | 'poor' | 'failed';
   quality: ResumeTextQuality;
 }
@@ -152,7 +157,9 @@ export type ResumeExtractionFailureCode =
 export type ResumeExtractionWarningCode =
   | 'LOW_TEXT_CONFIDENCE'
   | 'OCR_UNAVAILABLE'
-  | 'OCR_DID_NOT_IMPROVE';
+  | 'OCR_DID_NOT_IMPROVE'
+  | 'SALVAGED_FROM_NOISE'
+  | 'CLEANED_TEXT_LOW_SIGNAL';
 
 type ResumeQualityTier = 'accepted' | 'accepted-with-warnings' | 'failed';
 
@@ -405,6 +412,15 @@ function isExtractionCandidateUsable(
     return false;
   }
 
+  if (
+    candidate.contaminationScore >= 85 &&
+    candidate.salvageScore < 20 &&
+    candidate.cleanedTextLength < 200 &&
+    candidate.quality.resumeHintCount <= 1
+  ) {
+    return false;
+  }
+
   return classifyResumeQualityTier(candidate.quality) !== 'failed';
 }
 
@@ -429,6 +445,105 @@ function stripPdfObjectNoise(text: string) {
   }
 
   return cleaned;
+}
+
+function computeContaminationScore(text: string) {
+  const normalized = text.trim();
+  if (!normalized) {
+    return 100;
+  }
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return 100;
+  }
+
+  const pdfInternalHits = countPatternMatches(normalized, PDF_INTERNAL_PATTERNS);
+  const slashHits = normalized.match(/\/[A-Za-z]/g)?.length ?? 0;
+  const binaryLikeHits =
+    (normalized.match(/[A-Fa-f0-9]{24,}/g)?.length ?? 0) +
+    (normalized.match(/[A-Za-z0-9+/]{32,}={0,2}/g)?.length ?? 0);
+  const objectStreamHits = normalized.match(/\b\d+\s+\d+\s+obj\b/gi)?.length ?? 0;
+  const metadataBoost = /linearized|\/flatedecode|\/creationdate|\/producer|\/creator/i.test(
+    normalized,
+  )
+    ? 20
+    : 0;
+
+  const internalRatio = (pdfInternalHits + slashHits) / tokens.length;
+  const binaryRatio = binaryLikeHits / Math.max(tokens.length, 1);
+  const objectRatio = objectStreamHits / Math.max(tokens.length, 1);
+
+  const score = Math.min(
+    100,
+    Math.round(
+      internalRatio * 70 +
+        binaryRatio * 60 +
+        objectRatio * 50 +
+        Math.min(pdfInternalHits, 80) * 0.5 +
+        metadataBoost,
+    ),
+  );
+
+  return Math.max(0, score);
+}
+
+function computeSalvageScore(quality: ResumeTextQuality) {
+  const score = Math.round(
+    Math.min(quality.alphaWordCount, 220) * 0.2 +
+      quality.resumeHintCount * 7 +
+      quality.detectedSectionCount * 6 +
+      quality.humanReadableRatio * 50 -
+      quality.junkRatio * 25 -
+      Math.min(quality.pdfInternalHitCount, 80) * 0.35,
+  );
+
+  return Math.max(0, Math.min(100, score));
+}
+
+function shouldDropPdfNoiseLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  if (/\blinearized\b/i.test(trimmed)) {
+    return true;
+  }
+
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  if (tokens.length < 6) {
+    return false;
+  }
+
+  const alphaWords = trimmed.match(/\b[A-Za-z]{2,}\b/g) ?? [];
+  const pdfInternalHits = countPatternMatches(trimmed, PDF_INTERNAL_PATTERNS);
+  const slashHits = trimmed.match(/\/[A-Za-z]/g)?.length ?? 0;
+  const internalRatio = pdfInternalHits / tokens.length;
+  const alphaRatio = alphaWords.length / tokens.length;
+  const looksLikeMetadata =
+    /\/(Title|Author|Creator|Producer|CreationDate|ModDate|Keywords|Subject|Trapped)\b/i.test(
+      trimmed,
+    );
+
+  const hasHighInternalRatio =
+    internalRatio >= 0.35 && alphaRatio < 0.4 && alphaWords.length < 5;
+  const hasSlashNoise =
+    slashHits >= 4 && tokens.length >= 8 && alphaWords.length < 4;
+  const hasMetadataNoise =
+    looksLikeMetadata ||
+    /\/(FlateDecode|Length\d*|CreationDate|ModDate|PTEX\.Fullbanner|Producer|Creator)\b/i.test(
+      trimmed,
+    );
+  const longAndNoisy = trimmed.length > 140 && internalRatio > 0.25 && alphaRatio < 0.35;
+
+  return hasHighInternalRatio || hasSlashNoise || hasMetadataNoise || longAndNoisy;
+}
+
+function removePdfNoiseLines(text: string) {
+  const lines = text.split('\n');
+  const filtered = lines.filter((line) => !shouldDropPdfNoiseLine(line));
+  return filtered.join('\n');
 }
 
 function mergeWrappedLines(text: string) {
@@ -477,19 +592,22 @@ function dehyphenateWrappedWords(text: string) {
   return text.replace(/([A-Za-z])-\n\s*(?=[A-Za-z])/g, '$1');
 }
 
-function normalizeExtractedText(
+function cleanExtractedText(
   text: string,
   source: 'pdf' | 'docx' | 'txt' | 'rtf' | 'image' = 'pdf',
 ) {
-  let normalized = text;
+  const cleaningActions: string[] = [];
+  let normalized = text ?? '';
 
   normalized = normalizeBulletsAndDashes(normalized)
     .replace(/\u0000/g, ' ')
     .replace(/[\u0001-\u0008\u000B-\u001A\u007F]/g, ' ')
     .replace(/\r/g, '\n');
+  cleaningActions.push('normalize_bullets', 'strip_control_chars', 'normalize_line_breaks');
 
   if (source === 'pdf') {
     normalized = stripPdfObjectNoise(normalized);
+    cleaningActions.push('strip_pdf_object_noise');
   }
 
   normalized = stripBinaryLikeFragments(normalized)
@@ -497,6 +615,12 @@ function normalizeExtractedText(
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[^\S\n]+$/gm, '')
     .trim();
+  cleaningActions.push('strip_binary_fragments', 'collapse_whitespace');
+
+  if (source === 'pdf') {
+    normalized = removePdfNoiseLines(normalized);
+    cleaningActions.push('remove_pdf_noise_lines');
+  }
 
   normalized = dehyphenateWrappedWords(normalized);
   normalized = mergeWrappedLines(normalized)
@@ -504,8 +628,20 @@ function normalizeExtractedText(
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+  cleaningActions.push('dehyphenate_wrapped_words', 'merge_wrapped_lines');
 
-  return normalized;
+  return {
+    text: normalized,
+    contaminationScore: computeContaminationScore(text),
+    cleaningActions,
+  };
+}
+
+function normalizeExtractedText(
+  text: string,
+  source: 'pdf' | 'docx' | 'txt' | 'rtf' | 'image' = 'pdf',
+) {
+  return cleanExtractedText(text, source).text;
 }
 
 export function assessResumeTextQuality(text: string): ResumeTextQuality {
@@ -625,21 +761,21 @@ function extractPdfTextFallback(fileBuffer: Buffer) {
   );
 
   if (textMatches.length > 0) {
-    return normalizeExtractedText(textMatches.join(' '), 'pdf');
+    return textMatches.join(' ');
   }
 
   const printable = raw.match(/[A-Za-z0-9][A-Za-z0-9 ,.+:/()_\-\n]{20,}/g) ?? [];
-  return normalizeExtractedText(printable.join(' '), 'pdf');
+  return printable.join(' ');
 }
 
 async function extractDocxText(fileBuffer: Buffer) {
   const mammoth = await import('mammoth');
   const parsed = await mammoth.extractRawText({ buffer: fileBuffer });
-  return normalizeExtractedText(parsed.value ?? '', 'docx');
+  return parsed.value ?? '';
 }
 
 function extractTxtText(fileBuffer: Buffer) {
-  return normalizeExtractedText(fileBuffer.toString('utf8'), 'txt');
+  return fileBuffer.toString('utf8');
 }
 
 function extractRtfText(fileBuffer: Buffer) {
@@ -649,7 +785,7 @@ function extractRtfText(fileBuffer: Buffer) {
     .replace(/\\[a-zA-Z]+-?\d*\s?/g, ' ')
     .replace(/[{}]/g, ' ');
 
-  return normalizeExtractedText(withoutControls, 'rtf');
+  return withoutControls;
 }
 
 async function extractPdfTextWithPdfJs(fileBuffer: Buffer) {
@@ -691,7 +827,7 @@ async function extractPdfTextWithPdfJs(fileBuffer: Buffer) {
     await document.destroy();
   }
 
-  return normalizeExtractedText(extracted, 'pdf');
+  return extracted;
 }
 
 async function extractPdfTextWithPdfParse(fileBuffer: Buffer) {
@@ -700,7 +836,7 @@ async function extractPdfTextWithPdfParse(fileBuffer: Buffer) {
 
   try {
     const parsed = await parser.getText();
-    return normalizeExtractedText(parsed.text ?? '', 'pdf');
+    return parsed.text ?? '';
   } finally {
     await parser.destroy();
   }
@@ -745,7 +881,7 @@ async function extractPdfTextWithOcr(fileBuffer: Buffer) {
 
       const image = canvas.toBuffer('image/png');
       const result = await worker.recognize(image);
-      const pageText = normalizeExtractedText(result.data.text ?? '', 'pdf');
+      const pageText = result.data.text ?? '';
 
       if (pageText) {
         pageTexts.push(pageText);
@@ -766,7 +902,7 @@ async function extractPdfTextWithOcr(fileBuffer: Buffer) {
       : null;
 
   return {
-    text: normalizeExtractedText(pageTexts.join('\n\n'), 'pdf'),
+    text: pageTexts.join('\n\n'),
     confidence: averageConfidence,
   };
 }
@@ -778,7 +914,7 @@ async function extractImageTextWithOcr(fileBuffer: Buffer) {
   try {
     const result = await worker.recognize(fileBuffer);
     return {
-      text: normalizeExtractedText(result.data.text ?? '', 'image'),
+      text: result.data.text ?? '',
       confidence:
         typeof result.data.confidence === 'number' ? result.data.confidence : null,
     };
@@ -789,6 +925,7 @@ async function extractImageTextWithOcr(fileBuffer: Buffer) {
 
 function createExtractionCandidate(args: {
   text: string;
+  rawText?: string;
   method: ResumeExtractionMethod;
   attemptedMethods: ResumeExtractionMethod[];
   usedOcr?: boolean;
@@ -797,11 +934,15 @@ function createExtractionCandidate(args: {
   ocrConfidence?: number | null;
   source?: 'pdf' | 'docx' | 'txt' | 'rtf' | 'image';
 }): ResumeExtractionResult {
-  const cleanedText = normalizeExtractedText(args.text, args.source ?? 'pdf');
+  const rawText = args.rawText ?? args.text;
+  const cleaned = cleanExtractedText(rawText, args.source ?? 'pdf');
+  const cleanedText = cleaned.text;
   const quality = assessResumeTextQuality(cleanedText);
+  const salvageScore = computeSalvageScore(quality);
 
   return {
     text: cleanedText,
+    rawText,
     method: args.method,
     usedOcr: args.usedOcr ?? false,
     ocrAttempted: args.ocrAttempted ?? false,
@@ -814,6 +955,10 @@ function createExtractionCandidate(args: {
     warningMessage: null,
     attemptedMethods: [...args.attemptedMethods],
     textLength: cleanedText.length,
+    cleanedTextLength: cleanedText.length,
+    contaminationScore: cleaned.contaminationScore,
+    salvageScore,
+    cleaningActions: cleaned.cleaningActions,
     readiness: deriveReadiness(quality),
     quality,
   };
@@ -889,6 +1034,10 @@ function buildDiagnostics(
     detectedSectionCount: candidate?.quality.detectedSectionCount ?? 0,
     junkRatio: candidate?.quality.junkRatio ?? 1,
     likelyScannedPdf: candidate?.quality.likelyScannedPdf ?? false,
+    contaminationScore: candidate?.contaminationScore ?? 0,
+    cleanedTextLength: candidate?.cleanedTextLength ?? 0,
+    salvageScore: candidate?.salvageScore ?? 0,
+    cleaningActions: candidate?.cleaningActions ?? [],
     ocrAvailable,
     ocrUnavailableReason,
   };
@@ -922,6 +1071,14 @@ function applyExtractionWarnings(
     warningCode = 'OCR_DID_NOT_IMPROVE';
     warningMessage =
       'OCR fallback ran but did not significantly improve extraction quality. Results may be incomplete.';
+  } else if (next.contaminationScore >= 70 && next.salvageScore >= 35) {
+    warningCode = 'SALVAGED_FROM_NOISE';
+    warningMessage =
+      'We recovered readable content from noisy PDF text. Some sections may still be incomplete.';
+  } else if (next.salvageScore < 35 && next.quality.isAcceptable) {
+    warningCode = 'CLEANED_TEXT_LOW_SIGNAL';
+    warningMessage =
+      'Cleaned text is usable but has limited structured signal. Some sections may be missing.';
   } else if (classifyResumeQualityTier(next.quality) === 'accepted-with-warnings') {
     warningCode = 'LOW_TEXT_CONFIDENCE';
     warningMessage =
@@ -943,18 +1100,28 @@ function chooseBetterCandidate(
     return next;
   }
 
-  if (next.quality.isAcceptable && !current.quality.isAcceptable) {
-    return next;
-  }
+  const scoreCandidate = (candidate: ResumeExtractionResult) => {
+    const quality = candidate.quality;
+    const readableScore = Math.round(
+      quality.humanReadableRatio * 60 +
+        quality.resumeHintCount * 8 +
+        quality.detectedSectionCount * 4 -
+        quality.junkRatio * 30 -
+        Math.min(quality.pdfInternalHitCount, 80) * 0.4,
+    );
 
-  if (!next.quality.isAcceptable && current.quality.isAcceptable) {
-    return current;
+    return readableScore;
+  };
+
+  const nextScore = scoreCandidate(next);
+  const currentScore = scoreCandidate(current);
+
+  if (nextScore !== currentScore) {
+    return nextScore > currentScore ? next : current;
   }
 
   if (next.quality.confidenceScore !== current.quality.confidenceScore) {
-    return next.quality.confidenceScore > current.quality.confidenceScore
-      ? next
-      : current;
+    return next.quality.confidenceScore > current.quality.confidenceScore ? next : current;
   }
 
   if (current.usedOcr !== next.usedOcr) {

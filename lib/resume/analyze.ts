@@ -267,13 +267,54 @@ export async function prepareResumeForAnalysis(
     const extraction = await extractResumeText(fileBuffer, resume.mime_type, resume.file_name, {
       forceOcr: requestBody.forceOCR ?? requestBody.forceOcr,
     });
-    const rawText = extraction.text.trim();
+    const rawText = extraction.rawText ?? '';
+    const cleanedText = extraction.text.trim();
+
+    if (
+      extraction.contaminationScore >= 90 &&
+      extraction.salvageScore < 20 &&
+      cleanedText.length < 200 &&
+      extraction.quality.humanReadableRatio < 0.18
+    ) {
+      throw new ResumeExtractionError(
+        'Cleaned text is still dominated by PDF internals and cannot be parsed reliably.',
+        extraction.quality,
+        extraction.method,
+        extraction.attemptedMethods,
+        'LOW_TEXT_CONFIDENCE',
+        {
+          reason: extraction.quality.reason,
+          attemptedMethods: extraction.attemptedMethods,
+          method: extraction.method,
+          usedOcr: extraction.usedOcr,
+          ocrAttempted: extraction.ocrAttempted,
+          ocrImprovedQuality: extraction.ocrImprovedQuality,
+          ocrConfidence: extraction.ocrConfidence,
+          textLength: extraction.textLength,
+          cleanedTextLength: extraction.cleanedTextLength,
+          wordCount: extraction.quality.wordCount,
+          readiness: extraction.readiness,
+          confidenceScore: extraction.quality.confidenceScore,
+          confidenceTier: extraction.quality.confidenceTier,
+          detectedSectionCount: extraction.quality.detectedSectionCount,
+          junkRatio: extraction.quality.junkRatio,
+          likelyScannedPdf: extraction.quality.likelyScannedPdf,
+          contaminationScore: extraction.contaminationScore,
+          salvageScore: extraction.salvageScore,
+          cleaningActions: extraction.cleaningActions,
+        },
+      );
+    }
 
     logInfo('resume-preparation', 'Extraction completed', {
       resumeId: resume.id,
       method: extraction.method,
       attemptedMethods: extraction.attemptedMethods,
-      textLength: rawText.length,
+      textLength: cleanedText.length,
+      cleanedTextLength: extraction.cleanedTextLength,
+      contaminationScore: extraction.contaminationScore,
+      salvageScore: extraction.salvageScore,
+      cleaningActions: extraction.cleaningActions,
       wordCount: extraction.quality.wordCount,
       confidenceScore: extraction.quality.confidenceScore,
       confidenceTier: extraction.quality.confidenceTier,
@@ -293,10 +334,17 @@ export async function prepareResumeForAnalysis(
 
     let parsed: ReturnType<typeof parseResumeText>;
     try {
-      parsed = parseResumeText(rawText, {
+      parsed = parseResumeText(cleanedText, {
         extractionMethod: extraction.method,
         attemptedMethods: extraction.attemptedMethods,
-        extractionQuality: extraction.quality as unknown as Record<string, unknown>,
+        extractionQuality: {
+          ...extraction.quality,
+          contaminationScore: extraction.contaminationScore,
+          salvageScore: extraction.salvageScore,
+        } as unknown as Record<string, unknown>,
+        contaminationScore: extraction.contaminationScore,
+        salvageScore: extraction.salvageScore,
+        cleaningActions: extraction.cleaningActions,
         usedOcr: extraction.usedOcr,
         ocrAttempted: extraction.ocrAttempted,
         ocrImprovedQuality: extraction.ocrImprovedQuality,
@@ -307,7 +355,10 @@ export async function prepareResumeForAnalysis(
         warningCode: extraction.warningCode,
         warningMessage: extraction.warningMessage,
         textLength: extraction.textLength,
+        cleanedTextLength: extraction.cleanedTextLength,
         readiness: extraction.readiness,
+        rawText,
+        cleanedText,
       });
     } catch (parseError) {
       await updateResumeLifecycleStatus(
@@ -319,7 +370,12 @@ export async function prepareResumeForAnalysis(
     }
 
     await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.PARSED);
-    const matchedSkillRows = await persistParsedResume(supabase, resume, rawText, parsed);
+    const matchedSkillRows = await persistParsedResume(
+      supabase,
+      resume,
+      cleanedText,
+      parsed,
+    );
     await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.READY);
 
     await completeRun(supabase, runId, {

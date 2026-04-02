@@ -91,6 +91,10 @@ function normalizeExtractionFailure(error: ResumeExtractionError): {
     detectedSectionCount: error.diagnostics?.detectedSectionCount ?? 0,
     junkRatio: error.diagnostics?.junkRatio ?? 1,
     likelyScannedPdf: error.diagnostics?.likelyScannedPdf ?? false,
+    contaminationScore: error.diagnostics?.contaminationScore ?? 0,
+    cleanedTextLength: error.diagnostics?.cleanedTextLength ?? 0,
+    salvageScore: error.diagnostics?.salvageScore ?? 0,
+    cleaningActions: error.diagnostics?.cleaningActions ?? [],
   };
 
   if (error.failureCode === 'IMAGE_BASED_PDF') {
@@ -256,6 +260,10 @@ export async function POST(
         warningCode: preparation.extraction.warningCode,
         warningMessage: preparation.extraction.warningMessage,
         textLength: preparation.extraction.textLength,
+        cleanedTextLength: preparation.extraction.cleanedTextLength,
+        contaminationScore: preparation.extraction.contaminationScore,
+        salvageScore: preparation.extraction.salvageScore,
+        cleaningActions: preparation.extraction.cleaningActions,
         readiness: preparation.extraction.readiness,
         quality: preparation.extraction.quality,
       },

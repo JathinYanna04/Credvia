@@ -66,6 +66,23 @@ describe('resume extraction quality', () => {
     expect(quality.reason).toBeTruthy();
   });
 
+  it('strips PDF-internal noise before parsing sections', () => {
+    const noisyResume = `
+Linearized 1 /L 166127 /Filter /FlateDecode /Type /Catalog /Length 2278
+Jane Builder
+Product Engineer
+jane@example.com
+Skills: TypeScript React PostgreSQL
+Experience: Built resume parsing pipelines
+`;
+
+    const parsed = parseResumeText(noisyResume);
+
+    expect(parsed.summary).not.toContain('Linearized');
+    expect(parsed.summary).not.toContain('/FlateDecode');
+    expect(parsed.email).toBe('jane@example.com');
+  });
+
   it('accepts readable resume-style text', () => {
     const quality = assessResumeTextQuality(sampleResumeText);
 
@@ -319,6 +336,58 @@ describe('resume extraction fallbacks', () => {
     expect(['low', 'medium']).toContain(result.quality.confidenceTier);
     expect(result.quality.resumeHintCount).toBeGreaterThanOrEqual(6);
     expect(result.readiness).toBe('partial');
+  });
+
+  it('removes PDF internals from LaTeX-generated PDFs before returning cleaned text', async () => {
+    const latexPdfText = `
+Linearized 1 /L 166127 /Filter /FlateDecode /Type /Catalog /Length 2278
+Jane Builder
+Product Engineer
+jane@example.com
+Summary: Product engineer focused on reliable resume extraction and parsing workflows.
+Skills: TypeScript React PostgreSQL Supabase OCR Parsing
+Experience: Built resume parsing pipelines and improved extraction reliability for hiring teams.
+Education: BSc Computer Science
+    `;
+
+    __setResumeExtractionTestOverrides({
+      pdfDirectText: latexPdfText,
+      extractPdfTextWithOcr: async () => ({
+        text: '',
+        confidence: 0,
+      }),
+    });
+
+    const result = await extractResumeText(
+      Buffer.from('fake-pdf'),
+      'application/pdf',
+      'resume.pdf',
+    );
+
+    expect(result.text).toContain('Jane Builder');
+    expect(result.text).not.toContain('Linearized');
+    expect(result.text).not.toContain('/FlateDecode');
+  });
+
+  it('prefers readable candidates over longer noisy fallback output', async () => {
+    __setResumeExtractionTestOverrides({
+      pdfDirectText: sampleResumeText,
+      pdfCleanedText: `${garbageText} ${garbageText}`,
+      pdfTokenText: `${garbageText} ${garbageText} ${garbageText}`,
+      extractPdfTextWithOcr: async () => {
+        throw new Error('OCR worker exited before recognition completed');
+      },
+    });
+
+    const result = await extractResumeText(
+      Buffer.from('fake-pdf'),
+      'application/pdf',
+      'resume.pdf',
+      { forceOCR: true },
+    );
+
+    expect(result.method).toBe('pdfjs-text');
+    expect(result.text).toContain('Jane Builder');
   });
 
   it('cleans OCR output by dehyphenating wrapped words and normalizing bullets', async () => {

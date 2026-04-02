@@ -16,6 +16,9 @@ export interface CareerResumeExtractionMeta {
     humanReadableRatio?: number;
     suspiciousTokenCount?: number;
     resumeHintCount?: number;
+    pdfInternalHitCount?: number;
+    contaminationScore?: number;
+    salvageScore?: number;
     [key: string]: unknown;
   };
   usedOcr?: boolean;
@@ -25,10 +28,22 @@ export interface CareerResumeExtractionMeta {
   ocrAvailable?: boolean;
   ocrUnavailableReason?: string | null;
   acceptedWithWarnings?: boolean;
-  warningCode?: 'LOW_TEXT_CONFIDENCE' | 'OCR_UNAVAILABLE' | 'OCR_DID_NOT_IMPROVE' | null;
+  warningCode?:
+    | 'LOW_TEXT_CONFIDENCE'
+    | 'OCR_UNAVAILABLE'
+    | 'OCR_DID_NOT_IMPROVE'
+    | 'SALVAGED_FROM_NOISE'
+    | 'CLEANED_TEXT_LOW_SIGNAL'
+    | null;
   warningMessage?: string | null;
   textLength?: number;
+  cleanedTextLength?: number;
+  contaminationScore?: number;
+  salvageScore?: number;
+  cleaningActions?: string[];
   readiness?: 'good' | 'partial' | 'poor' | 'failed';
+  rawText?: string;
+  cleanedText?: string;
 }
 
 export interface CareerResumeAnalysisReadiness {
