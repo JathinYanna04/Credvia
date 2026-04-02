@@ -14,6 +14,8 @@ import {
 } from '@/lib/resume/extract';
 import { RESUME_LIFECYCLE_STATUSES } from '@/lib/resume/lifecycle';
 
+export const runtime = 'nodejs';
+
 function resolveResumeContentType(file: File, extension: string) {
   if (file.type) {
     return file.type;

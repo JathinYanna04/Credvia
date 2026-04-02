@@ -21,6 +21,8 @@ import type { ResumeExtractionErrorDetails } from '@/lib/types';
 import { logError, logInfo } from '@/lib/utils/logger';
 import { ZodError } from 'zod';
 
+export const runtime = 'nodejs';
+
 async function parseExtractRequest(request: Request) {
   const rawBody = await request.text();
 

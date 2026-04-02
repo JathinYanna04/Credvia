@@ -20,6 +20,15 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    // Next.js 14 requires experimental.serverComponentsExternalPackages
+    // to avoid bundling Node-native dependencies into route handlers.
+    serverComponentsExternalPackages: [
+      '@napi-rs/canvas',
+      'tesseract.js',
+      'pdfjs-dist',
+    ],
+  },
   images: {
     remotePatterns: [
       {

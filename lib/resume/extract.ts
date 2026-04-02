@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import type { ResumeExtractionErrorDetails } from '@/lib/types';
 
 const DOCX_MIME_TYPES = new Set([
@@ -183,6 +184,10 @@ export interface ResumeExtractionTestOverrides {
 }
 
 let resumeExtractionTestOverrides: ResumeExtractionTestOverrides | null = null;
+const nodeRequire = createRequire(import.meta.url);
+
+type CanvasRuntimeModule = typeof import('@napi-rs/canvas');
+type TesseractRuntimeModule = typeof import('tesseract.js');
 
 export function __setResumeExtractionTestOverrides(
   overrides: ResumeExtractionTestOverrides | null,
@@ -235,6 +240,42 @@ export function isSupportedResumeMimeType(mimeType: string, filename: string) {
     extension === 'jpg' ||
     extension === 'jpeg'
   );
+}
+
+function loadCanvasRuntime(): CanvasRuntimeModule {
+  return nodeRequire('@napi-rs/canvas') as CanvasRuntimeModule;
+}
+
+function tryLoadCanvasRuntime(): CanvasRuntimeModule | null {
+  try {
+    return loadCanvasRuntime();
+  } catch {
+    return null;
+  }
+}
+
+function loadTesseractRuntime(): TesseractRuntimeModule {
+  return nodeRequire('tesseract.js') as TesseractRuntimeModule;
+}
+
+function installCanvasPolyfills(canvasRuntime: CanvasRuntimeModule) {
+  const globalScope = globalThis as unknown as {
+    DOMMatrix?: unknown;
+    ImageData?: unknown;
+    Path2D?: unknown;
+  };
+
+  if (!globalScope.DOMMatrix && 'DOMMatrix' in canvasRuntime) {
+    globalScope.DOMMatrix = canvasRuntime.DOMMatrix;
+  }
+
+  if (!globalScope.ImageData && 'ImageData' in canvasRuntime) {
+    globalScope.ImageData = canvasRuntime.ImageData;
+  }
+
+  if (!globalScope.Path2D && 'Path2D' in canvasRuntime) {
+    globalScope.Path2D = canvasRuntime.Path2D;
+  }
 }
 
 function toErrorMessage(error: unknown) {
@@ -563,6 +604,11 @@ function extractRtfText(fileBuffer: Buffer) {
 }
 
 async function extractPdfTextWithPdfJs(fileBuffer: Buffer) {
+  const optionalCanvasRuntime = tryLoadCanvasRuntime();
+  if (optionalCanvasRuntime) {
+    installCanvasPolyfills(optionalCanvasRuntime);
+  }
+
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const document = await pdfjs
     .getDocument({
@@ -612,9 +658,12 @@ async function extractPdfTextWithPdfParse(fileBuffer: Buffer) {
 }
 
 async function extractPdfTextWithOcr(fileBuffer: Buffer) {
+  const canvasRuntime = loadCanvasRuntime();
+  installCanvasPolyfills(canvasRuntime);
+
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const { createCanvas } = eval('require')('@napi-rs/canvas') as typeof import('@napi-rs/canvas');
-  const { createWorker } = eval('require')('tesseract.js') as typeof import('tesseract.js');
+  const { createCanvas } = canvasRuntime;
+  const { createWorker } = loadTesseractRuntime();
 
   const document = await pdfjs
     .getDocument({
@@ -674,7 +723,7 @@ async function extractPdfTextWithOcr(fileBuffer: Buffer) {
 }
 
 async function extractImageTextWithOcr(fileBuffer: Buffer) {
-  const { createWorker } = eval('require')('tesseract.js') as typeof import('tesseract.js');
+  const { createWorker } = loadTesseractRuntime();
   const worker = await createWorker('eng');
 
   try {
