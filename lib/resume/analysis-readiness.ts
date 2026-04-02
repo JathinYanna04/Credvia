@@ -136,10 +136,9 @@ export function getResumeAnalysisReadiness(
 
   if (normalizedStatus === RESUME_LIFECYCLE_STATUSES.EXTRACTED_WITH_WARNINGS) {
     return {
-      ready: false,
-      code: 'RESUME_TEXT_MISSING',
-      message:
-        'Resume text quality is too low for analysis. Retry extraction with Force OCR or upload a cleaner file.',
+      ready: true,
+      code: null,
+      message: null,
     };
   }
 

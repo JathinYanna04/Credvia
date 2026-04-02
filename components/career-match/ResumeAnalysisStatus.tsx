@@ -236,15 +236,18 @@ export function ResumeAnalysisStatus({
         </div>
       ) : null}
 
-      {acceptedWithWarnings && extractionWarningMessage && !latestRun?.error_message ? (
+      {acceptedWithWarnings && !latestRun?.error_message ? (
         <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-          {extractionWarningMessage}
-        </div>
-      ) : null}
-
-      {acceptedWithWarnings && !extractionWarningMessage && confidenceTier !== null && !latestRun?.error_message ? (
-        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-          We analyzed your resume, but the text quality was limited. For best results, upload a text-based PDF.
+          <div>We extracted this resume with warnings.</div>
+          <div className="mt-1 text-xs text-warning/90">
+            Some formatting or content was noisy, so results may be less accurate.
+          </div>
+          <div className="mt-1 text-xs text-warning/90">
+            You can continue, but a DOCX or cleaner PDF may improve accuracy.
+          </div>
+          {extractionWarningMessage ? (
+            <div className="mt-2 text-xs text-warning/90">{extractionWarningMessage}</div>
+          ) : null}
         </div>
       ) : null}
     </section>

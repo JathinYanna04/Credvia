@@ -68,6 +68,10 @@ const INLINE_SECTION_HEADERS = [
 ];
 
 const TITLE_HINT = /\b(engineer|developer|manager|designer|analyst|founder|consultant|architect|intern|specialist|lead|director|product|backend|frontend|full[- ]stack|software)\b/i;
+const DEGREE_HINT = /\b(b\.?sc|bachelor|b\.?e|m\.?sc|master|m\.?tech|ph\.?d|mba|university|college|institute|school)\b/i;
+const PROJECT_HINT = /\b(project|built|developed|shipped|led|launched)\b/i;
+const EXPERIENCE_HINT = /\b(experience|intern|engineer|developer|manager|analyst|designer|consultant|architect|lead|director)\b/i;
+const DATE_HINT = /\b(20\d{2}|19\d{2})\b/;
 
 function preprocessResumeText(rawText: string) {
   let normalized = rawText.replace(/\r/g, '\n');
@@ -220,6 +224,20 @@ function inferSummary(sections: ParsedResumeSections, lines: string[], fullName:
   return summaryLines.slice(0, 3).join(' ').trim() || null;
 }
 
+function inferEducationLines(lines: string[]) {
+  return lines.filter((line) => DEGREE_HINT.test(line)).slice(0, 4);
+}
+
+function inferExperienceLines(lines: string[]) {
+  return lines
+    .filter((line) => EXPERIENCE_HINT.test(line) || DATE_HINT.test(line))
+    .slice(0, 6);
+}
+
+function inferProjectLines(lines: string[]) {
+  return lines.filter((line) => PROJECT_HINT.test(line)).slice(0, 6);
+}
+
 export function parseResumeText(rawText: string, meta?: ParsedResumeMeta): ParsedResume {
   const cleaned = preprocessResumeText(rawText);
   const lines = cleaned
@@ -255,11 +273,40 @@ export function parseResumeText(rawText: string, meta?: ParsedResumeMeta): Parse
   const currentTitle = inferCurrentTitle(lines, fullName);
   const summary = inferSummary(sections, lines, fullName, currentTitle);
 
-  const directSkills = detectSkillEntries(
-    [sections.skills.join(' '), lines.filter((line) => /^skills?:/i.test(line)).join(' ')].join(' '),
-  );
+  const skillsSourceText = [
+    sections.skills.join(' '),
+    lines.filter((line) => /^skills?:/i.test(line)).join(' '),
+  ].join(' ');
+  const directSkillEntries = detectSkillEntries(skillsSourceText);
+  const fallbackSkillEntries = sections.skills.length === 0 ? detectSkillEntries(cleaned) : [];
+  const directSkills = directSkillEntries.length > 0 ? directSkillEntries : fallbackSkillEntries;
+  if (sections.education.length === 0) {
+    const inferredEducation = inferEducationLines(lines);
+    if (inferredEducation.length > 0) {
+      sections.education.push(...inferredEducation);
+    }
+  }
+
+  if (sections.experience.length === 0) {
+    const inferredExperience = inferExperienceLines(lines);
+    if (inferredExperience.length > 0) {
+      sections.experience.push(...inferredExperience);
+    }
+  }
+
+  if (sections.projects.length === 0) {
+    const inferredProjects = inferProjectLines(lines);
+    if (inferredProjects.length > 0) {
+      sections.projects.push(...inferredProjects);
+    }
+  }
+
+  if (sections.skills.length === 0 && fallbackSkillEntries.length > 0) {
+    sections.skills.push(`Skills: ${fallbackSkillEntries.map((entry) => entry.name).join(', ')}`);
+  }
+
   const inferredSkills = detectSkillEntries(
-    [...sections.projects, ...sections.experience, summary ?? '', currentTitle ?? ''].join(' '),
+    [...sections.projects, ...sections.experience, summary ?? '', currentTitle ?? '', cleaned].join(' '),
   ).filter((entry) => !directSkills.some((direct) => direct.slug === entry.slug));
 
   return {

@@ -19,6 +19,38 @@ Projects: Led roadmap for developer platform
 Education: BSc Computer Science
 `;
 
+function createHexNoiseTokens(count: number, seed = 11) {
+  return Array.from({ length: count }, (_, index) => {
+    const hex = (index + seed).toString(16).padStart(4, '0');
+    return `ab${hex}cd${hex}ef${hex}ab`;
+  }).join(' ');
+}
+
+function createNeutralTokens(count: number, seed = 2000) {
+  return Array.from({ length: count }, (_, index) => `n${seed + index}x`).join(' ');
+}
+
+const borderlineResumeSignalText = [
+  'alex rivera engineer with profile summary focused on building reliable parsing services for hiring teams and candidate analytics across startup environments',
+  'this narrative covers practical architecture api reliability incident response and testing practices with strong collaboration and delivery ownership',
+  'experience spans backend workflows and production support while skills include typescript node react postgres observability communication planning and execution',
+  'projects include extraction tuning ranking improvements service hardening and release verification with measurable operational outcomes',
+  'contact email alex.rivera@example.com phone +1 555 0100 0100 linkedin github',
+].join(' ');
+
+const borderlineNoisyPdfText = [
+  borderlineResumeSignalText,
+  createNeutralTokens(22, 2020),
+  createHexNoiseTokens(75, 21),
+  'xref stream',
+].join(' ');
+
+const garbageText = [
+  createHexNoiseTokens(240, 101),
+  'xref obj stream endstream /Type /Catalog /Filter /FlateDecode',
+  createNeutralTokens(60, 3030),
+].join(' ');
+
 afterEach(() => {
   __setResumeExtractionTestOverrides(null);
 });
@@ -31,7 +63,7 @@ describe('resume extraction quality', () => {
     const quality = assessResumeTextQuality(brokenPdfText);
 
     expect(quality.isAcceptable).toBe(false);
-    expect(quality.reason).toMatch(/raw PDF internals|too short to build/);
+    expect(quality.reason).toBeTruthy();
   });
 
   it('accepts readable resume-style text', () => {
@@ -40,6 +72,14 @@ describe('resume extraction quality', () => {
     expect(quality.isAcceptable).toBe(true);
     expect(quality.alphaWordCount).toBeGreaterThan(20);
     expect(quality.confidenceTier).not.toBe('low');
+  });
+
+  it('keeps hard failures for truly unreadable garbage text', () => {
+    const quality = assessResumeTextQuality(garbageText);
+
+    expect(quality.isAcceptable).toBe(false);
+    expect(quality.junkRatio).toBeGreaterThan(0.7);
+    expect(quality.reason).toBeTruthy();
   });
 });
 
@@ -184,18 +224,18 @@ describe('resume extraction fallbacks', () => {
 
   it('throws only after all extraction methods, including OCR, fail', async () => {
     __setResumeExtractionTestOverrides({
-      pdfDirectText: 'stream endstream xref obj /Type /Catalog',
-      pdfCleanedText: 'obj obj obj stream stream',
-      pdfTokenText: '/XRef /Length /Filter /Producer',
-      pdfOcrText: 'scan',
-      ocrConfidence: 18,
+      pdfDirectText: '',
+      pdfCleanedText: '',
+      pdfTokenText: '',
+      pdfOcrText: '',
+      ocrConfidence: 6,
     });
 
     await expect(
       extractResumeText(Buffer.from('fake-pdf'), 'application/pdf', 'resume.pdf'),
     ).rejects.toMatchObject({
       name: 'ResumeExtractionError',
-      failureCode: 'LOW_TEXT_CONFIDENCE',
+      failureCode: 'EMPTY_EXTRACTED_TEXT',
       attemptedMethods: expect.arrayContaining(['pdf-ocr']),
     });
   });
@@ -220,31 +260,65 @@ describe('resume extraction fallbacks', () => {
     });
   });
 
-  it('reports OCR attempted but not improved for low-quality OCR output', async () => {
+  it('keeps processing when OCR does not improve quality but text is still usable', async () => {
     __setResumeExtractionTestOverrides({
-      extractPdfTextWithPdfJs: async () =>
-        'Experience Education Skills Projects Summary LinkedIn GitHub',
-      extractPdfTextWithPdfParse: async () =>
-        'Experience Education Skills Projects Summary LinkedIn GitHub',
-      extractPdfTextFallback: () =>
-        'Experience Education Skills Projects Summary LinkedIn GitHub',
+      extractPdfTextWithPdfJs: async () => borderlineResumeSignalText,
+      extractPdfTextWithPdfParse: async () => borderlineResumeSignalText,
+      extractPdfTextFallback: () => borderlineResumeSignalText,
       extractPdfTextWithOcr: async () => ({
         text: 'page image scan block text',
         confidence: 22,
       }),
     });
 
-    await expect(
-      extractResumeText(Buffer.from('fake-pdf'), 'application/pdf', 'resume.pdf', {
-        forceOCR: true,
-      }),
-    ).rejects.toMatchObject({
-      failureCode: 'LOW_TEXT_CONFIDENCE',
-      diagnostics: expect.objectContaining({
-        ocrAttempted: true,
-        ocrImprovedQuality: false,
-      }),
+    const result = await extractResumeText(
+      Buffer.from('fake-pdf'),
+      'application/pdf',
+      'resume.pdf',
+      { forceOCR: true },
+    );
+
+    expect(result.acceptedWithWarnings).toBe(true);
+    expect(result.warningCode).toBe('OCR_DID_NOT_IMPROVE');
+    expect(result.ocrAttempted).toBe(true);
+    expect(result.ocrImprovedQuality).toBe(false);
+  });
+
+  it('accepts borderline noisy PDF text with warnings when OCR does not improve', async () => {
+    const baselineQuality = assessResumeTextQuality(borderlineNoisyPdfText);
+
+    expect(baselineQuality.textLength).toBeGreaterThanOrEqual(700);
+    expect(baselineQuality.wordCount).toBeGreaterThanOrEqual(110);
+    expect(baselineQuality.resumeHintCount).toBeGreaterThanOrEqual(6);
+    expect(baselineQuality.confidenceTier).toBe('low');
+    expect(baselineQuality.humanReadableRatio).toBeGreaterThan(0.3);
+    expect(baselineQuality.junkRatio).toBeLessThanOrEqual(0.65);
+    expect(baselineQuality.isAcceptable).toBe(true);
+
+    __setResumeExtractionTestOverrides({
+      pdfDirectText: borderlineNoisyPdfText,
+      pdfCleanedText: borderlineNoisyPdfText,
+      pdfTokenText: borderlineNoisyPdfText,
+      extractPdfTextWithOcr: async () => {
+        throw new Error('OCR worker exited before recognition completed');
+      },
     });
+
+    const result = await extractResumeText(
+      Buffer.from('fake-pdf'),
+      'application/pdf',
+      'resume.pdf',
+      { forceOCR: true },
+    );
+
+    expect(result.acceptedWithWarnings).toBe(true);
+    expect(result.warningCode).toBe('OCR_DID_NOT_IMPROVE');
+    expect(result.ocrAttempted).toBe(true);
+    expect(result.ocrAvailable).toBe(true);
+    expect(result.quality.isAcceptable).toBe(true);
+    expect(result.quality.confidenceTier).toBe('low');
+    expect(result.quality.resumeHintCount).toBeGreaterThanOrEqual(6);
+    expect(result.readiness).toBe('poor');
   });
 
   it('cleans OCR output by dehyphenating wrapped words and normalizing bullets', async () => {

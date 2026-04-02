@@ -68,8 +68,17 @@ const SECTION_PATTERNS = [
 ];
 
 const OCR_PAGE_LIMIT = 3;
-const MIN_ACCEPTABLE_CONFIDENCE_SCORE = 42;
-const MIN_RECOVERABLE_CONFIDENCE_SCORE = 34;
+// Recall-first extraction: only hard-fail when text is truly unusable.
+const MIN_ACCEPTABLE_CONFIDENCE_SCORE = 25;
+const MIN_HUMAN_READABLE_RATIO = 0.2;
+const MAX_HARD_FAIL_JUNK_RATIO = 0.75;
+const MIN_RECOVERABLE_TEXT_LENGTH = 350;
+const MIN_RECOVERABLE_WORD_COUNT = 60;
+const MIN_RECOVERABLE_ALPHA_WORD_COUNT = 25;
+const MIN_RECOVERABLE_HUMAN_READABLE_RATIO = 0.22;
+const MAX_RECOVERABLE_JUNK_RATIO = 0.65;
+const MIN_RECOVERABLE_RESUME_HINT_COUNT = 3;
+const MAX_RECOVERABLE_PDF_INTERNAL_HITS = 45;
 
 const OCR_UNAVAILABLE_PATTERNS: RegExp[] = [
   /cannot find module ['"]@napi-rs\/canvas['"]/i,
@@ -144,6 +153,8 @@ export type ResumeExtractionWarningCode =
   | 'LOW_TEXT_CONFIDENCE'
   | 'OCR_UNAVAILABLE'
   | 'OCR_DID_NOT_IMPROVE';
+
+type ResumeQualityTier = 'accepted' | 'accepted-with-warnings' | 'failed';
 
 type ResumeExtractionDiagnostics = Omit<ResumeExtractionErrorDetails, 'attemptedMethods' | 'method'> & {
   attemptedMethods: ResumeExtractionMethod[];
@@ -340,26 +351,48 @@ function countPatternMatches(text: string, patterns: RegExp[]) {
 function isRecoverableLowConfidenceQuality(
   quality: Pick<
     ResumeTextQuality,
-    | 'confidenceScore'
+    | 'textLength'
     | 'alphaWordCount'
+    | 'wordCount'
     | 'humanReadableRatio'
+    | 'junkRatio'
     | 'resumeHintCount'
     | 'detectedSectionCount'
-    | 'suspiciousTokenCount'
-    | 'totalWordCount'
     | 'pdfInternalHitCount'
   >,
 ) {
-  const maxSuspicious = Math.max(18, Math.floor(quality.totalWordCount * 0.2));
+  const hasSufficientContent =
+    quality.textLength >= MIN_RECOVERABLE_TEXT_LENGTH ||
+    quality.wordCount >= MIN_RECOVERABLE_WORD_COUNT ||
+    quality.alphaWordCount >= MIN_RECOVERABLE_ALPHA_WORD_COUNT;
+
+  const hasResumeSignals =
+    quality.resumeHintCount >= MIN_RECOVERABLE_RESUME_HINT_COUNT ||
+    quality.detectedSectionCount >= 1 ||
+    (quality.resumeHintCount >= 2 && quality.alphaWordCount >= 18);
+
+  const hasBalancedReadabilityAndNoise =
+    quality.humanReadableRatio >= MIN_RECOVERABLE_HUMAN_READABLE_RATIO ||
+    (quality.resumeHintCount >= 4 && quality.junkRatio <= MAX_RECOVERABLE_JUNK_RATIO);
 
   return (
-    quality.confidenceScore >= MIN_RECOVERABLE_CONFIDENCE_SCORE &&
-    quality.alphaWordCount >= 22 &&
-    quality.humanReadableRatio >= 0.36 &&
-    (quality.resumeHintCount >= 3 || quality.detectedSectionCount >= 2) &&
-    quality.suspiciousTokenCount <= maxSuspicious &&
-    quality.pdfInternalHitCount <= 12
+    hasSufficientContent &&
+    hasResumeSignals &&
+    hasBalancedReadabilityAndNoise &&
+    quality.pdfInternalHitCount <= MAX_RECOVERABLE_PDF_INTERNAL_HITS
   );
+}
+
+function classifyResumeQualityTier(quality: ResumeTextQuality): ResumeQualityTier {
+  if (quality.isAcceptable && quality.confidenceTier !== 'low') {
+    return 'accepted';
+  }
+
+  if (quality.isAcceptable || isRecoverableLowConfidenceQuality(quality)) {
+    return 'accepted-with-warnings';
+  }
+
+  return 'failed';
 }
 
 function isExtractionCandidateUsable(
@@ -369,10 +402,7 @@ function isExtractionCandidateUsable(
     return false;
   }
 
-  return (
-    candidate.quality.isAcceptable ||
-    isRecoverableLowConfidenceQuality(candidate.quality)
-  );
+  return classifyResumeQualityTier(candidate.quality) !== 'failed';
 }
 
 function normalizeBulletsAndDashes(text: string) {
@@ -536,18 +566,31 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
 
   if (!normalized) {
     reason = 'No readable text could be extracted from this file.';
-  } else if (pdfInternalHitCount >= 10 && resumeHintCount <= 1) {
+  } else if (
+    normalized.length < 120 ||
+    tokens.length < 20 ||
+    alphaWords.length < 8
+  ) {
+    reason = 'Extracted text is too short to build a reliable resume profile.';
+  } else if (
+    pdfInternalHitCount >= 25 &&
+    resumeHintCount <= 1 &&
+    alphaWords.length < 25
+  ) {
     reason =
       'Extracted text looks like raw PDF internals instead of readable resume content.';
-  } else if (alphaWords.length < 12) {
-    reason = 'Extracted text is too short to build a reliable resume profile.';
-  } else if (humanReadableRatio < 0.32) {
-    reason = 'Extracted text is not human-readable enough to trust for resume parsing.';
-  } else if (detectedSectionCount < 1 && resumeHintCount < 2 && alphaWords.length < 32) {
-    reason = 'Extracted text is missing key resume sections and may be incomplete.';
   } else if (
-    suspiciousTokens.length > Math.max(14, Math.floor(tokens.length * 0.18)) &&
-    resumeHintCount <= 2
+    humanReadableRatio < MIN_HUMAN_READABLE_RATIO &&
+    resumeHintCount <= 1 &&
+    alphaWords.length < 25
+  ) {
+    reason = 'Extracted text is not human-readable enough to trust for resume parsing.';
+  } else if (junkRatio > MAX_HARD_FAIL_JUNK_RATIO && resumeHintCount <= 1) {
+    reason = 'Extracted text is too noisy to trust for resume parsing.';
+  } else if (
+    suspiciousTokens.length > Math.max(20, Math.floor(tokens.length * 0.35)) &&
+    resumeHintCount <= 1 &&
+    humanReadableRatio < 0.25
   ) {
     reason = 'Extracted text is dominated by binary-like or document-object tokens.';
   } else if (
@@ -773,15 +816,17 @@ function createExtractionCandidate(args: {
 function deriveReadiness(
   quality: ResumeTextQuality,
 ): 'good' | 'partial' | 'poor' | 'failed' {
-  if (quality.isAcceptable && quality.confidenceTier === 'high') {
+  const qualityTier = classifyResumeQualityTier(quality);
+
+  if (qualityTier === 'accepted' && quality.confidenceTier === 'high') {
     return 'good';
   }
 
-  if (quality.isAcceptable) {
+  if (qualityTier === 'accepted') {
     return 'partial';
   }
 
-  if (isRecoverableLowConfidenceQuality(quality)) {
+  if (qualityTier === 'accepted-with-warnings') {
     return 'poor';
   }
 
@@ -871,7 +916,7 @@ function applyExtractionWarnings(
     warningCode = 'OCR_DID_NOT_IMPROVE';
     warningMessage =
       'OCR fallback ran but did not significantly improve extraction quality. Results may be incomplete.';
-  } else if (!next.quality.isAcceptable || next.quality.confidenceTier === 'low') {
+  } else if (classifyResumeQualityTier(next.quality) === 'accepted-with-warnings') {
     warningCode = 'LOW_TEXT_CONFIDENCE';
     warningMessage =
       'Text extraction completed with low confidence. Review parsed details before relying on analysis output.';

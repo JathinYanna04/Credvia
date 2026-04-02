@@ -136,7 +136,85 @@ describe('resume extract route', () => {
     expect(prepareResumeForAnalysis).toHaveBeenCalled();
   });
 
-  it('returns 422 with diagnostics when extraction fails with low confidence', async () => {
+  it('returns 200 with warnings for borderline noisy extraction output', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+    prepareResumeForAnalysis.mockResolvedValue({
+      extraction: {
+        method: 'pdfjs-text',
+        attemptedMethods: ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
+        usedOcr: false,
+        ocrAttempted: true,
+        ocrImprovedQuality: false,
+        ocrConfidence: null,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+        acceptedWithWarnings: true,
+        warningCode: 'OCR_DID_NOT_IMPROVE',
+        warningMessage:
+          'OCR fallback ran but did not significantly improve extraction quality. Results may be incomplete.',
+        textLength: 1047,
+        readiness: 'poor',
+        quality: {
+          textLength: 1047,
+          wordCount: 145,
+          confidenceScore: 44,
+          confidenceTier: 'low',
+          detectedSectionCount: 0,
+          junkRatio: 0.3793,
+          likelyScannedPdf: false,
+          humanReadableRatio: 0.5103,
+          suspiciousTokenCount: 55,
+          resumeHintCount: 10,
+        },
+      },
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceOCR: true }),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.extracted).toBe(true);
+    expect(payload.data.status).toBe('READY');
+    expect(payload.data.warning).toContain('did not significantly improve');
+    expect(payload.data.extraction).toMatchObject({
+      acceptedWithWarnings: true,
+      warningCode: 'OCR_DID_NOT_IMPROVE',
+      ocrAttempted: true,
+      ocrImprovedQuality: false,
+      textLength: 1047,
+      readiness: 'poor',
+      quality: expect.objectContaining({
+        confidenceTier: 'low',
+        detectedSectionCount: 0,
+        junkRatio: 0.3793,
+        humanReadableRatio: 0.5103,
+        resumeHintCount: 10,
+      }),
+    });
+  });
+
+  it('returns 422 with diagnostics when extraction is truly unreadable', async () => {
     const supabase = createSupabaseMock();
 
     createServerSupabaseClient.mockResolvedValue(supabase);
@@ -152,26 +230,26 @@ describe('resume extract route', () => {
     });
     prepareResumeForAnalysis.mockRejectedValue(
       new ResumeExtractionError(
-        'Extracted text quality is too low to trust for resume parsing.',
+        'No readable text could be extracted from this file.',
         null,
         'pdf-ocr',
         ['pdfjs-text', 'pdf-ocr'],
-        'LOW_TEXT_CONFIDENCE',
+        'EMPTY_EXTRACTED_TEXT',
         {
-          reason: 'low confidence',
+          reason: 'empty text',
           attemptedMethods: ['pdfjs-text', 'pdf-ocr'],
           method: 'pdf-ocr',
           usedOcr: true,
           ocrAttempted: true,
           ocrImprovedQuality: false,
           ocrConfidence: 42,
-          textLength: 120,
-          wordCount: 15,
-          readiness: 'poor',
-          confidenceScore: 39,
+          textLength: 0,
+          wordCount: 0,
+          readiness: 'failed',
+          confidenceScore: 10,
           confidenceTier: 'low',
           detectedSectionCount: 1,
-          junkRatio: 0.35,
+          junkRatio: 0.9,
           likelyScannedPdf: true,
         },
       ),
@@ -190,10 +268,10 @@ describe('resume extract route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(422);
-    expect(payload.error.code).toBe('LOW_TEXT_CONFIDENCE');
+    expect(payload.error.code).toBe('EMPTY_EXTRACTED_TEXT');
     expect(payload.error.details).toMatchObject({
       ocrAttempted: true,
-      wordCount: 15,
+      wordCount: 0,
       detectedSectionCount: 1,
     });
     expect(payload.error.suggestedAction).toContain('Upload');

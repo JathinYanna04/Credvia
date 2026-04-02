@@ -78,7 +78,8 @@ export function parseStatusVariant(status: string) {
 }
 
 export function canAnalyzeFromStatus(status: string) {
-  return normalizeResumeLifecycleStatus(status) === 'READY';
+  const normalized = normalizeResumeLifecycleStatus(status);
+  return normalized === 'READY' || normalized === 'EXTRACTED_WITH_WARNINGS';
 }
 
 export function explainRequirement(required: boolean) {
