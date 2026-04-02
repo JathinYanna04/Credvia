@@ -66,10 +66,7 @@ export function isResumeInAnalysis(status: string | null | undefined) {
 
 export function isResumeInExtraction(status: string | null | undefined) {
   const normalized = normalizeResumeLifecycleStatus(status);
-  return (
-    normalized === RESUME_LIFECYCLE_STATUSES.EXTRACTING ||
-    normalized === RESUME_LIFECYCLE_STATUSES.PARSED
-  );
+  return normalized === RESUME_LIFECYCLE_STATUSES.EXTRACTING;
 }
 
 export function isResumeFailureStatus(status: string | null | undefined) {
@@ -85,7 +82,7 @@ export function shouldAllowExtractionRetry(status: string | null | undefined) {
   const normalized = normalizeResumeLifecycleStatus(status);
 
   if (!normalized) {
-    return false;
+    return true;
   }
 
   return (

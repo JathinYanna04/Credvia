@@ -189,4 +189,21 @@ describe('resume management route', () => {
 
     expect(response.status).toBe(404);
   });
+
+  it('returns 401 for DELETE when user is unauthenticated', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockRejectedValue(new Error('UNAUTHORIZED'));
+
+    const { DELETE } = await import('@/app/api/v1/resumes/[id]/route');
+    const response = await DELETE(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1', {
+        method: 'DELETE',
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    expect(response.status).toBe(401);
+  });
 });

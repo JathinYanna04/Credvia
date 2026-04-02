@@ -118,14 +118,20 @@ export async function PATCH(
       );
     }
 
-    const [deactivate, activate] = await Promise.all([
-      supabase.from('resumes').update({ is_active: false }).eq('user_id', user.id),
-      supabase.from('resumes').update({ is_active: true }).eq('id', resume.id),
-    ]);
+    const deactivate = await supabase
+      .from('resumes')
+      .update({ is_active: false })
+      .eq('user_id', user.id)
+      .eq('is_active', true);
 
     if (deactivate.error) {
       throw new Error(deactivate.error.message);
     }
+
+    const activate = await supabase
+      .from('resumes')
+      .update({ is_active: true })
+      .eq('id', resume.id);
 
     if (activate.error) {
       throw new Error(activate.error.message);

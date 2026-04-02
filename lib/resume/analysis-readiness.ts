@@ -65,7 +65,6 @@ export function getResumeAnalysisReadiness(
 
   if (
     normalizedStatus === RESUME_LIFECYCLE_STATUSES.EXTRACTING ||
-    normalizedStatus === RESUME_LIFECYCLE_STATUSES.PARSED ||
     normalizedStatus === RESUME_LIFECYCLE_STATUSES.ANALYZING ||
     latestRun?.status === 'running' ||
     latestRun?.status === 'extracting' ||
@@ -84,6 +83,15 @@ export function getResumeAnalysisReadiness(
       ready: true,
       code: null,
       message: null,
+    };
+  }
+
+  if (normalizedStatus === RESUME_LIFECYCLE_STATUSES.PARSED) {
+    return {
+      ready: false,
+      code: 'RESUME_NOT_READY',
+      message:
+        'Resume parsing finished but finalization did not complete. Retry extraction to continue.',
     };
   }
 

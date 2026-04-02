@@ -217,6 +217,24 @@ export async function POST(request: Request) {
       .single();
 
     if (resumeInsert.error) {
+      if (resumeInsert.error.code === '23514') {
+        return fail(
+          'INTERNAL_ERROR',
+          'Resume lifecycle storage is out of sync with the deployed schema.',
+          500,
+          {
+            operation: 'insert-resume-row',
+            table: 'resumes',
+            targetStatus: RESUME_LIFECYCLE_STATUSES.UPLOADED,
+            dbCode: resumeInsert.error.code,
+            dbHint: resumeInsert.error.hint ?? null,
+            dbDetails: resumeInsert.error.details ?? null,
+            dbMessage: resumeInsert.error.message,
+          },
+          'Apply the latest resume lifecycle migration and retry upload.',
+        );
+      }
+
       throw new Error(resumeInsert.error.message);
     }
 

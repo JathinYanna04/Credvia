@@ -27,8 +27,16 @@ describe('resume upload route', () => {
     prepareResumeForAnalysis.mockResolvedValue(undefined);
   });
 
-  function createSupabaseMock() {
+  function createSupabaseMock(options?: {
+    insertError?: {
+      message: string;
+      code?: string;
+      details?: string | null;
+      hint?: string | null;
+    } | null;
+  }) {
     let insertedResume: Record<string, unknown> | null = null;
+    const insertError = options?.insertError ?? null;
 
     const supabase = {
       from: vi.fn((table: string) => {
@@ -48,7 +56,10 @@ describe('resume upload route', () => {
               return {
                 select() {
                   return {
-                    single: async () => ({ data: { ...payload }, error: null }),
+                    single: async () => ({
+                      data: insertError ? null : { ...payload },
+                      error: insertError,
+                    }),
                   };
                 },
               };
@@ -189,5 +200,44 @@ describe('resume upload route', () => {
     expect(response.status).toBe(400);
     expect(payload.error.code).toBe('UNSUPPORTED_RESUME_FORMAT');
     expect(payload.error.message).toContain('Legacy DOC');
+  });
+
+  it('returns actionable 500 details when lifecycle check constraint blocks insert', async () => {
+    const { supabase } = createSupabaseMock({
+      insertError: {
+        message: 'new row for relation "resumes" violates check constraint "resumes_parse_status_check"',
+        code: '23514',
+        details: 'Failing row contains parse_status=UPLOADED',
+        hint: null,
+      },
+    });
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+
+    const { POST } = await import('@/app/api/v1/resumes/route');
+    const formData = new FormData();
+    formData.set(
+      'resume',
+      new File(['Resume body'], 'resume.pdf', { type: 'application/pdf' }),
+    );
+
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes', {
+        method: 'POST',
+        body: formData,
+      }),
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload.error.code).toBe('INTERNAL_ERROR');
+    expect(payload.error.details).toMatchObject({
+      operation: 'insert-resume-row',
+      dbCode: '23514',
+      targetStatus: 'UPLOADED',
+    });
   });
 });

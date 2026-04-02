@@ -3,6 +3,10 @@ import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { getResumeById } from '@/lib/career-match/queries';
 import { prepareResumeForAnalysis } from '@/lib/resume/analyze';
 import { ResumeExtractionError } from '@/lib/resume/extract';
+import {
+  ResumePersistenceError,
+  resumePersistenceErrorDetails,
+} from '@/lib/resume/persistence-error';
 import { ResumeExtractSchema } from '@/lib/schemas/career-match';
 import {
   normalizeResumeLifecycleStatus,
@@ -232,7 +236,32 @@ export async function POST(
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
-      return fail('UNAUTHORIZED', 'You need to sign in.', 401);
+      return fail(
+        'UNAUTHORIZED',
+        'You need to sign in.',
+        401,
+        undefined,
+        'Sign in again and retry your request.',
+      );
+    }
+
+    if (error instanceof ResumePersistenceError) {
+      const details = resumePersistenceErrorDetails(error);
+      const isSchemaMismatch = error.isConstraintViolation;
+
+      logError('resume-extract', 'Lifecycle persistence failed', details);
+
+      return fail(
+        'INTERNAL_ERROR',
+        isSchemaMismatch
+          ? 'Resume lifecycle storage is out of sync with the deployed schema.'
+          : 'Could not persist resume extraction state.',
+        500,
+        details,
+        isSchemaMismatch
+          ? 'Apply the latest resume lifecycle migration and retry extraction.'
+          : 'Retry extraction. If this persists, contact support with the error code.',
+      );
     }
 
     if (error instanceof ResumeExtractionError) {

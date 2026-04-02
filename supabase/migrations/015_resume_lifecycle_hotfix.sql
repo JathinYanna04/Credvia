@@ -1,10 +1,10 @@
--- Migration 014: Resume lifecycle hardening and expanded format support
+-- Migration 015: Resume lifecycle hotfix for already-applied 014 environments
 
 DO $$
 DECLARE
   resumes_constraint_name text;
 BEGIN
-  -- Drop all existing parse_status check constraints on public.resumes.
+  -- Drop all parse_status check constraints so we can recreate the canonical one.
   FOR resumes_constraint_name IN
     SELECT con.conname
     FROM pg_constraint con
@@ -63,7 +63,7 @@ BEGIN
   END IF;
 END $$;
 
--- Ensure only one active resume per user while preserving existing data.
+-- Ensure exactly one active resume per user at the database layer.
 UPDATE public.resumes current_resume
 SET is_active = false
 WHERE current_resume.is_active = true

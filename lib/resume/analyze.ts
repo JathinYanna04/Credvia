@@ -4,6 +4,10 @@ import type { AnalyzeResumeRequest } from '@/lib/types';
 import { recomputeMatchesForResume } from '@/lib/matching/service';
 import { extractResumeText, ResumeExtractionError } from '@/lib/resume/extract';
 import { RESUME_LIFECYCLE_STATUSES } from '@/lib/resume/lifecycle';
+import {
+  ResumePersistenceError,
+  toResumePersistenceError,
+} from '@/lib/resume/persistence-error';
 import { parseResumeText } from '@/lib/resume/parse';
 import { getSkillEntryBySlug } from '@/lib/resume/skill-taxonomy';
 import { logError, logInfo } from '@/lib/utils/logger';
@@ -54,7 +58,16 @@ async function updateResumeLifecycleStatus(
   const update = await supabase.from('resumes').update({ parse_status: parseStatus }).eq('id', resumeId);
 
   if (update.error) {
-    throw new Error(update.error.message);
+    throw toResumePersistenceError(
+      'Failed to persist resume lifecycle status.',
+      {
+        operation: 'update-parse-status',
+        table: 'resumes',
+        resumeId,
+        targetStatus: parseStatus,
+      },
+      update.error,
+    );
   }
 }
 
@@ -77,7 +90,21 @@ async function createAnalysisRun(
     .single();
 
   if (insert.error || !insert.data) {
-    throw new Error(insert.error?.message ?? 'Could not create resume analysis run.');
+    throw toResumePersistenceError(
+      insert.error?.message ?? 'Could not create resume analysis run.',
+      {
+        operation: 'insert-analysis-run',
+        table: 'resume_analysis_runs',
+        resumeId: resume.id,
+        targetStatus: status,
+      },
+      {
+        message: insert.error?.message ?? 'Could not create resume analysis run.',
+        code: insert.error?.code,
+        details: insert.error?.details,
+        hint: insert.error?.hint,
+      },
+    );
   }
 
   return insert.data.id;
@@ -103,7 +130,16 @@ async function completeRun(
     .eq('id', runId);
 
   if (update.error) {
-    throw new Error(update.error.message);
+    throw toResumePersistenceError(
+      'Failed to finalize resume analysis run.',
+      {
+        operation: 'update-analysis-run',
+        table: 'resume_analysis_runs',
+        runId,
+        targetStatus: patch.status,
+      },
+      update.error,
+    );
   }
 }
 
@@ -156,11 +192,27 @@ async function persistParsedResume(
   ]);
 
   if (profileUpsert.error) {
-    throw new Error(profileUpsert.error.message);
+    throw toResumePersistenceError(
+      'Failed to upsert parsed resume profile.',
+      {
+        operation: 'upsert-resume-profile',
+        table: 'resume_profiles',
+        resumeId: resume.id,
+      },
+      profileUpsert.error,
+    );
   }
 
   if (deleteSkills.error) {
-    throw new Error(deleteSkills.error.message);
+    throw toResumePersistenceError(
+      'Failed to clear existing resume skills.',
+      {
+        operation: 'delete-resume-skills',
+        table: 'resume_skills',
+        resumeId: resume.id,
+      },
+      deleteSkills.error,
+    );
   }
 
   if (matchedSkillRows.length > 0) {
@@ -177,7 +229,15 @@ async function persistParsedResume(
     );
 
     if (skillInsert.error) {
-      throw new Error(skillInsert.error.message);
+      throw toResumePersistenceError(
+        'Failed to store normalized resume skills.',
+        {
+          operation: 'insert-resume-skills',
+          table: 'resume_skills',
+          resumeId: resume.id,
+        },
+        skillInsert.error,
+      );
     }
   }
 
@@ -288,12 +348,43 @@ export async function prepareResumeForAnalysis(
       });
     }
 
-    await updateResumeLifecycleStatus(supabase, resume.id, lifecycleStatus);
-    await completeRun(supabase, runId, {
-      status: 'failed',
-      parserVersion: 'deterministic-v3:prepare',
-      errorMessage: toErrorMessage(error),
-    });
+    let finalizePersistenceError: ResumePersistenceError | null = null;
+
+    try {
+      await updateResumeLifecycleStatus(supabase, resume.id, lifecycleStatus);
+    } catch (finalizeError) {
+      if (finalizeError instanceof ResumePersistenceError) {
+        finalizePersistenceError = finalizeError;
+      } else {
+        throw finalizeError;
+      }
+    }
+
+    try {
+      await completeRun(supabase, runId, {
+        status: 'failed',
+        parserVersion: 'deterministic-v3:prepare',
+        errorMessage: toErrorMessage(error),
+      });
+    } catch (finalizeError) {
+      if (finalizeError instanceof ResumePersistenceError) {
+        finalizePersistenceError ??= finalizeError;
+      } else {
+        throw finalizeError;
+      }
+    }
+
+    if (error instanceof ResumePersistenceError) {
+      throw error;
+    }
+
+    if (finalizePersistenceError) {
+      logError('resume-preparation', 'Finalize persistence failed', {
+        resumeId: resume.id,
+        operation: finalizePersistenceError.context.operation,
+        dbCode: finalizePersistenceError.sourceError.code ?? null,
+      });
+    }
 
     throw error;
   }
@@ -337,16 +428,47 @@ export async function runResumeAnalysis(
 
     return { matchCount };
   } catch (error) {
-    await updateResumeLifecycleStatus(
-      supabase,
-      resume.id,
-      RESUME_LIFECYCLE_STATUSES.ANALYSIS_FAILED,
-    );
-    await completeRun(supabase, runId, {
-      status: 'failed',
-      parserVersion: 'analysis-v1',
-      errorMessage: toErrorMessage(error),
-    });
+    let finalizePersistenceError: ResumePersistenceError | null = null;
+
+    try {
+      await updateResumeLifecycleStatus(
+        supabase,
+        resume.id,
+        RESUME_LIFECYCLE_STATUSES.ANALYSIS_FAILED,
+      );
+    } catch (finalizeError) {
+      if (finalizeError instanceof ResumePersistenceError) {
+        finalizePersistenceError = finalizeError;
+      } else {
+        throw finalizeError;
+      }
+    }
+
+    try {
+      await completeRun(supabase, runId, {
+        status: 'failed',
+        parserVersion: 'analysis-v1',
+        errorMessage: toErrorMessage(error),
+      });
+    } catch (finalizeError) {
+      if (finalizeError instanceof ResumePersistenceError) {
+        finalizePersistenceError ??= finalizeError;
+      } else {
+        throw finalizeError;
+      }
+    }
+
+    if (error instanceof ResumePersistenceError) {
+      throw error;
+    }
+
+    if (finalizePersistenceError) {
+      logError('resume-analysis', 'Finalize persistence failed', {
+        resumeId: resume.id,
+        operation: finalizePersistenceError.context.operation,
+        dbCode: finalizePersistenceError.sourceError.code ?? null,
+      });
+    }
 
     throw error;
   }

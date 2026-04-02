@@ -9,6 +9,10 @@ import {
   normalizeResumeLifecycleStatus,
   RESUME_LIFECYCLE_STATUSES,
 } from '@/lib/resume/lifecycle';
+import {
+  ResumePersistenceError,
+  resumePersistenceErrorDetails,
+} from '@/lib/resume/persistence-error';
 import { ResumeAnalyzeSchema } from '@/lib/schemas/career-match';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -240,6 +244,25 @@ export async function POST(
         401,
         undefined,
         'Sign in again and retry your request.',
+      );
+    }
+
+    if (error instanceof ResumePersistenceError) {
+      const details = resumePersistenceErrorDetails(error);
+      const isSchemaMismatch = error.isConstraintViolation;
+
+      logError('resume-analyze', 'Lifecycle persistence failed', details);
+
+      return fail(
+        'INTERNAL_ERROR',
+        isSchemaMismatch
+          ? 'Resume lifecycle storage is out of sync with the deployed schema.'
+          : 'Could not persist resume analysis state.',
+        500,
+        details,
+        isSchemaMismatch
+          ? 'Apply the latest resume lifecycle migration and retry analysis.'
+          : 'Retry analysis. If this persists, contact support with the error code.',
       );
     }
 

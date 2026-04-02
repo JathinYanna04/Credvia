@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResumeExtractionError } from '@/lib/resume/extract';
+import { ResumePersistenceError } from '@/lib/resume/persistence-error';
 
 const createServerSupabaseClient = vi.fn();
 const getRequiredUser = vi.fn();
@@ -243,5 +244,151 @@ describe('resume extract route', () => {
       expect.any(Buffer),
       expect.objectContaining({ forceOCR: true }),
     );
+  });
+
+  it('returns 409 when extraction is already in progress', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'EXTRACTING',
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retry: true }),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.error.code).toBe('ANALYSIS_IN_PROGRESS');
+    expect(prepareResumeForAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('returns 422 when storage object is missing', async () => {
+    const supabase = createSupabaseMock({ downloadError: { message: 'Object not found' } });
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error.code).toBe('RESUME_FILE_MISSING');
+    expect(payload.error.suggestedAction).toContain('Re-upload');
+    expect(prepareResumeForAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for malformed JSON body', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{"forceOCR":true',
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns actionable 500 details on lifecycle persistence failure', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+    prepareResumeForAnalysis.mockRejectedValue(
+      new ResumePersistenceError(
+        'Failed to persist resume lifecycle status.',
+        {
+          operation: 'update-parse-status',
+          table: 'resumes',
+          resumeId: 'resume-1',
+          targetStatus: 'EXTRACTING',
+        },
+        {
+          message: 'new row for relation "resumes" violates check constraint',
+          code: '23514',
+          details: 'Failing row contains parse_status=EXTRACTING',
+          hint: null,
+        },
+      ),
+    );
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload.error.code).toBe('INTERNAL_ERROR');
+    expect(payload.error.details).toMatchObject({
+      operation: 'update-parse-status',
+      dbCode: '23514',
+      targetStatus: 'EXTRACTING',
+    });
+    expect(payload.error.suggestedAction).toContain('migration');
   });
 });

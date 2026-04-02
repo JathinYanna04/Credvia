@@ -64,7 +64,7 @@ export function ResumeUploadCard({ onUploaded, onUploadStateChange }: ResumeUplo
       <div className="space-y-2">
         <h2 className="text-xl font-semibold">Upload your resume</h2>
         <p className="text-sm text-text-secondary">
-          Upload one PDF or DOCX resume. Credvia keeps the original file private and parses it into a structured fit profile.
+          Upload one private resume file. Credvia keeps the original file private and parses it into a structured fit profile.
         </p>
       </div>
 
@@ -72,7 +72,7 @@ export function ResumeUploadCard({ onUploaded, onUploadStateChange }: ResumeUplo
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,.docx,.txt,.rtf,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/rtf,application/rtf,image/png,image/jpeg"
+          accept=".pdf,.docx,.txt,.rtf,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/rtf,application/rtf,application/x-rtf,image/png,image/jpeg"
           className="hidden"
           onChange={(event) => {
             const file = event.target.files?.[0];
