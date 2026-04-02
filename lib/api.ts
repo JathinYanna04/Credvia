@@ -10,9 +10,17 @@ export function fail(
   message: string,
   status: number,
   details?: unknown,
+  suggestedAction?: string,
 ) {
   return Response.json(
-    { error: { code, message, details } } satisfies ApiResponse<never>,
+    {
+      error: {
+        code,
+        message,
+        details,
+        ...(suggestedAction ? { suggestedAction } : {}),
+      },
+    } satisfies ApiResponse<never>,
     { status },
   );
 }

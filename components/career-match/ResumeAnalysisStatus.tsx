@@ -28,6 +28,7 @@ export interface ResumeAnalysisStatusProps {
     code: string;
     message: string;
     details?: unknown;
+    suggestedAction?: string;
   } | null;
   onAnalyze: () => Promise<void> | void;
 }
@@ -92,7 +93,7 @@ export function ResumeAnalysisStatus({
               checked={forceOCR}
               onChange={(event) => onForceOCRChange(event.target.checked)}
             />
-            Force OCR for this run (slower, useful for scanned PDFs)
+            Force OCR on the next extraction retry (slower, useful for scanned files)
           </label>
         </div>
 
@@ -107,7 +108,7 @@ export function ResumeAnalysisStatus({
           ) : (
             <RefreshCcw className="h-4 w-4" />
           )}
-          {resume.parse_status === 'parsed' ? 'Rerun analysis' : 'Analyze resume'}
+          Analyze resume
         </Button>
       </div>
 
@@ -126,6 +127,11 @@ export function ResumeAnalysisStatus({
         <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           <div>{analyzeError.message}</div>
           <div className="mt-1 text-xs text-danger/90">Code: {analyzeError.code}</div>
+          {analyzeError.suggestedAction ? (
+            <div className="mt-2 text-xs text-danger/90">
+              Suggested action: {analyzeError.suggestedAction}
+            </div>
+          ) : null}
           {poorPdfExtractionError ? (
             <div className="mt-2 text-xs text-danger/90">
               This file appears low quality for text extraction. A DOCX upload usually parses more reliably.

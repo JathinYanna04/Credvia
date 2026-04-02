@@ -2,8 +2,15 @@ import type { ResumeExtractionErrorDetails } from '@/lib/types';
 
 const DOCX_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/msword',
 ]);
+
+const LEGACY_DOC_MIME_TYPES = new Set(['application/msword']);
+
+const TEXT_MIME_TYPES = new Set(['text/plain']);
+
+const RTF_MIME_TYPES = new Set(['text/rtf', 'application/rtf', 'application/x-rtf']);
+
+const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg']);
 
 const PDF_INTERNAL_PATTERNS = [
   /\bxref\b/gi,
@@ -52,6 +59,13 @@ const RESUME_HINT_PATTERNS = [
   /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
 ];
 
+const SECTION_PATTERNS = [
+  /(^|\n)\s*(education|academics?)\s*:?(\n|$)/gi,
+  /(^|\n)\s*(skills?|technical skills?)\s*:?(\n|$)/gi,
+  /(^|\n)\s*(experience|work experience|professional experience)\s*:?(\n|$)/gi,
+  /(^|\n)\s*(projects?|project experience)\s*:?(\n|$)/gi,
+];
+
 const OCR_PAGE_LIMIT = 3;
 const MIN_ACCEPTABLE_CONFIDENCE_SCORE = 45;
 
@@ -59,6 +73,9 @@ export const RESUME_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
 
 export type ResumeExtractionMethod =
   | 'docx-mammoth'
+  | 'txt-direct'
+  | 'rtf-direct'
+  | 'image-ocr'
   | 'pdfjs-text'
   | 'pdf-parse-fallback'
   | 'pdf-token-fallback'
@@ -67,9 +84,13 @@ export type ResumeExtractionMethod =
 export interface ResumeTextQuality {
   isAcceptable: boolean;
   reason: string | null;
+  textLength: number;
+  wordCount: number;
   likelyScannedPdf: boolean;
   confidenceScore: number;
   confidenceTier: 'high' | 'medium' | 'low';
+  detectedSectionCount: number;
+  junkRatio: number;
   humanReadableRatio: number;
   alphaWordCount: number;
   totalWordCount: number;
@@ -131,6 +152,9 @@ export interface ResumeExtractionTestOverrides {
   extractPdfTextWithOcr?: (
     fileBuffer: Buffer,
   ) => Promise<{ text: string; confidence: number | null }>;
+  extractImageTextWithOcr?: (
+    fileBuffer: Buffer,
+  ) => Promise<{ text: string; confidence: number | null }>;
 }
 
 let resumeExtractionTestOverrides: ResumeExtractionTestOverrides | null = null;
@@ -148,18 +172,43 @@ export interface ExtractResumeTextOptions {
 
 export function getResumeExtension(filename: string) {
   const extension = filename.toLowerCase().split('.').pop();
-  return extension === 'pdf' || extension === 'docx' || extension === 'doc'
+  return extension === 'pdf' ||
+    extension === 'docx' ||
+    extension === 'doc' ||
+    extension === 'txt' ||
+    extension === 'rtf' ||
+    extension === 'png' ||
+    extension === 'jpg' ||
+    extension === 'jpeg'
     ? extension
     : null;
 }
 
+export function isLegacyDocMimeType(mimeType: string, filename: string) {
+  const extension = getResumeExtension(filename);
+  return LEGACY_DOC_MIME_TYPES.has(mimeType) || extension === 'doc';
+}
+
 export function isSupportedResumeMimeType(mimeType: string, filename: string) {
   const extension = getResumeExtension(filename);
+
+  if (isLegacyDocMimeType(mimeType, filename)) {
+    return false;
+  }
+
   return (
     mimeType === 'application/pdf' ||
     DOCX_MIME_TYPES.has(mimeType) ||
+    TEXT_MIME_TYPES.has(mimeType) ||
+    RTF_MIME_TYPES.has(mimeType) ||
+    IMAGE_MIME_TYPES.has(mimeType) ||
     extension === 'pdf' ||
-    extension === 'docx'
+    extension === 'docx' ||
+    extension === 'txt' ||
+    extension === 'rtf' ||
+    extension === 'png' ||
+    extension === 'jpg' ||
+    extension === 'jpeg'
   );
 }
 
@@ -243,7 +292,10 @@ function dehyphenateWrappedWords(text: string) {
   return text.replace(/([A-Za-z])-\n\s*(?=[A-Za-z])/g, '$1');
 }
 
-function normalizeExtractedText(text: string, source: 'pdf' | 'docx' = 'pdf') {
+function normalizeExtractedText(
+  text: string,
+  source: 'pdf' | 'docx' | 'txt' | 'rtf' | 'image' = 'pdf',
+) {
   let normalized = text;
 
   normalized = normalizeBulletsAndDashes(normalized)
@@ -281,7 +333,12 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
     ) ?? [];
   const pdfInternalHitCount = countPatternMatches(normalized, PDF_INTERNAL_PATTERNS);
   const resumeHintCount = countPatternMatches(normalized, RESUME_HINT_PATTERNS);
+  const detectedSectionCount = SECTION_PATTERNS.reduce((count, pattern) => {
+    pattern.lastIndex = 0;
+    return count + (pattern.test(normalized) ? 1 : 0);
+  }, 0);
   const humanReadableRatio = tokens.length > 0 ? alphaWords.length / tokens.length : 0;
+  const junkRatio = tokens.length > 0 ? suspiciousTokens.length / tokens.length : 1;
   const likelyScannedPdf =
     alphaWords.length < 20 || (humanReadableRatio < 0.35 && resumeHintCount <= 2);
 
@@ -290,10 +347,12 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
     Math.min(
       100,
       Math.round(
-        humanReadableRatio * 45 +
+        humanReadableRatio * 55 +
           Math.min(alphaWords.length, 220) * 0.2 +
-          resumeHintCount * 4 -
-          suspiciousTokens.length * 1.5 -
+          resumeHintCount * 5 +
+          detectedSectionCount * 6 -
+          junkRatio * 10 -
+          suspiciousTokens.length * 0.9 -
           pdfInternalHitCount * 2,
       ),
     ),
@@ -313,6 +372,8 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
     reason = 'Extracted text is too short to build a reliable resume profile.';
   } else if (humanReadableRatio < 0.45) {
     reason = 'Extracted text is not human-readable enough to trust for resume parsing.';
+  } else if (detectedSectionCount < 2 && resumeHintCount < 3 && alphaWords.length < 45) {
+    reason = 'Extracted text is missing key resume sections and may be incomplete.';
   } else if (
     suspiciousTokens.length > Math.max(12, Math.floor(tokens.length * 0.12)) &&
     resumeHintCount <= 3
@@ -325,9 +386,13 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
   return {
     isAcceptable: reason === null,
     reason,
+    textLength: normalized.length,
+    wordCount: tokens.length,
     likelyScannedPdf,
     confidenceScore,
     confidenceTier,
+    detectedSectionCount,
+    junkRatio,
     humanReadableRatio,
     alphaWordCount: alphaWords.length,
     totalWordCount: tokens.length,
@@ -360,6 +425,20 @@ async function extractDocxText(fileBuffer: Buffer) {
   const mammoth = await import('mammoth');
   const parsed = await mammoth.extractRawText({ buffer: fileBuffer });
   return normalizeExtractedText(parsed.value ?? '', 'docx');
+}
+
+function extractTxtText(fileBuffer: Buffer) {
+  return normalizeExtractedText(fileBuffer.toString('utf8'), 'txt');
+}
+
+function extractRtfText(fileBuffer: Buffer) {
+  const raw = fileBuffer.toString('utf8');
+  const withoutControls = raw
+    .replace(/\\'[0-9a-fA-F]{2}/g, ' ')
+    .replace(/\\[a-zA-Z]+-?\d*\s?/g, ' ')
+    .replace(/[{}]/g, ' ');
+
+  return normalizeExtractedText(withoutControls, 'rtf');
 }
 
 async function extractPdfTextWithPdfJs(fileBuffer: Buffer) {
@@ -473,6 +552,22 @@ async function extractPdfTextWithOcr(fileBuffer: Buffer) {
   };
 }
 
+async function extractImageTextWithOcr(fileBuffer: Buffer) {
+  const { createWorker } = eval('require')('tesseract.js') as typeof import('tesseract.js');
+  const worker = await createWorker('eng');
+
+  try {
+    const result = await worker.recognize(fileBuffer);
+    return {
+      text: normalizeExtractedText(result.data.text ?? '', 'image'),
+      confidence:
+        typeof result.data.confidence === 'number' ? result.data.confidence : null,
+    };
+  } finally {
+    await worker.terminate();
+  }
+}
+
 function createExtractionCandidate(args: {
   text: string;
   method: ResumeExtractionMethod;
@@ -481,7 +576,7 @@ function createExtractionCandidate(args: {
   ocrAttempted?: boolean;
   ocrImprovedQuality?: boolean | null;
   ocrConfidence?: number | null;
-  source?: 'pdf' | 'docx';
+  source?: 'pdf' | 'docx' | 'txt' | 'rtf' | 'image';
 }): ResumeExtractionResult {
   const cleanedText = normalizeExtractedText(args.text, args.source ?? 'pdf');
   const quality = assessResumeTextQuality(cleanedText);
@@ -529,6 +624,10 @@ function classifyExtractionFailure(
       : 'EXTRACTION_FAILED';
   }
 
+  if (attemptedMethods.includes('image-ocr')) {
+    return quality.confidenceTier === 'low' ? 'LOW_TEXT_CONFIDENCE' : 'EXTRACTION_FAILED';
+  }
+
   if (quality.likelyScannedPdf && quality.confidenceTier === 'low') {
     return 'IMAGE_BASED_PDF';
   }
@@ -555,9 +654,12 @@ function buildDiagnostics(
     ocrImprovedQuality,
     ocrConfidence: candidate?.ocrConfidence ?? null,
     textLength: candidate?.textLength ?? 0,
+    wordCount: candidate?.quality.wordCount ?? 0,
     readiness: candidate?.readiness ?? 'failed',
     confidenceScore: candidate?.quality.confidenceScore ?? 0,
     confidenceTier: candidate?.quality.confidenceTier ?? 'low',
+    detectedSectionCount: candidate?.quality.detectedSectionCount ?? 0,
+    junkRatio: candidate?.quality.junkRatio ?? 1,
     likelyScannedPdf: candidate?.quality.likelyScannedPdf ?? false,
   };
 }
@@ -611,14 +713,94 @@ export async function extractResumeText(
   options: ExtractResumeTextOptions = {},
 ): Promise<ResumeExtractionResult> {
   const forceOcrRequested = options.forceOcr ?? options.forceOCR ?? false;
+  const extension = getResumeExtension(filename);
+  const isPdf = mimeType === 'application/pdf' || extension === 'pdf';
+  const isDocx = DOCX_MIME_TYPES.has(mimeType) || extension === 'docx';
+  const isLegacyDoc = isLegacyDocMimeType(mimeType, filename);
+  const isTxt = TEXT_MIME_TYPES.has(mimeType) || extension === 'txt';
+  const isRtf = RTF_MIME_TYPES.has(mimeType) || extension === 'rtf';
+  const isImage =
+    IMAGE_MIME_TYPES.has(mimeType) ||
+    extension === 'png' ||
+    extension === 'jpg' ||
+    extension === 'jpeg';
   const attemptedMethods: ResumeExtractionMethod[] = [];
   const overrides = resumeExtractionTestOverrides;
   let bestNonOcrCandidate: ResumeExtractionResult | null = null;
   let ocrAttempted = false;
 
-  if (mimeType !== 'application/pdf' && !filename.toLowerCase().endsWith('.pdf')) {
+  if (isLegacyDoc) {
+    throw new ResumeExtractionError(
+      'Legacy DOC files are not supported safely. Please convert to DOCX, TXT, or PDF and upload again.',
+      null,
+      null,
+      [],
+      'EXTRACTION_FAILED',
+      null,
+    );
+  }
+
+  if (isTxt || isRtf) {
+    const method: ResumeExtractionMethod = isTxt ? 'txt-direct' : 'rtf-direct';
+    attemptedMethods.push(method);
+    const candidate = createExtractionCandidate({
+      text: isTxt ? extractTxtText(fileBuffer) : extractRtfText(fileBuffer),
+      method,
+      attemptedMethods,
+      ocrAttempted: false,
+      source: isTxt ? 'txt' : 'rtf',
+    });
+
+    if (candidate.quality.isAcceptable) {
+      return candidate;
+    }
+
+    const failureCode = classifyExtractionFailure(candidate.quality, attemptedMethods, false);
+    throw new ResumeExtractionError(
+      'The uploaded text file does not contain enough structured resume content.',
+      candidate.quality,
+      candidate.method,
+      attemptedMethods,
+      failureCode,
+      buildDiagnostics(candidate, attemptedMethods, false, null),
+    );
+  }
+
+  if (isImage) {
+    attemptedMethods.push('image-ocr');
+    const ocr = await (overrides?.extractImageTextWithOcr ?? extractImageTextWithOcr)(
+      fileBuffer,
+    );
+    const candidate = createExtractionCandidate({
+      text: ocr.text,
+      method: 'image-ocr',
+      attemptedMethods,
+      usedOcr: true,
+      ocrAttempted: true,
+      ocrConfidence: ocr.confidence,
+      source: 'image',
+    });
+
+    if (candidate.quality.isAcceptable) {
+      return candidate;
+    }
+
+    const failureCode = classifyExtractionFailure(candidate.quality, attemptedMethods, true);
+    throw new ResumeExtractionError(
+      'The uploaded image could not be read reliably. Please upload a clearer PNG/JPG or a text-based PDF/DOCX.',
+      candidate.quality,
+      candidate.method,
+      attemptedMethods,
+      failureCode,
+      buildDiagnostics(candidate, attemptedMethods, true, null),
+    );
+  }
+
+  if (isDocx) {
     attemptedMethods.push('docx-mammoth');
-    const docxText = overrides?.docxText ?? (await (overrides?.extractDocxText ?? extractDocxText)(fileBuffer));
+    const docxText =
+      overrides?.docxText ??
+      (await (overrides?.extractDocxText ?? extractDocxText)(fileBuffer));
     const candidate = createExtractionCandidate({
       text: docxText,
       method: 'docx-mammoth',
@@ -639,6 +821,17 @@ export async function extractResumeText(
       attemptedMethods,
       failureCode,
       buildDiagnostics(candidate, attemptedMethods, false, null),
+    );
+  }
+
+  if (!isPdf) {
+    throw new ResumeExtractionError(
+      'Unsupported resume format. Upload PDF, DOCX, TXT, RTF, PNG, or JPG.',
+      null,
+      null,
+      [],
+      'EXTRACTION_FAILED',
+      null,
     );
   }
 

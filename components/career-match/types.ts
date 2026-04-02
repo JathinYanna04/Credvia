@@ -1,3 +1,5 @@
+import type { AnyResumeStatus } from '@/lib/resume/lifecycle';
+
 export interface CareerSkill {
   id: string;
   slug: string;
@@ -31,6 +33,7 @@ export interface CareerResumeAnalysisReadiness {
     | 'RESUME_FILE_UNSUPPORTED'
     | 'RESUME_TEXT_MISSING'
     | 'ANALYSIS_IN_PROGRESS'
+    | 'RESUME_NOT_READY'
     | null;
   message: string | null;
 }
@@ -74,20 +77,34 @@ export interface CareerResumeSummary {
   mime_type: string;
   file_size_bytes: number | null;
   is_active: boolean;
-  parse_status: 'uploaded' | 'parsing' | 'parsed' | 'failed';
+  parse_status: AnyResumeStatus;
   source: string;
   uploaded_at: string;
   created_at: string;
   updated_at: string;
   profile: CareerResumeProfile | null;
   skills: CareerSkill[];
+  latestRun?: {
+    resume_id: string;
+    status: string;
+    parser_version: string | null;
+    error_message: string | null;
+    created_at: string;
+  } | null;
 }
 
 export interface CareerAnalysisRun {
   id: string;
   resume_id: string;
   user_id: string;
-  status: 'queued' | 'running' | 'completed' | 'failed';
+  status:
+    | 'queued'
+    | 'running'
+    | 'extracting'
+    | 'parsing'
+    | 'analyzing'
+    | 'completed'
+    | 'failed';
   parser_version: string | null;
   error_message: string | null;
   started_at: string | null;

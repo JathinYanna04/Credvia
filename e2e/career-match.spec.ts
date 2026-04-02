@@ -26,7 +26,7 @@ test('career match ui works from resume upload through match detail', async ({
   await page.goto('/resume');
   await expect(page.getByRole('heading', { name: 'Resume', exact: true })).toBeVisible();
   await page.locator('input[type="file"]').setInputFiles(docxPath);
-  await expect(page.getByText('Resume uploaded. Run analysis to turn it into a match profile.')).toBeVisible({
+  await expect(page.getByText('Resume uploaded. We started extraction automatically and will mark it Ready when parsing completes.')).toBeVisible({
     timeout: 30_000,
   });
   await expect(page.getByRole('button', { name: /career-match-e2e\.docx/i }).first()).toBeVisible();
@@ -45,7 +45,7 @@ test('career match ui works from resume upload through match detail', async ({
       return result.data?.parse_status ?? null;
     },
     { timeout: 60_000 },
-  ).toBe('parsed');
+  ).toBe('ANALYZED');
 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Extracted profile' })).toBeVisible();

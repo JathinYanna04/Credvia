@@ -7,9 +7,10 @@ import posthog from '@/lib/analytics/posthog-client';
 
 export interface ResumeUploadCardProps {
   onUploaded: () => Promise<void> | void;
+  onUploadStateChange?: (uploading: boolean) => void;
 }
 
-export function ResumeUploadCard({ onUploaded }: ResumeUploadCardProps) {
+export function ResumeUploadCard({ onUploaded, onUploadStateChange }: ResumeUploadCardProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,6 +18,7 @@ export function ResumeUploadCard({ onUploaded }: ResumeUploadCardProps) {
 
   async function handleFile(file: File) {
     setUploading(true);
+    onUploadStateChange?.(true);
     setError(null);
     setSuccess(null);
     posthog.capture('resume_upload_started', {
@@ -45,7 +47,7 @@ export function ResumeUploadCard({ onUploaded }: ResumeUploadCardProps) {
       }
 
       await onUploaded();
-      setSuccess('Resume uploaded. Run analysis to turn it into a match profile.');
+      setSuccess('Resume uploaded. We started extraction automatically and will mark it Ready when parsing completes.');
       if (inputRef.current) {
         inputRef.current.value = '';
       }
@@ -53,6 +55,7 @@ export function ResumeUploadCard({ onUploaded }: ResumeUploadCardProps) {
       setError(uploadError instanceof Error ? uploadError.message : 'Could not upload your resume.');
     } finally {
       setUploading(false);
+      onUploadStateChange?.(false);
     }
   }
 
@@ -69,7 +72,7 @@ export function ResumeUploadCard({ onUploaded }: ResumeUploadCardProps) {
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,.doc,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept=".pdf,.docx,.txt,.rtf,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/rtf,application/rtf,image/png,image/jpeg"
           className="hidden"
           onChange={(event) => {
             const file = event.target.files?.[0];
@@ -81,7 +84,8 @@ export function ResumeUploadCard({ onUploaded }: ResumeUploadCardProps) {
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <p className="text-sm text-text-primary">Supported formats: PDF and DOCX</p>
+            <p className="text-sm text-text-primary">Supported formats: PDF, DOCX, TXT, RTF, PNG, JPG</p>
+            <p className="text-xs text-text-tertiary">Legacy DOC requires conversion to DOCX/PDF before upload</p>
             <p className="text-xs text-text-tertiary">Max file size: 10 MB</p>
           </div>
           <Button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>

@@ -1,5 +1,9 @@
 import type { Database } from '@/lib/supabase/types';
 import { isSupportedResumeMimeType } from '@/lib/resume/extract';
+import {
+  normalizeResumeLifecycleStatus,
+  RESUME_LIFECYCLE_STATUSES,
+} from '@/lib/resume/lifecycle';
 
 type ResumeRow = Database['public']['Tables']['resumes']['Row'];
 type AnalysisRunRow = Database['public']['Tables']['resume_analysis_runs']['Row'];
@@ -9,6 +13,7 @@ export type ResumeAnalysisReadinessCode =
   | 'RESUME_FILE_UNSUPPORTED'
   | 'RESUME_TEXT_MISSING'
   | 'ANALYSIS_IN_PROGRESS'
+  | 'RESUME_NOT_READY'
   | null;
 
 export interface ResumeAnalysisReadiness {
@@ -52,15 +57,79 @@ export function getResumeAnalysisReadiness(
     return {
       ready: false,
       code: 'RESUME_FILE_UNSUPPORTED',
-      message: 'Only PDF and DOCX resumes can be analyzed.',
+      message: 'Supported formats are PDF, DOCX, TXT, RTF, PNG, and JPG.',
     };
   }
 
-  if (resume.parse_status === 'parsing' || latestRun?.status === 'running') {
+  const normalizedStatus = normalizeResumeLifecycleStatus(resume.parse_status);
+
+  if (
+    normalizedStatus === RESUME_LIFECYCLE_STATUSES.EXTRACTING ||
+    normalizedStatus === RESUME_LIFECYCLE_STATUSES.PARSED ||
+    normalizedStatus === RESUME_LIFECYCLE_STATUSES.ANALYZING ||
+    latestRun?.status === 'running' ||
+    latestRun?.status === 'extracting' ||
+    latestRun?.status === 'parsing' ||
+    latestRun?.status === 'analyzing'
+  ) {
     return {
       ready: false,
       code: 'ANALYSIS_IN_PROGRESS',
-      message: 'Resume analysis is already running.',
+      message: 'Resume processing is already running.',
+    };
+  }
+
+  if (normalizedStatus === RESUME_LIFECYCLE_STATUSES.READY) {
+    return {
+      ready: true,
+      code: null,
+      message: null,
+    };
+  }
+
+  if (normalizedStatus === RESUME_LIFECYCLE_STATUSES.ANALYZED) {
+    return {
+      ready: false,
+      code: 'RESUME_NOT_READY',
+      message:
+        'Resume analysis has already completed. Re-run extraction if the file changed, then analyze again.',
+    };
+  }
+
+  if (normalizedStatus === RESUME_LIFECYCLE_STATUSES.EXTRACTION_FAILED) {
+    return {
+      ready: false,
+      code: 'RESUME_TEXT_MISSING',
+      message:
+        resume.mime_type === 'application/pdf'
+          ? 'This PDF could not be parsed reliably. Retry extraction with Force OCR or upload a clearer file.'
+          : 'This file could not be parsed reliably. Retry extraction or upload a clearer file.',
+    };
+  }
+
+  if (normalizedStatus === RESUME_LIFECYCLE_STATUSES.PARSING_FAILED) {
+    return {
+      ready: false,
+      code: 'RESUME_NOT_READY',
+      message: 'Resume parsing failed. Retry extraction to rebuild the profile.',
+    };
+  }
+
+  if (normalizedStatus === RESUME_LIFECYCLE_STATUSES.ANALYSIS_FAILED) {
+    return {
+      ready: false,
+      code: 'RESUME_NOT_READY',
+      message:
+        'Resume analysis failed. Re-run extraction to return this resume to a READY state.',
+    };
+  }
+
+  if (normalizedStatus === RESUME_LIFECYCLE_STATUSES.EXTRACTED_WITH_WARNINGS) {
+    return {
+      ready: false,
+      code: 'RESUME_TEXT_MISSING',
+      message:
+        'Resume text quality is too low for analysis. Retry extraction with Force OCR or upload a cleaner file.',
     };
   }
 
@@ -79,8 +148,8 @@ export function getResumeAnalysisReadiness(
   }
 
   return {
-    ready: true,
-    code: null,
-    message: null,
+    ready: false,
+    code: 'RESUME_NOT_READY',
+    message: 'Resume must finish extraction and parsing before analysis can start.',
   };
 }

@@ -3,7 +3,13 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { CareerJob, CareerMatch, CareerResumeSummary } from '@/components/career-match/types';
-import { formatDateTime, formatPercent, humanizeParseStatus, parseStatusVariant } from '@/components/career-match/utils';
+import {
+  canAnalyzeFromStatus,
+  formatDateTime,
+  formatPercent,
+  humanizeParseStatus,
+  parseStatusVariant,
+} from '@/components/career-match/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -96,7 +102,7 @@ export function CareerHubPage() {
 
     if (!activeResume) {
       actions.push({ label: 'Upload your first resume', href: '/resume' });
-    } else if (activeResume.parse_status !== 'parsed') {
+    } else if (!canAnalyzeFromStatus(activeResume.parse_status)) {
       actions.push({ label: 'Run resume analysis', href: '/resume' });
     }
 
@@ -203,7 +209,9 @@ export function CareerHubPage() {
                 {activeResume ? (
                   <Button asChild variant="secondary">
                     <Link href="/resume">
-                      {activeResume.parse_status === 'parsed' ? 'Re-analyze' : 'Improve Resume'}
+                      {canAnalyzeFromStatus(activeResume.parse_status)
+                        ? 'Analyze'
+                        : 'Improve Resume'}
                     </Link>
                   </Button>
                 ) : null}

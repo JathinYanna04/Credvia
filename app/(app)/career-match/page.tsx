@@ -4,10 +4,15 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { JobMatchCard } from '@/components/career-match/JobMatchCard';
 import type { CareerMatch, CareerResumeSummary } from '@/components/career-match/types';
-import { humanizeParseStatus, parseStatusVariant } from '@/components/career-match/utils';
+import {
+  canAnalyzeFromStatus,
+  humanizeParseStatus,
+  parseStatusVariant,
+} from '@/components/career-match/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import posthog from '@/lib/analytics/posthog-client';
+import { isResumeFailureStatus } from '@/lib/resume/lifecycle';
 
 export default function CareerMatchPage() {
   const [resume, setResume] = useState<CareerResumeSummary | null | undefined>(undefined);
@@ -153,9 +158,9 @@ export default function CareerMatchPage() {
       {resume && matches?.length === 0 && !authExpired ? (
         <div className="surface-panel space-y-3 p-5 text-sm text-text-secondary">
           <p>
-            {resume.parse_status === 'parsed'
+            {canAnalyzeFromStatus(resume.parse_status)
               ? 'No ranked matches have been generated yet.'
-              : resume.parse_status === 'failed'
+              : isResumeFailureStatus(resume.parse_status)
                 ? 'Resume analysis failed, so Credvia is not showing weak or misleading match output yet.'
               : 'Your resume needs analysis before matches can be generated.'}
           </p>
@@ -163,7 +168,7 @@ export default function CareerMatchPage() {
             <Button asChild variant="secondary">
               <Link href="/resume">Open resume</Link>
             </Button>
-            {resume.parse_status === 'parsed' ? (
+            {canAnalyzeFromStatus(resume.parse_status) ? (
               <Button onClick={() => void handleRefreshMatches()} disabled={refreshing}>
                 {refreshing ? 'Refreshing...' : 'Try recompute again'}
               </Button>

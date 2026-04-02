@@ -133,11 +133,14 @@ export interface ApiError {
     | 'LOW_TEXT_CONFIDENCE'
     | 'OCR_FAILED'
     | 'EMPTY_EXTRACTED_TEXT'
+    | 'RESUME_NOT_READY'
+    | 'UNSUPPORTED_RESUME_FORMAT'
     | 'RATE_LIMITED'
     | 'ANALYSIS_SERVICE_UNAVAILABLE'
     | 'INTERNAL_ERROR';
   message: string;
   details?: unknown;
+  suggestedAction?: string;
 }
 
 export interface ApiResponse<T> {
@@ -158,8 +161,12 @@ export interface AnalyzeResumeRequest {
 }
 
 export interface ResumeExtractionQualitySummary {
+  textLength: number;
+  wordCount: number;
   confidenceScore: number;
   confidenceTier: 'high' | 'medium' | 'low';
+  detectedSectionCount: number;
+  junkRatio: number;
   likelyScannedPdf: boolean;
   humanReadableRatio: number;
   suspiciousTokenCount: number;
@@ -187,15 +194,20 @@ export interface ResumeExtractionErrorDetails {
   ocrImprovedQuality: boolean | null;
   ocrConfidence: number | null;
   textLength: number;
+  wordCount: number;
   readiness: 'good' | 'partial' | 'poor' | 'failed';
   confidenceScore: number;
   confidenceTier: 'high' | 'medium' | 'low';
+  detectedSectionCount: number;
+  junkRatio: number;
   likelyScannedPdf: boolean;
 }
 
 export interface AnalyzeResumeResponse {
   analyzed: boolean;
   resumeId: string;
+  status?: string;
+  matchCount?: number;
   extraction?: ResumeExtractionSummary;
   warning?: string | null;
 }

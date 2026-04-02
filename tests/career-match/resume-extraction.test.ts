@@ -254,6 +254,60 @@ describe('resume extraction fallbacks', () => {
     expect(result.attemptedMethods).toEqual(['docx-mammoth']);
     expect(result.text).toContain('Supabase');
   });
+
+  it('extracts plain TXT resumes directly', async () => {
+    const result = await extractResumeText(
+      Buffer.from(sampleResumeText, 'utf8'),
+      'text/plain',
+      'resume.txt',
+    );
+
+    expect(result.method).toBe('txt-direct');
+    expect(result.usedOcr).toBe(false);
+    expect(result.attemptedMethods).toEqual(['txt-direct']);
+    expect(result.quality.isAcceptable).toBe(true);
+  });
+
+  it('extracts RTF resumes directly', async () => {
+    const rtf = [
+      '{\\rtf1\\ansi',
+      'Jane Builder\\line',
+      'Product Engineer\\line',
+      'jane@example.com\\line',
+      'Summary: Product engineer building startup tools\\line',
+      'Skills: TypeScript, React, PostgreSQL, Supabase\\line',
+      'Experience: 4 years building startup tools\\line',
+      'Projects: Led roadmap for developer platform\\line',
+      'Education: BSc Computer Science',
+      '}',
+    ].join(' ');
+    const result = await extractResumeText(Buffer.from(rtf, 'utf8'), 'application/rtf', 'resume.rtf');
+
+    expect(result.method).toBe('rtf-direct');
+    expect(result.usedOcr).toBe(false);
+    expect(result.attemptedMethods).toEqual(['rtf-direct']);
+    expect(result.text).toContain('Jane Builder');
+  });
+
+  it('uses OCR-first extraction for image uploads', async () => {
+    __setResumeExtractionTestOverrides({
+      extractImageTextWithOcr: async () => ({
+        text: sampleResumeText,
+        confidence: 94,
+      }),
+    });
+
+    const result = await extractResumeText(
+      Buffer.from('fake-image'),
+      'image/png',
+      'resume.png',
+    );
+
+    expect(result.method).toBe('image-ocr');
+    expect(result.usedOcr).toBe(true);
+    expect(result.ocrAttempted).toBe(true);
+    expect(result.attemptedMethods).toEqual(['image-ocr']);
+  });
 });
 
 describe('resume parsing', () => {

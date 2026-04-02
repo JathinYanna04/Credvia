@@ -1,160 +1,278 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database, Json } from '@/lib/supabase/types';
 import type { AnalyzeResumeRequest } from '@/lib/types';
+import { recomputeMatchesForResume } from '@/lib/matching/service';
 import { extractResumeText, ResumeExtractionError } from '@/lib/resume/extract';
+import { RESUME_LIFECYCLE_STATUSES } from '@/lib/resume/lifecycle';
 import { parseResumeText } from '@/lib/resume/parse';
 import { getSkillEntryBySlug } from '@/lib/resume/skill-taxonomy';
 import { logError, logInfo } from '@/lib/utils/logger';
 
 type TypedSupabaseClient = SupabaseClient<Database>;
 
-export async function analyzeStoredResume(
+type ResumeRow = Database['public']['Tables']['resumes']['Row'];
+
+interface ResumePreparationResult {
+  extraction: Awaited<ReturnType<typeof extractResumeText>>;
+  parsed: ReturnType<typeof parseResumeText>;
+  matchedSkillRows: Array<{
+    skill: { slug: string; name: string };
+    source: 'direct' | 'inferred';
+    confidence: number;
+  }>;
+}
+
+function toErrorMessage(error: unknown) {
+  if (error instanceof ResumeExtractionError) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Resume processing failed.';
+}
+
+function resolvePreparationFailureStatus(error: unknown) {
+  if (error instanceof ResumeExtractionError) {
+    if (error.failureCode === 'LOW_TEXT_CONFIDENCE') {
+      return RESUME_LIFECYCLE_STATUSES.EXTRACTED_WITH_WARNINGS;
+    }
+
+    return RESUME_LIFECYCLE_STATUSES.EXTRACTION_FAILED;
+  }
+
+  return RESUME_LIFECYCLE_STATUSES.PARSING_FAILED;
+}
+
+async function updateResumeLifecycleStatus(
   supabase: TypedSupabaseClient,
-  resume: Database['public']['Tables']['resumes']['Row'],
-  fileBuffer: Buffer,
-  requestBody: AnalyzeResumeRequest = {},
+  resumeId: string,
+  parseStatus: string,
 ) {
-  const insertAnalysisRun = await supabase
+  const update = await supabase.from('resumes').update({ parse_status: parseStatus }).eq('id', resumeId);
+
+  if (update.error) {
+    throw new Error(update.error.message);
+  }
+}
+
+async function createAnalysisRun(
+  supabase: TypedSupabaseClient,
+  resume: ResumeRow,
+  status: string,
+  parserVersion: string,
+) {
+  const insert = await supabase
     .from('resume_analysis_runs')
     .insert({
       resume_id: resume.id,
       user_id: resume.user_id,
-      status: 'running',
+      status,
       started_at: new Date().toISOString(),
-      parser_version: 'deterministic-v2',
+      parser_version: parserVersion,
     })
     .select('id')
     .single();
 
-  if (insertAnalysisRun.error || !insertAnalysisRun.data) {
-    throw new Error(insertAnalysisRun.error?.message ?? 'Could not create resume analysis run.');
+  if (insert.error || !insert.data) {
+    throw new Error(insert.error?.message ?? 'Could not create resume analysis run.');
   }
 
+  return insert.data.id;
+}
+
+async function completeRun(
+  supabase: TypedSupabaseClient,
+  runId: string,
+  patch: {
+    status: string;
+    parserVersion?: string | null;
+    errorMessage?: string | null;
+  },
+) {
+  const update = await supabase
+    .from('resume_analysis_runs')
+    .update({
+      status: patch.status,
+      completed_at: new Date().toISOString(),
+      parser_version: patch.parserVersion ?? null,
+      error_message: patch.errorMessage ?? null,
+    })
+    .eq('id', runId);
+
+  if (update.error) {
+    throw new Error(update.error.message);
+  }
+}
+
+async function persistParsedResume(
+  supabase: TypedSupabaseClient,
+  resume: ResumeRow,
+  rawText: string,
+  parsed: ReturnType<typeof parseResumeText>,
+) {
+  const matchedSkillRows = [
+    ...parsed.directSkillSlugs.map((slug) => ({
+      slug,
+      source: 'direct' as const,
+      confidence: 1,
+    })),
+    ...parsed.inferredSkillSlugs.map((slug) => ({
+      slug,
+      source: 'inferred' as const,
+      confidence: 0.7,
+    })),
+  ]
+    .map((entry) => {
+      const skill = getSkillEntryBySlug(entry.slug);
+      return skill ? { skill, source: entry.source, confidence: entry.confidence } : null;
+    })
+    .filter(Boolean) as ResumePreparationResult['matchedSkillRows'];
+
+  const [profileUpsert, deleteSkills] = await Promise.all([
+    supabase.from('resume_profiles').upsert(
+      {
+        resume_id: resume.id,
+        user_id: resume.user_id,
+        full_name: parsed.fullName,
+        email: parsed.email,
+        phone: parsed.phone,
+        current_title: parsed.currentTitle,
+        summary: parsed.summary,
+        location: parsed.locationText,
+        years_experience: parsed.experienceYears,
+        projects: parsed.projects,
+        experience: parsed.experience,
+        education: parsed.education,
+        raw_sections: parsed.parsedSections as unknown as Json,
+        parsed_text: rawText,
+        parsed_at: new Date().toISOString(),
+      },
+      { onConflict: 'resume_id' },
+    ),
+    supabase.from('resume_skills').delete().eq('resume_id', resume.id),
+  ]);
+
+  if (profileUpsert.error) {
+    throw new Error(profileUpsert.error.message);
+  }
+
+  if (deleteSkills.error) {
+    throw new Error(deleteSkills.error.message);
+  }
+
+  if (matchedSkillRows.length > 0) {
+    const skillInsert = await supabase.from('resume_skills').insert(
+      matchedSkillRows.map((entry) => ({
+        resume_id: resume.id,
+        user_id: resume.user_id,
+        skill_slug: entry.skill.slug,
+        skill_name: entry.skill.name,
+        source_type: entry.source === 'direct' ? 'explicit' : 'experience_inferred',
+        evidence: entry.skill.name,
+        confidence: entry.confidence,
+      })),
+    );
+
+    if (skillInsert.error) {
+      throw new Error(skillInsert.error.message);
+    }
+  }
+
+  return matchedSkillRows;
+}
+
+export async function prepareResumeForAnalysis(
+  supabase: TypedSupabaseClient,
+  resume: ResumeRow,
+  fileBuffer: Buffer,
+  requestBody: AnalyzeResumeRequest = {},
+): Promise<ResumePreparationResult> {
+  const runId = await createAnalysisRun(
+    supabase,
+    resume,
+    'extracting',
+    'deterministic-v3:prepare',
+  );
+
   try {
+    await updateResumeLifecycleStatus(
+      supabase,
+      resume.id,
+      RESUME_LIFECYCLE_STATUSES.EXTRACTING,
+    );
+
     const extraction = await extractResumeText(fileBuffer, resume.mime_type, resume.file_name, {
       forceOcr: requestBody.forceOCR ?? requestBody.forceOcr,
     });
     const rawText = extraction.text.trim();
 
-    logInfo('resume-analyze', 'Extraction completed', {
+    logInfo('resume-preparation', 'Extraction completed', {
       resumeId: resume.id,
       method: extraction.method,
       attemptedMethods: extraction.attemptedMethods,
       textLength: rawText.length,
-      usedOcr: extraction.usedOcr,
-      ocrConfidence: extraction.ocrConfidence,
+      wordCount: extraction.quality.wordCount,
       confidenceScore: extraction.quality.confidenceScore,
       confidenceTier: extraction.quality.confidenceTier,
-      likelyScannedPdf: extraction.quality.likelyScannedPdf,
-    });
-
-    const parsed = parseResumeText(rawText, {
-      extractionMethod: extraction.method,
-      attemptedMethods: extraction.attemptedMethods,
-      extractionQuality: extraction.quality as unknown as Record<string, unknown>,
+      detectedSectionCount: extraction.quality.detectedSectionCount,
+      junkRatio: extraction.quality.junkRatio,
       usedOcr: extraction.usedOcr,
-      ocrAttempted: extraction.ocrAttempted,
-      ocrImprovedQuality: extraction.ocrImprovedQuality,
       ocrConfidence: extraction.ocrConfidence,
-      textLength: extraction.textLength,
-      readiness: extraction.readiness,
     });
 
-    const matchedSkillRows = [
-      ...parsed.directSkillSlugs.map((slug) => ({ slug, source: 'direct' as const, confidence: 1 })),
-      ...parsed.inferredSkillSlugs.map((slug) => ({ slug, source: 'inferred' as const, confidence: 0.7 })),
-    ]
-      .map((entry) => {
-        const skill = getSkillEntryBySlug(entry.slug);
-        return skill ? { skill, source: entry.source, confidence: entry.confidence } : null;
-      })
-      .filter(Boolean) as Array<{
-      skill: { slug: string; name: string };
-      source: 'direct' | 'inferred';
-      confidence: number;
-    }>;
+    await updateResumeLifecycleStatus(
+      supabase,
+      resume.id,
+      extraction.quality.confidenceTier === 'low'
+        ? RESUME_LIFECYCLE_STATUSES.EXTRACTED_WITH_WARNINGS
+        : RESUME_LIFECYCLE_STATUSES.EXTRACTED,
+    );
 
-    const [profileUpsert, deleteSkills] = await Promise.all([
-      supabase.from('resume_profiles').upsert(
-        {
-          resume_id: resume.id,
-          user_id: resume.user_id,
-          full_name: parsed.fullName,
-          email: parsed.email,
-          phone: parsed.phone,
-          current_title: parsed.currentTitle,
-          summary: parsed.summary,
-          location: parsed.locationText,
-          years_experience: parsed.experienceYears,
-          projects: parsed.projects,
-          experience: parsed.experience,
-          education: parsed.education,
-          raw_sections: parsed.parsedSections as unknown as Json,
-          parsed_text: rawText,
-          parsed_at: new Date().toISOString(),
-        },
-        { onConflict: 'resume_id' },
-      ),
-      supabase.from('resume_skills').delete().eq('resume_id', resume.id),
-    ]);
-
-    if (profileUpsert.error) {
-      throw new Error(profileUpsert.error.message);
-    }
-
-    if (deleteSkills.error) {
-      throw new Error(deleteSkills.error.message);
-    }
-
-    if (matchedSkillRows.length > 0) {
-      const skillInsert = await supabase.from('resume_skills').insert(
-        matchedSkillRows.map((entry) => ({
-          resume_id: resume.id,
-          user_id: resume.user_id,
-          skill_slug: entry.skill.slug,
-          skill_name: entry.skill.name,
-          source_type: entry.source === 'direct' ? 'explicit' : 'experience_inferred',
-          evidence: entry.skill.name,
-          confidence: entry.confidence,
-        })),
+    let parsed: ReturnType<typeof parseResumeText>;
+    try {
+      parsed = parseResumeText(rawText, {
+        extractionMethod: extraction.method,
+        attemptedMethods: extraction.attemptedMethods,
+        extractionQuality: extraction.quality as unknown as Record<string, unknown>,
+        usedOcr: extraction.usedOcr,
+        ocrAttempted: extraction.ocrAttempted,
+        ocrImprovedQuality: extraction.ocrImprovedQuality,
+        ocrConfidence: extraction.ocrConfidence,
+        textLength: extraction.textLength,
+        readiness: extraction.readiness,
+      });
+    } catch (parseError) {
+      await updateResumeLifecycleStatus(
+        supabase,
+        resume.id,
+        RESUME_LIFECYCLE_STATUSES.PARSING_FAILED,
       );
-
-      if (skillInsert.error) {
-        throw new Error(skillInsert.error.message);
-      }
+      throw parseError;
     }
 
-    const completeRun = await supabase
-      .from('resume_analysis_runs')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        parser_version: `deterministic-v2:${extraction.method}${extraction.usedOcr ? ':ocr' : ''}`,
-        error_message: null,
-      })
-      .eq('id', insertAnalysisRun.data.id);
+    await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.PARSED);
+    const matchedSkillRows = await persistParsedResume(supabase, resume, rawText, parsed);
+    await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.READY);
 
-    if (completeRun.error) {
-      throw new Error(completeRun.error.message);
-    }
-
-    const resumeUpdate = await supabase
-      .from('resumes')
-      .update({ parse_status: 'parsed' })
-      .eq('id', resume.id);
-
-    if (resumeUpdate.error) {
-      throw new Error(resumeUpdate.error.message);
-    }
+    await completeRun(supabase, runId, {
+      status: 'completed',
+      parserVersion: `deterministic-v3:${extraction.method}${extraction.usedOcr ? ':ocr' : ''}`,
+      errorMessage: null,
+    });
 
     return {
+      extraction,
       parsed,
       matchedSkillRows,
-      extraction,
     };
   } catch (error) {
+    const lifecycleStatus = resolvePreparationFailureStatus(error);
+
     if (error instanceof ResumeExtractionError) {
-      logError('resume-analyze', 'Extraction failed', {
+      logError('resume-preparation', 'Extraction failed', {
         resumeId: resume.id,
         method: error.method,
         attemptedMethods: error.attemptedMethods,
@@ -163,22 +281,83 @@ export async function analyzeStoredResume(
         quality: error.quality,
         diagnostics: error.diagnostics,
       });
+    } else {
+      logError('resume-preparation', 'Preparation failed', {
+        resumeId: resume.id,
+        message: toErrorMessage(error),
+      });
     }
 
-    await supabase
-      .from('resume_analysis_runs')
-      .update({
-        status: 'failed',
-        completed_at: new Date().toISOString(),
-        error_message:
-          error instanceof ResumeExtractionError
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : 'Resume analysis failed.',
-      })
-      .eq('id', insertAnalysisRun.data.id);
+    await updateResumeLifecycleStatus(supabase, resume.id, lifecycleStatus);
+    await completeRun(supabase, runId, {
+      status: 'failed',
+      parserVersion: 'deterministic-v3:prepare',
+      errorMessage: toErrorMessage(error),
+    });
 
     throw error;
   }
+}
+
+export async function runResumeAnalysis(
+  supabase: TypedSupabaseClient,
+  resume: ResumeRow,
+) {
+  const runId = await createAnalysisRun(supabase, resume, 'analyzing', 'analysis-v1');
+
+  try {
+    await updateResumeLifecycleStatus(
+      supabase,
+      resume.id,
+      RESUME_LIFECYCLE_STATUSES.ANALYZING,
+    );
+
+    const profileResult = await supabase
+      .from('resume_profiles')
+      .select('resume_id')
+      .eq('resume_id', resume.id)
+      .maybeSingle();
+
+    if (profileResult.error) {
+      throw new Error(profileResult.error.message);
+    }
+
+    if (!profileResult.data) {
+      throw new Error('Resume is not prepared for analysis yet.');
+    }
+
+    const matchCount = await recomputeMatchesForResume(supabase, resume.user_id, resume.id);
+
+    await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.ANALYZED);
+    await completeRun(supabase, runId, {
+      status: 'completed',
+      parserVersion: 'analysis-v1',
+      errorMessage: null,
+    });
+
+    return { matchCount };
+  } catch (error) {
+    await updateResumeLifecycleStatus(
+      supabase,
+      resume.id,
+      RESUME_LIFECYCLE_STATUSES.ANALYSIS_FAILED,
+    );
+    await completeRun(supabase, runId, {
+      status: 'failed',
+      parserVersion: 'analysis-v1',
+      errorMessage: toErrorMessage(error),
+    });
+
+    throw error;
+  }
+}
+
+// Backward compatibility for any existing callers that still use the old name.
+export async function analyzeStoredResume(
+  supabase: TypedSupabaseClient,
+  resume: ResumeRow,
+  fileBuffer: Buffer,
+  requestBody: AnalyzeResumeRequest = {},
+) {
+  return prepareResumeForAnalysis(supabase, resume, fileBuffer, requestBody);
 }

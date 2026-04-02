@@ -1,27 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AnalyzeResumeResponse, ResumeExtractionErrorDetails } from '@/lib/types';
-import { ResumeExtractionError } from '@/lib/resume/extract';
+import type { AnalyzeResumeResponse } from '@/lib/types';
 
 const createServerSupabaseClient = vi.fn();
-const createServiceRoleClient = vi.fn();
 const getRequiredUser = vi.fn();
 const enforceRateLimit = vi.fn();
 const getResumeById = vi.fn();
 const getActiveResume = vi.fn();
-const analyzeStoredResume = vi.fn();
-const recomputeMatchesForResume = vi.fn();
+const runResumeAnalysis = vi.fn();
 const captureServerEvent = vi.fn();
 const sendResumeAnalysisEmail = vi.fn();
 
 function createSupabaseMock(options?: {
   latestRun?: unknown;
   latestRunError?: { message: string } | null;
-  downloadError?: { message: string } | null;
   existingResume?: { id: string; user_id: string } | null;
 }) {
   const latestRun = options?.latestRun ?? null;
   const latestRunError = options?.latestRunError ?? null;
-  const downloadError = options?.downloadError ?? null;
   const existingResume = options?.existingResume ?? null;
 
   return {
@@ -92,23 +87,11 @@ function createSupabaseMock(options?: {
 
       throw new Error(`Unexpected table: ${table}`);
     }),
-    storage: {
-      from: vi.fn(() => ({
-        download: async () => ({
-          data: downloadError ? null : new Blob(['Resume body']),
-          error: downloadError,
-        }),
-      })),
-    },
   };
 }
 
 vi.mock('@/lib/supabase/server', () => ({
   createServerSupabaseClient,
-}));
-
-vi.mock('@/lib/supabase/service', () => ({
-  createServiceRoleClient,
 }));
 
 vi.mock('@/lib/supabase/helpers', () => ({
@@ -125,11 +108,7 @@ vi.mock('@/lib/career-match/queries', () => ({
 }));
 
 vi.mock('@/lib/resume/analyze', () => ({
-  analyzeStoredResume,
-}));
-
-vi.mock('@/lib/matching/service', () => ({
-  recomputeMatchesForResume,
+  runResumeAnalysis,
 }));
 
 vi.mock('@/lib/analytics/capture-server-event', () => ({
@@ -143,10 +122,9 @@ vi.mock('@/lib/email/send-resume-analysis-email', () => ({
 describe('resume analyze route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    createServiceRoleClient.mockReturnValue(null);
   });
 
-  it('succeeds with an empty body and recomputes matches for the active resume', async () => {
+  it('analyzes a READY resume and returns match count', async () => {
     const supabase = createSupabaseMock();
 
     createServerSupabaseClient.mockResolvedValue(supabase);
@@ -158,33 +136,17 @@ describe('resume analyze route', () => {
       file_path: 'user-1/resume-1/original.pdf',
       mime_type: 'application/pdf',
       file_name: 'resume.pdf',
-      parse_status: 'uploaded',
+      parse_status: 'READY',
     });
     getActiveResume.mockResolvedValue({ id: 'resume-1' });
-    analyzeStoredResume.mockResolvedValue({
-      extraction: {
-        method: 'pdfjs-text',
-        attemptedMethods: ['pdfjs-text'],
-        usedOcr: false,
-        ocrConfidence: null,
-        quality: {
-          confidenceScore: 92,
-          confidenceTier: 'high',
-          likelyScannedPdf: false,
-          humanReadableRatio: 0.91,
-          suspiciousTokenCount: 0,
-          resumeHintCount: 7,
-        },
-      },
-      parsed: { parsedSections: { __meta: { extractionMethod: 'pdfjs-text', usedOcr: false } } },
-      matchedSkillRows: [],
-    });
-    recomputeMatchesForResume.mockResolvedValue(12);
+    runResumeAnalysis.mockResolvedValue({ matchCount: 12 });
 
     const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
     const response = await POST(
       new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
       }),
       { params: { id: 'resume-1' } },
     );
@@ -195,110 +157,16 @@ describe('resume analyze route', () => {
     expect(payload.data).toMatchObject({
       analyzed: true,
       resumeId: 'resume-1',
-      extraction: {
-        method: 'pdfjs-text',
-        attemptedMethods: ['pdfjs-text'],
-        usedOcr: false,
-      },
-      warning: null,
+      status: 'ANALYZED',
+      matchCount: 12,
     });
-    expect(analyzeStoredResume).toHaveBeenCalledWith(
+    expect(runResumeAnalysis).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ id: 'resume-1' }),
-      expect.any(Buffer),
-      {},
     );
-    expect(recomputeMatchesForResume).toHaveBeenCalledWith(supabase, 'user-1', 'resume-1');
   });
 
-  it('rejects an invalid analyze request body with a 400 validation error', async () => {
-    const supabase = createSupabaseMock();
-
-    createServerSupabaseClient.mockResolvedValue(supabase);
-    getRequiredUser.mockResolvedValue({ id: 'user-1' });
-    enforceRateLimit.mockResolvedValue({ success: true });
-
-    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
-    const response = await POST(
-      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ forceOCR: 'yes' }),
-      }),
-      { params: { id: 'resume-1' } },
-    );
-
-    const payload = await response.json();
-
-    expect(response.status).toBe(400);
-    expect(payload.error.code).toBe('VALIDATION_ERROR');
-    expect(analyzeStoredResume).not.toHaveBeenCalled();
-  });
-
-  it('returns 403 when the resume exists but belongs to another user', async () => {
-    const supabase = createSupabaseMock();
-
-    createServerSupabaseClient.mockResolvedValue(supabase);
-    getRequiredUser.mockResolvedValue({ id: 'user-1' });
-    enforceRateLimit.mockResolvedValue({ success: true });
-    getResumeById.mockResolvedValue({
-      id: 'resume-1',
-      user_id: 'someone-else',
-      file_path: 'someone-else/resume-1/original.pdf',
-      mime_type: 'application/pdf',
-      file_name: 'resume.pdf',
-      parse_status: 'uploaded',
-    });
-
-    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
-    const response = await POST(
-      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      }),
-      { params: { id: 'resume-1' } },
-    );
-
-    const payload = await response.json();
-
-    expect(response.status).toBe(403);
-    expect(payload.error).toEqual({
-      code: 'FORBIDDEN',
-      message: 'You do not have access to this resume.',
-    });
-    expect(analyzeStoredResume).not.toHaveBeenCalled();
-  });
-
-  it('returns 404 when the resume does not exist', async () => {
-    const supabase = createSupabaseMock({ existingResume: null });
-
-    createServerSupabaseClient.mockResolvedValue(supabase);
-    getRequiredUser.mockResolvedValue({ id: 'user-1' });
-    enforceRateLimit.mockResolvedValue({ success: true });
-    getResumeById.mockResolvedValue(null);
-
-    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
-    const response = await POST(
-      new Request('http://localhost:3000/api/v1/resumes/missing/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      }),
-      { params: { id: 'missing' } },
-    );
-
-    const payload = await response.json();
-
-    expect(response.status).toBe(404);
-    expect(payload.error).toEqual({
-      code: 'NOT_FOUND',
-      message: 'Resume not found.',
-    });
-    expect(analyzeStoredResume).not.toHaveBeenCalled();
-  });
-
-  it('returns IMAGE_BASED_PDF when extraction indicates a scanned/image-based PDF', async () => {
+  it('returns 422 when resume is not in READY state', async () => {
     const supabase = createSupabaseMock();
 
     createServerSupabaseClient.mockResolvedValue(supabase);
@@ -310,33 +178,8 @@ describe('resume analyze route', () => {
       file_path: 'user-1/resume-1/original.pdf',
       mime_type: 'application/pdf',
       file_name: 'resume.pdf',
-      parse_status: 'uploaded',
+      parse_status: 'UPLOADED',
     });
-
-    const details: ResumeExtractionErrorDetails = {
-      reason: 'This PDF looks image-based or too low-quality for reliable text extraction.',
-      attemptedMethods: ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
-      method: 'pdf-ocr',
-      usedOcr: true,
-      ocrAttempted: true,
-      ocrImprovedQuality: false,
-      ocrConfidence: 28,
-      textLength: 94,
-      readiness: 'failed',
-      confidenceScore: 24,
-      confidenceTier: 'low',
-      likelyScannedPdf: true,
-    };
-    analyzeStoredResume.mockRejectedValue(
-      new ResumeExtractionError(
-        'This PDF looks image-based or too low-quality for reliable text extraction.',
-        null,
-        'pdf-ocr',
-        ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
-        'IMAGE_BASED_PDF',
-        details as any,
-      ),
-    );
 
     const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
     const response = await POST(
@@ -351,135 +194,12 @@ describe('resume analyze route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(422);
-    expect(payload.error.code).toBe('IMAGE_BASED_PDF');
-    expect(payload.error.details).toMatchObject({
-      ocrAttempted: true,
-      ocrImprovedQuality: false,
-      likelyScannedPdf: true,
-      method: 'pdf-ocr',
-    });
+    expect(payload.error.code).toBe('RESUME_NOT_READY');
+    expect(payload.error.suggestedAction).toContain('Run extraction');
+    expect(runResumeAnalysis).not.toHaveBeenCalled();
   });
 
-  it('returns LOW_TEXT_CONFIDENCE when OCR is attempted but extraction quality is still poor', async () => {
-    const supabase = createSupabaseMock();
-
-    createServerSupabaseClient.mockResolvedValue(supabase);
-    getRequiredUser.mockResolvedValue({ id: 'user-1' });
-    enforceRateLimit.mockResolvedValue({ success: true });
-    getResumeById.mockResolvedValue({
-      id: 'resume-1',
-      user_id: 'user-1',
-      file_path: 'user-1/resume-1/original.pdf',
-      mime_type: 'application/pdf',
-      file_name: 'resume.pdf',
-      parse_status: 'uploaded',
-    });
-
-    const details: ResumeExtractionErrorDetails = {
-      reason: 'Extracted text is not human-readable enough to trust for resume parsing.',
-      attemptedMethods: ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
-      method: 'pdf-ocr',
-      usedOcr: true,
-      ocrAttempted: true,
-      ocrImprovedQuality: false,
-      ocrConfidence: 41,
-      textLength: 132,
-      readiness: 'poor',
-      confidenceScore: 39,
-      confidenceTier: 'low',
-      likelyScannedPdf: false,
-    };
-    analyzeStoredResume.mockRejectedValue(
-      new ResumeExtractionError(
-        'Extracted text is not human-readable enough to trust for resume parsing.',
-        null,
-        'pdf-ocr',
-        ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
-        'LOW_TEXT_CONFIDENCE',
-        details as any,
-      ),
-    );
-
-    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
-    const response = await POST(
-      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ forceOCR: true }),
-      }),
-      { params: { id: 'resume-1' } },
-    );
-
-    const payload = await response.json();
-
-    expect(response.status).toBe(422);
-    expect(payload.error.code).toBe('LOW_TEXT_CONFIDENCE');
-    expect(payload.error.details).toMatchObject({
-      ocrAttempted: true,
-      ocrImprovedQuality: false,
-      textLength: 132,
-      confidenceTier: 'low',
-    });
-  });
-
-  it('returns EMPTY_EXTRACTED_TEXT when all methods recover no text', async () => {
-    const supabase = createSupabaseMock();
-
-    createServerSupabaseClient.mockResolvedValue(supabase);
-    getRequiredUser.mockResolvedValue({ id: 'user-1' });
-    enforceRateLimit.mockResolvedValue({ success: true });
-    getResumeById.mockResolvedValue({
-      id: 'resume-1',
-      user_id: 'user-1',
-      file_path: 'user-1/resume-1/original.pdf',
-      mime_type: 'application/pdf',
-      file_name: 'resume.pdf',
-      parse_status: 'uploaded',
-    });
-
-    const details: ResumeExtractionErrorDetails = {
-      reason: 'No readable text could be extracted from this file.',
-      attemptedMethods: ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
-      method: 'pdf-ocr',
-      usedOcr: true,
-      ocrAttempted: true,
-      ocrImprovedQuality: false,
-      ocrConfidence: 11,
-      textLength: 0,
-      readiness: 'failed',
-      confidenceScore: 0,
-      confidenceTier: 'low',
-      likelyScannedPdf: true,
-    };
-    analyzeStoredResume.mockRejectedValue(
-      new ResumeExtractionError(
-        'No readable text could be extracted from this file.',
-        null,
-        'pdf-ocr',
-        ['pdfjs-text', 'pdf-parse-fallback', 'pdf-token-fallback', 'pdf-ocr'],
-        'EMPTY_EXTRACTED_TEXT',
-        details as any,
-      ),
-    );
-
-    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
-    const response = await POST(
-      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      }),
-      { params: { id: 'resume-1' } },
-    );
-
-    const payload = await response.json();
-
-    expect(response.status).toBe(422);
-    expect(payload.error.code).toBe('EMPTY_EXTRACTED_TEXT');
-    expect(payload.error.details).toMatchObject({ textLength: 0, readiness: 'failed' });
-  });
-
-  it('returns 409 when analysis is already in progress', async () => {
+  it('returns 409 when processing is already in progress', async () => {
     const supabase = createSupabaseMock({
       latestRun: {
         id: 'run-1',
@@ -502,7 +222,7 @@ describe('resume analyze route', () => {
       file_path: 'user-1/resume-1/original.pdf',
       mime_type: 'application/pdf',
       file_name: 'resume.pdf',
-      parse_status: 'uploaded',
+      parse_status: 'ANALYZING',
     });
 
     const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
@@ -518,52 +238,11 @@ describe('resume analyze route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(409);
-    expect(payload.error).toEqual({
-      code: 'ANALYSIS_IN_PROGRESS',
-      message: 'Resume analysis is already running.',
-    });
-    expect(analyzeStoredResume).not.toHaveBeenCalled();
-    expect(recomputeMatchesForResume).not.toHaveBeenCalled();
+    expect(payload.error.code).toBe('ANALYSIS_IN_PROGRESS');
+    expect(runResumeAnalysis).not.toHaveBeenCalled();
   });
 
-  it('returns 422 RESUME_FILE_MISSING when storage download fails', async () => {
-    const supabase = createSupabaseMock({
-      downloadError: { message: 'Object not found' },
-    });
-
-    createServerSupabaseClient.mockResolvedValue(supabase);
-    getRequiredUser.mockResolvedValue({ id: 'user-1' });
-    enforceRateLimit.mockResolvedValue({ success: true });
-    getResumeById.mockResolvedValue({
-      id: 'resume-1',
-      user_id: 'user-1',
-      file_path: 'user-1/resume-1/original.pdf',
-      mime_type: 'application/pdf',
-      file_name: 'resume.pdf',
-      parse_status: 'uploaded',
-    });
-
-    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
-    const response = await POST(
-      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      }),
-      { params: { id: 'resume-1' } },
-    );
-
-    const payload = await response.json();
-
-    expect(response.status).toBe(422);
-    expect(payload.error).toEqual({
-      code: 'RESUME_FILE_MISSING',
-      message: 'Upload a resume file before analysis.',
-    });
-    expect(analyzeStoredResume).not.toHaveBeenCalled();
-  });
-
-  it('returns 422 when all extraction methods fail in analysis', async () => {
+  it('returns 422 if forceOCR is sent to analyze endpoint', async () => {
     const supabase = createSupabaseMock();
 
     createServerSupabaseClient.mockResolvedValue(supabase);
@@ -575,65 +254,7 @@ describe('resume analyze route', () => {
       file_path: 'user-1/resume-1/original.pdf',
       mime_type: 'application/pdf',
       file_name: 'resume.pdf',
-      parse_status: 'uploaded',
-    });
-    analyzeStoredResume.mockRejectedValue(
-      new ResumeExtractionError('This resume could not be read reliably. Try a clearer PDF or DOCX.'),
-    );
-
-    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
-    const response = await POST(
-      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      }),
-      { params: { id: 'resume-1' } },
-    );
-
-    const payload = await response.json();
-
-    expect(response.status).toBe(422);
-    expect(payload.error.code).toBe('EXTRACTION_FAILED');
-    expect(payload.error.message).toBe('This resume could not be read reliably. Try a clearer PDF or DOCX.');
-    expect(payload.error.details).toMatchObject({
-      readiness: 'failed',
-      usedOcr: false,
-    });
-  });
-
-  it('passes forceOCR through and succeeds when OCR fallback wins', async () => {
-    const supabase = createSupabaseMock();
-
-    createServerSupabaseClient.mockResolvedValue(supabase);
-    getRequiredUser.mockResolvedValue({ id: 'user-1' });
-    enforceRateLimit.mockResolvedValue({ success: true });
-    getResumeById.mockResolvedValue({
-      id: 'resume-1',
-      user_id: 'user-1',
-      file_path: 'user-1/resume-1/original.pdf',
-      mime_type: 'application/pdf',
-      file_name: 'resume.pdf',
-      parse_status: 'uploaded',
-    });
-    getActiveResume.mockResolvedValue(null);
-    analyzeStoredResume.mockResolvedValue({
-      extraction: {
-        method: 'pdf-ocr',
-        attemptedMethods: ['pdfjs-text', 'pdf-ocr'],
-        usedOcr: true,
-        ocrConfidence: 91,
-        quality: {
-          confidenceScore: 68,
-          confidenceTier: 'medium',
-          likelyScannedPdf: true,
-          humanReadableRatio: 0.72,
-          suspiciousTokenCount: 1,
-          resumeHintCount: 5,
-        },
-      },
-      parsed: { parsedSections: { __meta: { extractionMethod: 'pdf-ocr', usedOcr: true } } },
-      matchedSkillRows: [],
+      parse_status: 'READY',
     });
 
     const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
@@ -646,22 +267,125 @@ describe('resume analyze route', () => {
       { params: { id: 'resume-1' } },
     );
 
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error.code).toBe('RESUME_NOT_READY');
+    expect(payload.error.suggestedAction).toContain('Force OCR');
+    expect(runResumeAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when resume belongs to another user', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'other-user',
+      file_path: 'other-user/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'READY',
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.error.code).toBe('FORBIDDEN');
+    expect(runResumeAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when resume does not exist', async () => {
+    const supabase = createSupabaseMock({ existingResume: null });
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue(null);
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/missing/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'missing' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(payload.error.code).toBe('NOT_FOUND');
+    expect(runResumeAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('supports rerun by transitioning ANALYZED back to READY', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'ANALYZED',
+    });
+    runResumeAnalysis.mockResolvedValue({ matchCount: 4 });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rerun: true }),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
     const payload = (await response.json()) as { data: AnalyzeResumeResponse };
 
     expect(response.status).toBe(200);
-    expect(analyzeStoredResume).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ id: 'resume-1' }),
-      expect.any(Buffer),
-      expect.objectContaining({ forceOCR: true }),
+    expect(payload.data.matchCount).toBe(4);
+    expect(runResumeAnalysis).toHaveBeenCalled();
+  });
+
+  it('rejects invalid analyze body with 400 validation error', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rerun: 'yes' }),
+      }),
+      { params: { id: 'resume-1' } },
     );
-    expect(payload.data).toMatchObject({
-      analyzed: true,
-      extraction: {
-        method: 'pdf-ocr',
-        usedOcr: true,
-        attemptedMethods: ['pdfjs-text', 'pdf-ocr'],
-      },
-    });
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error.code).toBe('VALIDATION_ERROR');
+    expect(runResumeAnalysis).not.toHaveBeenCalled();
   });
 });

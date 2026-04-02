@@ -1,31 +1,94 @@
 import { fail, handleApiError, ok } from '@/lib/api';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { enforceRateLimit } from '@/lib/rate-limit';
+import { prepareResumeForAnalysis } from '@/lib/resume/analyze';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
-import { logInfo } from '@/lib/utils/logger';
+import { logError, logInfo } from '@/lib/utils/logger';
 import {
   getResumeExtension,
+  isLegacyDocMimeType,
   isSupportedResumeMimeType,
   RESUME_UPLOAD_LIMIT_BYTES,
 } from '@/lib/resume/extract';
+import { RESUME_LIFECYCLE_STATUSES } from '@/lib/resume/lifecycle';
+
+function resolveResumeContentType(file: File, extension: string) {
+  if (file.type) {
+    return file.type;
+  }
+
+  switch (extension) {
+    case 'pdf':
+      return 'application/pdf';
+    case 'docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    case 'txt':
+      return 'text/plain';
+    case 'rtf':
+      return 'application/rtf';
+    case 'png':
+      return 'image/png';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    default:
+      return 'application/octet-stream';
+  }
+}
 
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient();
     const user = await getRequiredUser(supabase);
-    const [resumesResult, profilesResult, skillsResult] = await Promise.all([
-      supabase.from('resumes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('resume_profiles').select('*'),
-      supabase.from('resume_skills').select('resume_id, skill_slug, skill_name'),
-    ]);
+    const resumesResult = await supabase
+      .from('resumes')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
 
     if (resumesResult.error) throw new Error(resumesResult.error.message);
+
+    const resumeIds = (resumesResult.data ?? []).map((row) => row.id);
+
+    if (resumeIds.length === 0) {
+      return ok([]);
+    }
+
+    const [profilesResult, skillsResult, analysisRunsResult] = await Promise.all([
+      supabase.from('resume_profiles').select('*').in('resume_id', resumeIds),
+      supabase
+        .from('resume_skills')
+        .select('resume_id, skill_slug, skill_name')
+        .in('resume_id', resumeIds),
+      supabase
+        .from('resume_analysis_runs')
+        .select('resume_id, status, parser_version, error_message, created_at')
+        .in('resume_id', resumeIds)
+        .order('created_at', { ascending: false }),
+    ]);
+
     if (profilesResult.error) throw new Error(profilesResult.error.message);
     if (skillsResult.error) throw new Error(skillsResult.error.message);
+    if (analysisRunsResult.error) throw new Error(analysisRunsResult.error.message);
 
     const profileLookup = new Map((profilesResult.data ?? []).map((profile) => [profile.resume_id, profile]));
     const skillsLookup = new Map<string, Array<{ id: string; name: string; slug: string }>>();
+    const latestRunLookup = new Map<
+      string,
+      {
+        resume_id: string;
+        status: string;
+        parser_version: string | null;
+        error_message: string | null;
+        created_at: string;
+      }
+    >();
+    for (const run of analysisRunsResult.data ?? []) {
+      if (!latestRunLookup.has(run.resume_id)) {
+        latestRunLookup.set(run.resume_id, run);
+      }
+    }
 
     for (const row of skillsResult.data ?? []) {
       const current = skillsLookup.get(row.resume_id) ?? [];
@@ -42,6 +105,7 @@ export async function GET() {
         ...resume,
         profile: profileLookup.get(resume.id) ?? null,
         skills: skillsLookup.get(resume.id) ?? [],
+        latestRun: latestRunLookup.get(resume.id) ?? null,
       })),
     );
   } catch (error) {
@@ -67,15 +131,43 @@ export async function POST(request: Request) {
     const file = formData.get('resume');
 
     if (!(file instanceof File)) {
-      return fail('VALIDATION_ERROR', 'A PDF or DOCX resume file is required.', 400);
+      return fail(
+        'VALIDATION_ERROR',
+        'A resume file is required.',
+        400,
+        { field: 'resume' },
+        'Upload a PDF, DOCX, TXT, RTF, PNG, or JPG file.',
+      );
     }
 
     if (file.size > RESUME_UPLOAD_LIMIT_BYTES) {
-      return fail('VALIDATION_ERROR', 'Resume file must be 10 MB or smaller.', 400);
+      return fail(
+        'VALIDATION_ERROR',
+        'Resume file must be 10 MB or smaller.',
+        400,
+        { maxBytes: RESUME_UPLOAD_LIMIT_BYTES },
+        'Compress the file or upload a smaller version.',
+      );
+    }
+
+    if (isLegacyDocMimeType(file.type, file.name)) {
+      return fail(
+        'UNSUPPORTED_RESUME_FORMAT',
+        'Legacy DOC files are not supported safely in production.',
+        400,
+        { mimeType: file.type, fileName: file.name },
+        'Convert this file to DOCX, TXT, or PDF and upload again.',
+      );
     }
 
     if (!isSupportedResumeMimeType(file.type, file.name)) {
-      return fail('VALIDATION_ERROR', 'Only PDF and DOCX resumes are supported.', 400);
+      return fail(
+        'UNSUPPORTED_RESUME_FORMAT',
+        'Unsupported resume format.',
+        400,
+        { mimeType: file.type, fileName: file.name },
+        'Supported formats: PDF, DOCX, TXT, RTF, PNG, JPG.',
+      );
     }
 
     const extension = getResumeExtension(file.name);
@@ -100,7 +192,7 @@ export async function POST(request: Request) {
     const uploadResult = await supabase.storage
       .from('resumes')
       .upload(storagePath, buffer, {
-        contentType: file.type || (extension === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+        contentType: resolveResumeContentType(file, extension),
         upsert: true,
       });
 
@@ -115,9 +207,9 @@ export async function POST(request: Request) {
         user_id: user.id,
         file_path: storagePath,
         file_name: file.name,
-        mime_type: file.type || (extension === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+        mime_type: resolveResumeContentType(file, extension),
         file_size_bytes: buffer.byteLength,
-        parse_status: 'uploaded',
+        parse_status: RESUME_LIFECYCLE_STATUSES.UPLOADED,
         source: 'upload',
         is_active: true,
       })
@@ -145,7 +237,30 @@ export async function POST(request: Request) {
       bytes: buffer.byteLength,
     });
 
-    return ok(resumeInsert.data);
+    try {
+      await prepareResumeForAnalysis(supabase, resumeInsert.data, buffer, {});
+    } catch (preparationError) {
+      logError('resume-upload', 'Initial preparation failed', {
+        userId: user.id,
+        resumeId,
+        message:
+          preparationError instanceof Error
+            ? preparationError.message
+            : 'Unknown preparation failure',
+      });
+    }
+
+    const refreshedResume = await supabase
+      .from('resumes')
+      .select('*')
+      .eq('id', resumeId)
+      .single();
+
+    if (refreshedResume.error) {
+      throw new Error(refreshedResume.error.message);
+    }
+
+    return ok(refreshedResume.data);
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
       return fail('UNAUTHORIZED', 'You need to sign in.', 401);

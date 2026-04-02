@@ -6,6 +6,21 @@ export const ResumeAnalyzeSchema = z
     targetRole: z.string().trim().min(1).max(160).optional(),
     jobDescription: z.string().trim().min(1).max(12000).optional(),
     forceOCR: z.boolean().optional(),
+    forceOcr: z.boolean().optional(),
+  })
+  .strict();
+
+export const ResumeExtractSchema = z
+  .object({
+    retry: z.boolean().optional(),
+    forceOCR: z.boolean().optional(),
+    forceOcr: z.boolean().optional(),
+  })
+  .strict();
+
+export const ResumeUpdateSchema = z
+  .object({
+    isActive: z.boolean().optional(),
   })
   .strict();
 
