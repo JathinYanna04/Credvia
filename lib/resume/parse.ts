@@ -17,6 +17,11 @@ export interface ParsedResumeMeta {
   ocrAttempted?: boolean;
   ocrImprovedQuality?: boolean | null;
   ocrConfidence?: number | null;
+  ocrAvailable?: boolean;
+  ocrUnavailableReason?: string | null;
+  acceptedWithWarnings?: boolean;
+  warningCode?: 'LOW_TEXT_CONFIDENCE' | 'OCR_UNAVAILABLE' | 'OCR_DID_NOT_IMPROVE' | null;
+  warningMessage?: string | null;
   textLength?: number;
   readiness?: 'good' | 'partial' | 'poor' | 'failed';
 }

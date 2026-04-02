@@ -63,6 +63,7 @@ function normalizeExtractionFailure(error: ResumeExtractionError): {
     | 'EXTRACTION_FAILED'
     | 'IMAGE_BASED_PDF'
     | 'LOW_TEXT_CONFIDENCE'
+    | 'OCR_UNAVAILABLE'
     | 'OCR_FAILED'
     | 'EMPTY_EXTRACTED_TEXT';
   message: string;
@@ -78,6 +79,8 @@ function normalizeExtractionFailure(error: ResumeExtractionError): {
       error.diagnostics?.ocrAttempted ?? error.attemptedMethods.includes('pdf-ocr'),
     ocrImprovedQuality: error.diagnostics?.ocrImprovedQuality ?? null,
     ocrConfidence: error.diagnostics?.ocrConfidence ?? null,
+    ocrAvailable: error.diagnostics?.ocrAvailable ?? true,
+    ocrUnavailableReason: error.diagnostics?.ocrUnavailableReason ?? null,
     textLength: error.diagnostics?.textLength ?? 0,
     wordCount: error.diagnostics?.wordCount ?? 0,
     readiness: error.diagnostics?.readiness ?? 'failed',
@@ -114,6 +117,17 @@ function normalizeExtractionFailure(error: ResumeExtractionError): {
       message: 'OCR fallback was attempted but failed to recover enough usable text.',
       details,
       suggestedAction: 'Upload a clearer file, ideally DOCX or TXT, then retry.',
+    };
+  }
+
+  if (error.failureCode === 'OCR_UNAVAILABLE') {
+    return {
+      code: 'OCR_UNAVAILABLE',
+      message:
+        'OCR fallback is unavailable in this runtime. Extraction could not recover enough reliable text.',
+      details,
+      suggestedAction:
+        'Install OCR runtime dependencies or upload a cleaner text-based PDF/DOCX and retry.',
     };
   }
 
@@ -226,6 +240,7 @@ export async function POST(
       extracted: true,
       resumeId: resume.id,
       status: RESUME_LIFECYCLE_STATUSES.READY,
+      warning: preparation.extraction.warningMessage,
       extraction: {
         method: preparation.extraction.method,
         attemptedMethods: preparation.extraction.attemptedMethods,
@@ -233,6 +248,11 @@ export async function POST(
         ocrAttempted: preparation.extraction.ocrAttempted,
         ocrImprovedQuality: preparation.extraction.ocrImprovedQuality,
         ocrConfidence: preparation.extraction.ocrConfidence,
+        ocrAvailable: preparation.extraction.ocrAvailable,
+        ocrUnavailableReason: preparation.extraction.ocrUnavailableReason,
+        acceptedWithWarnings: preparation.extraction.acceptedWithWarnings,
+        warningCode: preparation.extraction.warningCode,
+        warningMessage: preparation.extraction.warningMessage,
         textLength: preparation.extraction.textLength,
         readiness: preparation.extraction.readiness,
         quality: preparation.extraction.quality,

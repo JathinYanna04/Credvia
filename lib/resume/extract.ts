@@ -67,7 +67,21 @@ const SECTION_PATTERNS = [
 ];
 
 const OCR_PAGE_LIMIT = 3;
-const MIN_ACCEPTABLE_CONFIDENCE_SCORE = 45;
+const MIN_ACCEPTABLE_CONFIDENCE_SCORE = 42;
+const MIN_RECOVERABLE_CONFIDENCE_SCORE = 34;
+
+const OCR_UNAVAILABLE_PATTERNS: RegExp[] = [
+  /cannot find module ['"]@napi-rs\/canvas['"]/i,
+  /cannot find module ['"]tesseract\.js['"]/i,
+  /canvas.*not (available|supported|implemented)/i,
+  /dommatrix is not defined/i,
+  /path2d is not defined/i,
+  /offscreencanvas is not defined/i,
+  /module did not self-register/i,
+  /was compiled against a different node\.js version/i,
+  /napi/i,
+  /failed to load.*canvas/i,
+];
 
 export const RESUME_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
 
@@ -106,6 +120,11 @@ export interface ResumeExtractionResult {
   ocrAttempted: boolean;
   ocrImprovedQuality: boolean | null;
   ocrConfidence: number | null;
+  ocrAvailable: boolean;
+  ocrUnavailableReason: string | null;
+  acceptedWithWarnings: boolean;
+  warningCode: ResumeExtractionWarningCode | null;
+  warningMessage: string | null;
   attemptedMethods: ResumeExtractionMethod[];
   textLength: number;
   readiness: 'good' | 'partial' | 'poor' | 'failed';
@@ -116,8 +135,14 @@ export type ResumeExtractionFailureCode =
   | 'EXTRACTION_FAILED'
   | 'IMAGE_BASED_PDF'
   | 'LOW_TEXT_CONFIDENCE'
+  | 'OCR_UNAVAILABLE'
   | 'OCR_FAILED'
   | 'EMPTY_EXTRACTED_TEXT';
+
+export type ResumeExtractionWarningCode =
+  | 'LOW_TEXT_CONFIDENCE'
+  | 'OCR_UNAVAILABLE'
+  | 'OCR_DID_NOT_IMPROVE';
 
 type ResumeExtractionDiagnostics = Omit<ResumeExtractionErrorDetails, 'attemptedMethods' | 'method'> & {
   attemptedMethods: ResumeExtractionMethod[];
@@ -212,6 +237,54 @@ export function isSupportedResumeMimeType(mimeType: string, filename: string) {
   );
 }
 
+function toErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Unknown OCR runtime error';
+  }
+}
+
+function resolveOcrUnavailableReason(error: unknown): string | null {
+  const message = toErrorMessage(error);
+  const normalized = message.toLowerCase();
+
+  const hasUnavailablePattern = OCR_UNAVAILABLE_PATTERNS.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(message);
+  });
+
+  if (!hasUnavailablePattern) {
+    return null;
+  }
+
+  if (normalized.includes('@napi-rs/canvas')) {
+    return 'OCR canvas runtime is missing (@napi-rs/canvas is unavailable).';
+  }
+
+  if (normalized.includes('tesseract.js')) {
+    return 'OCR engine runtime is missing (tesseract.js is unavailable).';
+  }
+
+  if (normalized.includes('dommatrix') || normalized.includes('path2d')) {
+    return 'OCR runtime lacks required canvas/polyfill primitives (DOMMatrix/Path2D).';
+  }
+
+  if (normalized.includes('module did not self-register')) {
+    return 'OCR native dependencies are incompatible with the current runtime.';
+  }
+
+  return 'OCR runtime dependencies are unavailable in this deployment environment.';
+}
+
 function countPatternMatches(text: string, patterns: RegExp[]) {
   let total = 0;
 
@@ -221,6 +294,44 @@ function countPatternMatches(text: string, patterns: RegExp[]) {
   }
 
   return total;
+}
+
+function isRecoverableLowConfidenceQuality(
+  quality: Pick<
+    ResumeTextQuality,
+    | 'confidenceScore'
+    | 'alphaWordCount'
+    | 'humanReadableRatio'
+    | 'resumeHintCount'
+    | 'detectedSectionCount'
+    | 'suspiciousTokenCount'
+    | 'totalWordCount'
+    | 'pdfInternalHitCount'
+  >,
+) {
+  const maxSuspicious = Math.max(18, Math.floor(quality.totalWordCount * 0.2));
+
+  return (
+    quality.confidenceScore >= MIN_RECOVERABLE_CONFIDENCE_SCORE &&
+    quality.alphaWordCount >= 22 &&
+    quality.humanReadableRatio >= 0.36 &&
+    (quality.resumeHintCount >= 3 || quality.detectedSectionCount >= 2) &&
+    quality.suspiciousTokenCount <= maxSuspicious &&
+    quality.pdfInternalHitCount <= 12
+  );
+}
+
+function isExtractionCandidateUsable(
+  candidate: ResumeExtractionResult | null,
+) {
+  if (!candidate) {
+    return false;
+  }
+
+  return (
+    candidate.quality.isAcceptable ||
+    isRecoverableLowConfidenceQuality(candidate.quality)
+  );
 }
 
 function normalizeBulletsAndDashes(text: string) {
@@ -340,20 +451,20 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
   const humanReadableRatio = tokens.length > 0 ? alphaWords.length / tokens.length : 0;
   const junkRatio = tokens.length > 0 ? suspiciousTokens.length / tokens.length : 1;
   const likelyScannedPdf =
-    alphaWords.length < 20 || (humanReadableRatio < 0.35 && resumeHintCount <= 2);
+    alphaWords.length < 14 || (humanReadableRatio < 0.32 && resumeHintCount <= 2);
 
   const confidenceScore = Math.max(
     0,
     Math.min(
       100,
       Math.round(
-        humanReadableRatio * 55 +
-          Math.min(alphaWords.length, 220) * 0.2 +
-          resumeHintCount * 5 +
-          detectedSectionCount * 6 -
-          junkRatio * 10 -
-          suspiciousTokens.length * 0.9 -
-          pdfInternalHitCount * 2,
+        humanReadableRatio * 58 +
+          Math.min(alphaWords.length, 260) * 0.19 +
+          resumeHintCount * 4.5 +
+          detectedSectionCount * 5.5 -
+          junkRatio * 9 -
+          suspiciousTokens.length * 0.7 -
+          pdfInternalHitCount * 1.6,
       ),
     ),
   );
@@ -361,31 +472,7 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
   const confidenceTier =
     confidenceScore >= 75 ? 'high' : confidenceScore >= 45 ? 'medium' : 'low';
 
-  let reason: string | null = null;
-
-  if (!normalized) {
-    reason = 'No readable text could be extracted from this file.';
-  } else if (pdfInternalHitCount >= 8 && resumeHintCount <= 2) {
-    reason =
-      'Extracted text looks like raw PDF internals instead of readable resume content.';
-  } else if (alphaWords.length < 20) {
-    reason = 'Extracted text is too short to build a reliable resume profile.';
-  } else if (humanReadableRatio < 0.45) {
-    reason = 'Extracted text is not human-readable enough to trust for resume parsing.';
-  } else if (detectedSectionCount < 2 && resumeHintCount < 3 && alphaWords.length < 45) {
-    reason = 'Extracted text is missing key resume sections and may be incomplete.';
-  } else if (
-    suspiciousTokens.length > Math.max(12, Math.floor(tokens.length * 0.12)) &&
-    resumeHintCount <= 3
-  ) {
-    reason = 'Extracted text is dominated by binary-like or document-object tokens.';
-  } else if (confidenceScore < MIN_ACCEPTABLE_CONFIDENCE_SCORE) {
-    reason = 'Extracted text quality is too low to trust for resume parsing.';
-  }
-
-  return {
-    isAcceptable: reason === null,
-    reason,
+  const qualityWithoutResultFlags: Omit<ResumeTextQuality, 'isAcceptable' | 'reason'> = {
     textLength: normalized.length,
     wordCount: tokens.length,
     likelyScannedPdf,
@@ -399,6 +486,40 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
     suspiciousTokenCount: suspiciousTokens.length,
     pdfInternalHitCount,
     resumeHintCount,
+  };
+  const recoverableLowConfidence = isRecoverableLowConfidenceQuality({
+    ...qualityWithoutResultFlags,
+  });
+
+  let reason: string | null = null;
+
+  if (!normalized) {
+    reason = 'No readable text could be extracted from this file.';
+  } else if (pdfInternalHitCount >= 10 && resumeHintCount <= 1) {
+    reason =
+      'Extracted text looks like raw PDF internals instead of readable resume content.';
+  } else if (alphaWords.length < 12) {
+    reason = 'Extracted text is too short to build a reliable resume profile.';
+  } else if (humanReadableRatio < 0.32) {
+    reason = 'Extracted text is not human-readable enough to trust for resume parsing.';
+  } else if (detectedSectionCount < 1 && resumeHintCount < 2 && alphaWords.length < 32) {
+    reason = 'Extracted text is missing key resume sections and may be incomplete.';
+  } else if (
+    suspiciousTokens.length > Math.max(14, Math.floor(tokens.length * 0.18)) &&
+    resumeHintCount <= 2
+  ) {
+    reason = 'Extracted text is dominated by binary-like or document-object tokens.';
+  } else if (
+    confidenceScore < MIN_ACCEPTABLE_CONFIDENCE_SCORE &&
+    !recoverableLowConfidence
+  ) {
+    reason = 'Extracted text quality is too low to trust for resume parsing.';
+  }
+
+  return {
+    isAcceptable: reason === null,
+    reason,
+    ...qualityWithoutResultFlags,
   };
 }
 
@@ -588,6 +709,11 @@ function createExtractionCandidate(args: {
     ocrAttempted: args.ocrAttempted ?? false,
     ocrImprovedQuality: args.ocrImprovedQuality ?? null,
     ocrConfidence: args.ocrConfidence ?? null,
+    ocrAvailable: true,
+    ocrUnavailableReason: null,
+    acceptedWithWarnings: false,
+    warningCode: null,
+    warningMessage: null,
     attemptedMethods: [...args.attemptedMethods],
     textLength: cleanedText.length,
     readiness: deriveReadiness(quality),
@@ -598,11 +724,7 @@ function createExtractionCandidate(args: {
 function deriveReadiness(
   quality: ResumeTextQuality,
 ): 'good' | 'partial' | 'poor' | 'failed' {
-  if (!quality.isAcceptable && quality.confidenceTier === 'low') {
-    return 'failed';
-  }
-
-  if (quality.confidenceTier === 'high') {
+  if (quality.isAcceptable && quality.confidenceTier === 'high') {
     return 'good';
   }
 
@@ -610,7 +732,11 @@ function deriveReadiness(
     return 'partial';
   }
 
-  return 'poor';
+  if (isRecoverableLowConfidenceQuality(quality)) {
+    return 'poor';
+  }
+
+  return 'failed';
 }
 
 function classifyExtractionFailure(
@@ -644,6 +770,8 @@ function buildDiagnostics(
   attemptedMethods: ResumeExtractionMethod[],
   ocrAttempted: boolean,
   ocrImprovedQuality: boolean | null,
+  ocrAvailable = true,
+  ocrUnavailableReason: string | null = null,
 ): ResumeExtractionDiagnostics {
   return {
     reason: candidate?.quality.reason ?? null,
@@ -661,7 +789,50 @@ function buildDiagnostics(
     detectedSectionCount: candidate?.quality.detectedSectionCount ?? 0,
     junkRatio: candidate?.quality.junkRatio ?? 1,
     likelyScannedPdf: candidate?.quality.likelyScannedPdf ?? false,
+    ocrAvailable,
+    ocrUnavailableReason,
   };
+}
+
+function applyExtractionWarnings(
+  candidate: ResumeExtractionResult,
+  options: {
+    ocrAttempted: boolean;
+    ocrImprovedQuality: boolean | null;
+    ocrAvailable: boolean;
+    ocrUnavailableReason: string | null;
+  },
+) {
+  const next: ResumeExtractionResult = {
+    ...candidate,
+    ocrAttempted: options.ocrAttempted,
+    ocrImprovedQuality: options.ocrImprovedQuality,
+    ocrAvailable: options.ocrAvailable,
+    ocrUnavailableReason: options.ocrUnavailableReason,
+  };
+
+  let warningCode: ResumeExtractionWarningCode | null = null;
+  let warningMessage: string | null = null;
+
+  if (options.ocrAttempted && !options.ocrAvailable) {
+    warningCode = 'OCR_UNAVAILABLE';
+    warningMessage =
+      'OCR fallback is unavailable in the current runtime. Processing continued with lower-confidence text extraction.';
+  } else if (options.ocrAttempted && options.ocrImprovedQuality === false) {
+    warningCode = 'OCR_DID_NOT_IMPROVE';
+    warningMessage =
+      'OCR fallback ran but did not significantly improve extraction quality. Results may be incomplete.';
+  } else if (!next.quality.isAcceptable || next.quality.confidenceTier === 'low') {
+    warningCode = 'LOW_TEXT_CONFIDENCE';
+    warningMessage =
+      'Text extraction completed with low confidence. Review parsed details before relying on analysis output.';
+  }
+
+  next.warningCode = warningCode;
+  next.warningMessage = warningMessage;
+  next.acceptedWithWarnings = warningCode !== null;
+
+  return next;
 }
 
 function chooseBetterCandidate(
@@ -728,6 +899,8 @@ export async function extractResumeText(
   const overrides = resumeExtractionTestOverrides;
   let bestNonOcrCandidate: ResumeExtractionResult | null = null;
   let ocrAttempted = false;
+  let ocrAvailable = true;
+  let ocrUnavailableReason: string | null = null;
 
   if (isLegacyDoc) {
     throw new ResumeExtractionError(
@@ -752,7 +925,12 @@ export async function extractResumeText(
     });
 
     if (candidate.quality.isAcceptable) {
-      return candidate;
+      return applyExtractionWarnings(candidate, {
+        ocrAttempted: false,
+        ocrImprovedQuality: null,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+      });
     }
 
     const failureCode = classifyExtractionFailure(candidate.quality, attemptedMethods, false);
@@ -782,7 +960,12 @@ export async function extractResumeText(
     });
 
     if (candidate.quality.isAcceptable) {
-      return candidate;
+      return applyExtractionWarnings(candidate, {
+        ocrAttempted: true,
+        ocrImprovedQuality: null,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+      });
     }
 
     const failureCode = classifyExtractionFailure(candidate.quality, attemptedMethods, true);
@@ -810,7 +993,12 @@ export async function extractResumeText(
     });
 
     if (candidate.quality.isAcceptable) {
-      return candidate;
+      return applyExtractionWarnings(candidate, {
+        ocrAttempted: false,
+        ocrImprovedQuality: null,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+      });
     }
 
     const failureCode = classifyExtractionFailure(candidate.quality, attemptedMethods, false);
@@ -887,7 +1075,12 @@ export async function extractResumeText(
         candidate.quality.isAcceptable &&
         candidate.quality.confidenceTier !== 'low'
       ) {
-        return candidate;
+        return applyExtractionWarnings(candidate, {
+          ocrAttempted: false,
+          ocrImprovedQuality: null,
+          ocrAvailable: true,
+          ocrUnavailableReason: null,
+        });
       }
     } catch {
       continue;
@@ -916,70 +1109,114 @@ export async function extractResumeText(
         ocrConfidence: ocr.confidence ?? null,
         source: 'pdf',
       });
-      candidate.ocrImprovedQuality =
+      const ocrImprovedQuality =
         bestNonOcrCandidate === null
           ? true
           : candidate.quality.confidenceScore >
             bestNonOcrCandidate.quality.confidenceScore;
+      candidate.ocrImprovedQuality = ocrImprovedQuality;
       bestCandidate = chooseBetterCandidate(bestCandidate, candidate);
 
-      if (candidate.quality.isAcceptable) {
-        return candidate;
+      if (isExtractionCandidateUsable(candidate)) {
+        return applyExtractionWarnings(candidate, {
+          ocrAttempted: true,
+          ocrImprovedQuality,
+          ocrAvailable: true,
+          ocrUnavailableReason: null,
+        });
       }
-    } catch {
+
+      if (bestCandidate && isExtractionCandidateUsable(bestCandidate)) {
+        return applyExtractionWarnings(bestCandidate, {
+          ocrAttempted: true,
+          ocrImprovedQuality,
+          ocrAvailable: true,
+          ocrUnavailableReason: null,
+        });
+      }
+    } catch (ocrError) {
+      ocrUnavailableReason = resolveOcrUnavailableReason(ocrError);
+      ocrAvailable = ocrUnavailableReason === null;
+
+      const ocrImprovedQuality = bestCandidate
+        ? bestNonOcrCandidate === null
+          ? true
+          : bestCandidate.quality.confidenceScore >
+            bestNonOcrCandidate.quality.confidenceScore
+        : null;
+
+      if (bestCandidate && isExtractionCandidateUsable(bestCandidate)) {
+        return applyExtractionWarnings(bestCandidate, {
+          ocrAttempted: true,
+          ocrImprovedQuality,
+          ocrAvailable,
+          ocrUnavailableReason,
+        });
+      }
+
       const diagnostics = buildDiagnostics(
         bestCandidate,
         attemptedMethods,
         true,
-        bestCandidate
-          ? bestNonOcrCandidate === null
-            ? true
-            : bestCandidate.quality.confidenceScore >
-              bestNonOcrCandidate.quality.confidenceScore
-          : null,
+        ocrImprovedQuality,
+        ocrAvailable,
+        ocrUnavailableReason,
       );
       throw new ResumeExtractionError(
-        'OCR fallback failed. Please upload a clearer text-based PDF or a DOCX resume.',
+        ocrAvailable
+          ? 'OCR fallback failed. Please upload a clearer text-based PDF or a DOCX resume.'
+          : 'OCR fallback is unavailable in the current runtime environment.',
         bestCandidate?.quality ?? null,
         bestCandidate?.method ?? null,
         attemptedMethods,
-        'OCR_FAILED',
+        ocrAvailable ? 'OCR_FAILED' : 'OCR_UNAVAILABLE',
         diagnostics,
       );
     }
   }
 
-  if (bestCandidate?.quality.isAcceptable) {
-    bestCandidate.ocrAttempted = ocrAttempted;
-    bestCandidate.ocrImprovedQuality =
+  if (bestCandidate && isExtractionCandidateUsable(bestCandidate)) {
+    const ocrImprovedQuality =
       ocrAttempted && bestCandidate.usedOcr
         ? bestNonOcrCandidate === null
           ? true
           : bestCandidate.quality.confidenceScore >
             bestNonOcrCandidate.quality.confidenceScore
         : null;
-    return bestCandidate;
+
+    return applyExtractionWarnings(bestCandidate, {
+      ocrAttempted,
+      ocrImprovedQuality,
+      ocrAvailable,
+      ocrUnavailableReason,
+    });
   }
 
-  const failureCode = classifyExtractionFailure(
-    bestCandidate?.quality ?? null,
-    attemptedMethods,
-    ocrAttempted,
-  );
+  const failureCode: ResumeExtractionFailureCode = ocrAvailable
+    ? classifyExtractionFailure(
+        bestCandidate?.quality ?? null,
+        attemptedMethods,
+        ocrAttempted,
+      )
+    : 'OCR_UNAVAILABLE';
   const diagnostics = buildDiagnostics(
     bestCandidate,
     attemptedMethods,
     ocrAttempted,
     ocrAttempted && bestCandidate
-      ? bestNonOcrCandidate === null
-        ? true
-        : bestCandidate.quality.confidenceScore >
-          bestNonOcrCandidate.quality.confidenceScore
+          ? bestNonOcrCandidate === null
+            ? true
+            : bestCandidate.quality.confidenceScore >
+              bestNonOcrCandidate.quality.confidenceScore
       : null,
+    ocrAvailable,
+    ocrUnavailableReason,
   );
 
   throw new ResumeExtractionError(
-    'This resume could not be read reliably. Try a clearer PDF or DOCX.',
+    failureCode === 'OCR_UNAVAILABLE'
+      ? 'OCR fallback is unavailable and direct extraction quality was too low.'
+      : 'This resume could not be read reliably. Try a clearer PDF or DOCX.',
     bestCandidate?.quality ?? null,
     bestCandidate?.method ?? null,
     attemptedMethods,

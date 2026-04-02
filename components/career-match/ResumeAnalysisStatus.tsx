@@ -54,6 +54,12 @@ export function ResumeAnalysisStatus({
       ? (analyzeError.details as Record<string, unknown>)
       : null;
   const confidenceTier = extractionMeta?.extractionQuality?.confidenceTier ?? null;
+  const extractionWarningCode =
+    typeof extractionMeta?.warningCode === 'string' ? extractionMeta.warningCode : null;
+  const extractionWarningMessage =
+    typeof extractionMeta?.warningMessage === 'string'
+      ? extractionMeta.warningMessage
+      : null;
   const usedOcr = Boolean(
     extractionMeta?.usedOcr === true ||
       latestRun?.parser_version?.includes('pdf-ocr') ||
@@ -67,9 +73,28 @@ export function ResumeAnalysisStatus({
       : typeof analyzeDetails?.ocrImprovedQuality === 'boolean'
         ? analyzeDetails.ocrImprovedQuality
         : null;
+  const ocrAvailable =
+    typeof extractionMeta?.ocrAvailable === 'boolean'
+      ? extractionMeta.ocrAvailable
+      : typeof analyzeDetails?.ocrAvailable === 'boolean'
+        ? Boolean(analyzeDetails.ocrAvailable)
+        : true;
+  const ocrUnavailableReason =
+    typeof extractionMeta?.ocrUnavailableReason === 'string'
+      ? extractionMeta.ocrUnavailableReason
+      : typeof analyzeDetails?.ocrUnavailableReason === 'string'
+        ? (analyzeDetails.ocrUnavailableReason as string)
+        : null;
+  const acceptedWithWarnings =
+    extractionMeta?.acceptedWithWarnings === true ||
+    extractionWarningCode !== null ||
+    confidenceTier === 'low';
+  const ocrUnavailableError =
+    analyzeError?.code === 'OCR_UNAVAILABLE' || (ocrAttempted && !ocrAvailable);
   const poorPdfExtractionError =
     (analyzeError?.code === 'IMAGE_BASED_PDF' ||
-      analyzeError?.code === 'LOW_TEXT_CONFIDENCE') &&
+      analyzeError?.code === 'LOW_TEXT_CONFIDENCE' ||
+      analyzeError?.code === 'OCR_UNAVAILABLE') &&
     resume.mime_type === 'application/pdf';
   const analyzeDisabled = analyzing || !analysisReadiness.ready;
 
@@ -137,6 +162,12 @@ export function ResumeAnalysisStatus({
               This file appears low quality for text extraction. A DOCX upload usually parses more reliably.
             </div>
           ) : null}
+          {ocrUnavailableError ? (
+            <div className="mt-2 text-xs text-danger/90">
+              OCR runtime is unavailable in this environment.
+              {ocrUnavailableReason ? ` ${ocrUnavailableReason}` : ''}
+            </div>
+          ) : null}
           {showDeveloperDetails ? (
             <details className="mt-2 rounded-xl border border-danger/30 bg-danger/5 p-2 text-xs text-danger/90">
               <summary className="cursor-pointer">Developer details</summary>
@@ -193,6 +224,7 @@ export function ResumeAnalysisStatus({
       {ocrAttempted ? (
         <div className="rounded-2xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-info">
           OCR was attempted.
+          {!ocrAvailable ? ' It was unavailable in this runtime.' : ''}
           {ocrImprovedQuality === true ? ' It improved extraction quality.' : ''}
           {ocrImprovedQuality === false ? ' It did not improve extraction quality enough.' : ''}
         </div>
@@ -204,7 +236,13 @@ export function ResumeAnalysisStatus({
         </div>
       ) : null}
 
-      {confidenceTier !== null && confidenceTier !== 'high' && !latestRun?.error_message ? (
+      {acceptedWithWarnings && extractionWarningMessage && !latestRun?.error_message ? (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          {extractionWarningMessage}
+        </div>
+      ) : null}
+
+      {acceptedWithWarnings && !extractionWarningMessage && confidenceTier !== null && !latestRun?.error_message ? (
         <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
           We analyzed your resume, but the text quality was limited. For best results, upload a text-based PDF.
         </div>

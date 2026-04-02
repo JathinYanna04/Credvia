@@ -131,6 +131,7 @@ export interface ApiError {
     | 'EXTRACTION_FAILED'
     | 'IMAGE_BASED_PDF'
     | 'LOW_TEXT_CONFIDENCE'
+    | 'OCR_UNAVAILABLE'
     | 'OCR_FAILED'
     | 'EMPTY_EXTRACTED_TEXT'
     | 'RESUME_NOT_READY'
@@ -181,6 +182,11 @@ export interface ResumeExtractionSummary {
   ocrAttempted?: boolean;
   ocrImprovedQuality?: boolean | null;
   ocrConfidence: number | null;
+  ocrAvailable?: boolean;
+  ocrUnavailableReason?: string | null;
+  acceptedWithWarnings?: boolean;
+  warningCode?: 'LOW_TEXT_CONFIDENCE' | 'OCR_UNAVAILABLE' | 'OCR_DID_NOT_IMPROVE' | null;
+  warningMessage?: string | null;
   textLength?: number;
   readiness?: 'good' | 'partial' | 'poor' | 'failed';
   quality: ResumeExtractionQualitySummary;
@@ -194,6 +200,8 @@ export interface ResumeExtractionErrorDetails {
   ocrAttempted: boolean;
   ocrImprovedQuality: boolean | null;
   ocrConfidence: number | null;
+  ocrAvailable?: boolean;
+  ocrUnavailableReason?: string | null;
   textLength: number;
   wordCount: number;
   readiness: 'good' | 'partial' | 'poor' | 'failed';

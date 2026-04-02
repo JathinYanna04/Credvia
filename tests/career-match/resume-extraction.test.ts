@@ -138,6 +138,50 @@ describe('resume extraction fallbacks', () => {
     expect(result.method).toBe('pdf-ocr');
   });
 
+  it('continues with direct extraction when OCR runtime is unavailable but text is usable', async () => {
+    __setResumeExtractionTestOverrides({
+      pdfDirectText: sampleResumeText,
+      extractPdfTextWithOcr: async () => {
+        throw new Error("Cannot find module '@napi-rs/canvas'");
+      },
+    });
+
+    const result = await extractResumeText(
+      Buffer.from('fake-pdf'),
+      'application/pdf',
+      'resume.pdf',
+      { forceOCR: true },
+    );
+
+    expect(result.method).toBe('pdfjs-text');
+    expect(result.acceptedWithWarnings).toBe(true);
+    expect(result.warningCode).toBe('OCR_UNAVAILABLE');
+    expect(result.ocrAvailable).toBe(false);
+    expect(result.ocrUnavailableReason).toMatch(/canvas runtime is missing/i);
+  });
+
+  it('returns OCR_UNAVAILABLE when OCR runtime is missing and no usable text can be extracted', async () => {
+    __setResumeExtractionTestOverrides({
+      pdfDirectText: 'obj stream endstream xref /Type /Catalog',
+      pdfCleanedText: '/Type /Catalog obj stream',
+      pdfTokenText: '/XRef /Length /Filter /Producer',
+      extractPdfTextWithOcr: async () => {
+        throw new Error("Cannot find module '@napi-rs/canvas'");
+      },
+    });
+
+    await expect(
+      extractResumeText(Buffer.from('fake-pdf'), 'application/pdf', 'resume.pdf', {
+        forceOCR: true,
+      }),
+    ).rejects.toMatchObject({
+      failureCode: 'OCR_UNAVAILABLE',
+      diagnostics: expect.objectContaining({
+        ocrAvailable: false,
+      }),
+    });
+  });
+
   it('throws only after all extraction methods, including OCR, fail', async () => {
     __setResumeExtractionTestOverrides({
       pdfDirectText: 'stream endstream xref obj /Type /Catalog',
@@ -253,6 +297,7 @@ describe('resume extraction fallbacks', () => {
     expect(result.usedOcr).toBe(false);
     expect(result.attemptedMethods).toEqual(['docx-mammoth']);
     expect(result.text).toContain('Supabase');
+
   });
 
   it('extracts plain TXT resumes directly', async () => {

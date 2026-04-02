@@ -286,7 +286,7 @@ export async function prepareResumeForAnalysis(
     await updateResumeLifecycleStatus(
       supabase,
       resume.id,
-      extraction.quality.confidenceTier === 'low'
+      extraction.acceptedWithWarnings || extraction.quality.confidenceTier === 'low'
         ? RESUME_LIFECYCLE_STATUSES.EXTRACTED_WITH_WARNINGS
         : RESUME_LIFECYCLE_STATUSES.EXTRACTED,
     );
@@ -301,6 +301,11 @@ export async function prepareResumeForAnalysis(
         ocrAttempted: extraction.ocrAttempted,
         ocrImprovedQuality: extraction.ocrImprovedQuality,
         ocrConfidence: extraction.ocrConfidence,
+        ocrAvailable: extraction.ocrAvailable,
+        ocrUnavailableReason: extraction.ocrUnavailableReason,
+        acceptedWithWarnings: extraction.acceptedWithWarnings,
+        warningCode: extraction.warningCode,
+        warningMessage: extraction.warningMessage,
         textLength: extraction.textLength,
         readiness: extraction.readiness,
       });

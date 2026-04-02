@@ -30,6 +30,8 @@ function isUnreadableResumeError(message: string | null | undefined) {
     normalized.includes('image_based_pdf') ||
     normalized.includes('low_text_confidence') ||
     normalized.includes('ocr_failed') ||
+    normalized.includes('ocr_unavailable') ||
+    normalized.includes('ocr runtime is unavailable') ||
     normalized.includes('extraction_failed') ||
     normalized.includes('no readable text') ||
     normalized.includes('too short to build a reliable resume profile') ||

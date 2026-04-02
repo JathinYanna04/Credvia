@@ -96,6 +96,11 @@ describe('resume extract route', () => {
         ocrAttempted: false,
         ocrImprovedQuality: null,
         ocrConfidence: null,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+        acceptedWithWarnings: false,
+        warningCode: null,
+        warningMessage: null,
         textLength: 1200,
         readiness: 'good',
         quality: {
@@ -194,6 +199,71 @@ describe('resume extract route', () => {
     expect(payload.error.suggestedAction).toContain('Upload');
   });
 
+  it('returns 422 with OCR_UNAVAILABLE when OCR runtime dependencies are missing', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+    prepareResumeForAnalysis.mockRejectedValue(
+      new ResumeExtractionError(
+        'OCR fallback is unavailable in the current runtime environment.',
+        null,
+        'pdfjs-text',
+        ['pdfjs-text', 'pdf-ocr'],
+        'OCR_UNAVAILABLE',
+        {
+          reason: 'OCR runtime dependencies are unavailable in this deployment environment.',
+          attemptedMethods: ['pdfjs-text', 'pdf-ocr'],
+          method: 'pdfjs-text',
+          usedOcr: false,
+          ocrAttempted: true,
+          ocrImprovedQuality: null,
+          ocrConfidence: null,
+          ocrAvailable: false,
+          ocrUnavailableReason:
+            'OCR canvas runtime is missing (@napi-rs/canvas is unavailable).',
+          textLength: 140,
+          wordCount: 24,
+          readiness: 'failed',
+          confidenceScore: 28,
+          confidenceTier: 'low',
+          detectedSectionCount: 1,
+          junkRatio: 0.4,
+          likelyScannedPdf: true,
+        },
+      ),
+    );
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceOCR: true }),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error.code).toBe('OCR_UNAVAILABLE');
+    expect(payload.error.details).toMatchObject({
+      ocrAttempted: true,
+      ocrAvailable: false,
+    });
+    expect(payload.error.suggestedAction).toContain('Install OCR runtime dependencies');
+  });
+
   it('supports forceOcr alias compatibility', async () => {
     const supabase = createSupabaseMock();
 
@@ -216,6 +286,11 @@ describe('resume extract route', () => {
         ocrAttempted: true,
         ocrImprovedQuality: true,
         ocrConfidence: 90,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+        acceptedWithWarnings: false,
+        warningCode: null,
+        warningMessage: null,
         textLength: 1000,
         readiness: 'good',
         quality: {
@@ -276,6 +351,11 @@ describe('resume extract route', () => {
         ocrAttempted: false,
         ocrImprovedQuality: null,
         ocrConfidence: null,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+        acceptedWithWarnings: false,
+        warningCode: null,
+        warningMessage: null,
         textLength: 1200,
         readiness: 'good',
         quality: {
