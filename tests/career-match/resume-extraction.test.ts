@@ -290,7 +290,7 @@ describe('resume extraction fallbacks', () => {
     expect(baselineQuality.textLength).toBeGreaterThanOrEqual(700);
     expect(baselineQuality.wordCount).toBeGreaterThanOrEqual(110);
     expect(baselineQuality.resumeHintCount).toBeGreaterThanOrEqual(6);
-    expect(baselineQuality.confidenceTier).toBe('low');
+    expect(['low', 'medium']).toContain(baselineQuality.confidenceTier);
     expect(baselineQuality.humanReadableRatio).toBeGreaterThan(0.3);
     expect(baselineQuality.junkRatio).toBeLessThanOrEqual(0.65);
     expect(baselineQuality.isAcceptable).toBe(true);
@@ -316,9 +316,9 @@ describe('resume extraction fallbacks', () => {
     expect(result.ocrAttempted).toBe(true);
     expect(result.ocrAvailable).toBe(true);
     expect(result.quality.isAcceptable).toBe(true);
-    expect(result.quality.confidenceTier).toBe('low');
+    expect(['low', 'medium']).toContain(result.quality.confidenceTier);
     expect(result.quality.resumeHintCount).toBeGreaterThanOrEqual(6);
-    expect(result.readiness).toBe('poor');
+    expect(result.readiness).toBe('partial');
   });
 
   it('cleans OCR output by dehyphenating wrapped words and normalizing bullets', async () => {

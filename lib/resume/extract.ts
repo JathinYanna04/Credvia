@@ -69,16 +69,16 @@ const SECTION_PATTERNS = [
 
 const OCR_PAGE_LIMIT = 3;
 // Recall-first extraction: only hard-fail when text is truly unusable.
-const MIN_ACCEPTABLE_CONFIDENCE_SCORE = 25;
-const MIN_HUMAN_READABLE_RATIO = 0.2;
-const MAX_HARD_FAIL_JUNK_RATIO = 0.75;
-const MIN_RECOVERABLE_TEXT_LENGTH = 350;
-const MIN_RECOVERABLE_WORD_COUNT = 60;
-const MIN_RECOVERABLE_ALPHA_WORD_COUNT = 25;
-const MIN_RECOVERABLE_HUMAN_READABLE_RATIO = 0.22;
-const MAX_RECOVERABLE_JUNK_RATIO = 0.65;
-const MIN_RECOVERABLE_RESUME_HINT_COUNT = 3;
-const MAX_RECOVERABLE_PDF_INTERNAL_HITS = 45;
+const MIN_ACCEPTABLE_CONFIDENCE_SCORE = 20;
+const MIN_HUMAN_READABLE_RATIO = 0.18;
+const MAX_HARD_FAIL_JUNK_RATIO = 0.8;
+const MIN_RECOVERABLE_TEXT_LENGTH = 300;
+const MIN_RECOVERABLE_WORD_COUNT = 50;
+const MIN_RECOVERABLE_ALPHA_WORD_COUNT = 22;
+const MIN_RECOVERABLE_HUMAN_READABLE_RATIO = 0.2;
+const MAX_RECOVERABLE_JUNK_RATIO = 0.7;
+const MIN_RECOVERABLE_RESUME_HINT_COUNT = 2;
+const MAX_RECOVERABLE_PDF_INTERNAL_HITS = 140;
 
 const OCR_UNAVAILABLE_PATTERNS: RegExp[] = [
   /cannot find module ['"]@napi-rs\/canvas['"]/i,
@@ -361,19 +361,22 @@ function isRecoverableLowConfidenceQuality(
     | 'pdfInternalHitCount'
   >,
 ) {
-  const hasSufficientContent =
-    quality.textLength >= MIN_RECOVERABLE_TEXT_LENGTH ||
-    quality.wordCount >= MIN_RECOVERABLE_WORD_COUNT ||
-    quality.alphaWordCount >= MIN_RECOVERABLE_ALPHA_WORD_COUNT;
+  const signalCount =
+    (quality.textLength >= MIN_RECOVERABLE_TEXT_LENGTH ? 1 : 0) +
+    (quality.wordCount >= MIN_RECOVERABLE_WORD_COUNT ? 1 : 0) +
+    (quality.alphaWordCount >= MIN_RECOVERABLE_ALPHA_WORD_COUNT ? 1 : 0) +
+    (quality.resumeHintCount >= MIN_RECOVERABLE_RESUME_HINT_COUNT ? 1 : 0);
+
+  const hasSufficientContent = signalCount >= 2;
 
   const hasResumeSignals =
     quality.resumeHintCount >= MIN_RECOVERABLE_RESUME_HINT_COUNT ||
     quality.detectedSectionCount >= 1 ||
-    (quality.resumeHintCount >= 2 && quality.alphaWordCount >= 18);
+    (quality.resumeHintCount >= 1 && quality.alphaWordCount >= 18);
 
   const hasBalancedReadabilityAndNoise =
     quality.humanReadableRatio >= MIN_RECOVERABLE_HUMAN_READABLE_RATIO ||
-    (quality.resumeHintCount >= 4 && quality.junkRatio <= MAX_RECOVERABLE_JUNK_RATIO);
+    quality.junkRatio <= MAX_RECOVERABLE_JUNK_RATIO;
 
   return (
     hasSufficientContent &&
@@ -524,6 +527,9 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
   const likelyScannedPdf =
     alphaWords.length < 14 || (humanReadableRatio < 0.32 && resumeHintCount <= 2);
 
+  const cappedPdfInternalHits = Math.min(pdfInternalHitCount, 60);
+  const cappedSuspiciousTokens = Math.min(suspiciousTokens.length, 120);
+
   const confidenceScore = Math.max(
     0,
     Math.min(
@@ -533,9 +539,9 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
           Math.min(alphaWords.length, 260) * 0.19 +
           resumeHintCount * 4.5 +
           detectedSectionCount * 5.5 -
-          junkRatio * 9 -
-          suspiciousTokens.length * 0.7 -
-          pdfInternalHitCount * 1.6,
+          junkRatio * 6 -
+          cappedSuspiciousTokens * 0.4 -
+          cappedPdfInternalHits * 0.6,
       ),
     ),
   );
@@ -573,24 +579,24 @@ export function assessResumeTextQuality(text: string): ResumeTextQuality {
   ) {
     reason = 'Extracted text is too short to build a reliable resume profile.';
   } else if (
-    pdfInternalHitCount >= 25 &&
+    pdfInternalHitCount >= 40 &&
     resumeHintCount <= 1 &&
-    alphaWords.length < 25
+    alphaWords.length < 20
   ) {
     reason =
       'Extracted text looks like raw PDF internals instead of readable resume content.';
   } else if (
     humanReadableRatio < MIN_HUMAN_READABLE_RATIO &&
     resumeHintCount <= 1 &&
-    alphaWords.length < 25
+    alphaWords.length < 18
   ) {
     reason = 'Extracted text is not human-readable enough to trust for resume parsing.';
   } else if (junkRatio > MAX_HARD_FAIL_JUNK_RATIO && resumeHintCount <= 1) {
     reason = 'Extracted text is too noisy to trust for resume parsing.';
   } else if (
-    suspiciousTokens.length > Math.max(20, Math.floor(tokens.length * 0.35)) &&
+    suspiciousTokens.length > Math.max(30, Math.floor(tokens.length * 0.45)) &&
     resumeHintCount <= 1 &&
-    humanReadableRatio < 0.25
+    humanReadableRatio < 0.22
   ) {
     reason = 'Extracted text is dominated by binary-like or document-object tokens.';
   } else if (
