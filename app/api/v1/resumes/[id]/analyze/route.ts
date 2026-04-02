@@ -13,6 +13,7 @@ import {
   ResumePersistenceError,
   resumePersistenceErrorDetails,
 } from '@/lib/resume/persistence-error';
+import { resolveResumeOrchestrationClient } from '@/lib/resume/orchestration-client';
 import { ResumeAnalyzeSchema } from '@/lib/schemas/career-match';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -184,7 +185,10 @@ export async function POST(
       properties: { resumeId: resume.id },
     });
 
-    const analysis = await runResumeAnalysis(supabase, resume);
+    const orchestrationClient = resolveResumeOrchestrationClient({
+      resumeId: resume.id,
+    });
+    const analysis = await runResumeAnalysis(orchestrationClient, resume);
     const activeResume = await getActiveResume(supabase, user.id);
 
     await captureServerEvent({
@@ -249,9 +253,35 @@ export async function POST(
 
     if (error instanceof ResumePersistenceError) {
       const details = resumePersistenceErrorDetails(error);
+      const isOrchestrationUnavailable =
+        details.operation === 'resolve-orchestration-client' ||
+        details.dbCode === 'CONFIG_MISSING';
+      const isRlsBlocked =
+        details.table === 'resume_analysis_runs' &&
+        error.isRlsViolation;
       const isSchemaMismatch = error.isConstraintViolation;
 
       logError('resume-analyze', 'Lifecycle persistence failed', details);
+
+      if (isOrchestrationUnavailable) {
+        return fail(
+          'ANALYSIS_SERVICE_UNAVAILABLE',
+          'Resume orchestration service is unavailable.',
+          503,
+          details,
+          'Set SUPABASE_SERVICE_ROLE_KEY and retry analysis.',
+        );
+      }
+
+      if (isRlsBlocked) {
+        return fail(
+          'RESUME_ANALYSIS_RUNS_RLS_BLOCKED',
+          'The system could not persist analysis tracking for this resume.',
+          500,
+          details,
+          'Verify database policies or internal service-role configuration.',
+        );
+      }
 
       return fail(
         'INTERNAL_ERROR',

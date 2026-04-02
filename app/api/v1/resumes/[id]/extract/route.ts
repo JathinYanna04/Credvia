@@ -7,6 +7,7 @@ import {
   ResumePersistenceError,
   resumePersistenceErrorDetails,
 } from '@/lib/resume/persistence-error';
+import { resolveResumeOrchestrationClient } from '@/lib/resume/orchestration-client';
 import { ResumeExtractSchema } from '@/lib/schemas/career-match';
 import {
   normalizeResumeLifecycleStatus,
@@ -193,8 +194,11 @@ export async function POST(
       );
     }
 
+    const orchestrationClient = resolveResumeOrchestrationClient({
+      resumeId: resume.id,
+    });
     const buffer = Buffer.from(await download.data.arrayBuffer());
-    const preparation = await prepareResumeForAnalysis(supabase, resume, buffer, {
+    const preparation = await prepareResumeForAnalysis(orchestrationClient, resume, buffer, {
       forceOCR: body.forceOCR ?? body.forceOcr,
     });
 
@@ -247,9 +251,35 @@ export async function POST(
 
     if (error instanceof ResumePersistenceError) {
       const details = resumePersistenceErrorDetails(error);
+      const isOrchestrationUnavailable =
+        details.operation === 'resolve-orchestration-client' ||
+        details.dbCode === 'CONFIG_MISSING';
+      const isRlsBlocked =
+        details.table === 'resume_analysis_runs' &&
+        error.isRlsViolation;
       const isSchemaMismatch = error.isConstraintViolation;
 
       logError('resume-extract', 'Lifecycle persistence failed', details);
+
+      if (isOrchestrationUnavailable) {
+        return fail(
+          'ANALYSIS_SERVICE_UNAVAILABLE',
+          'Resume orchestration service is unavailable.',
+          503,
+          details,
+          'Set SUPABASE_SERVICE_ROLE_KEY and retry extraction.',
+        );
+      }
+
+      if (isRlsBlocked) {
+        return fail(
+          'RESUME_ANALYSIS_RUNS_RLS_BLOCKED',
+          'The system could not persist extraction tracking for this resume.',
+          500,
+          details,
+          'Verify database policies or internal service-role configuration.',
+        );
+      }
 
       return fail(
         'INTERNAL_ERROR',

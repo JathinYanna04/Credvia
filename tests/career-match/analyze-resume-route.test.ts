@@ -8,6 +8,7 @@ const enforceRateLimit = vi.fn();
 const getResumeById = vi.fn();
 const getActiveResume = vi.fn();
 const runResumeAnalysis = vi.fn();
+const createServiceRoleClient = vi.fn();
 const captureServerEvent = vi.fn();
 const sendResumeAnalysisEmail = vi.fn();
 
@@ -112,6 +113,10 @@ vi.mock('@/lib/resume/analyze', () => ({
   runResumeAnalysis,
 }));
 
+vi.mock('@/lib/supabase/service', () => ({
+  createServiceRoleClient,
+}));
+
 vi.mock('@/lib/analytics/capture-server-event', () => ({
   captureServerEvent,
 }));
@@ -123,6 +128,7 @@ vi.mock('@/lib/email/send-resume-analysis-email', () => ({
 describe('resume analyze route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    createServiceRoleClient.mockReturnValue({ __role: 'service' });
   });
 
   it('analyzes a READY resume and returns match count', async () => {
@@ -163,6 +169,41 @@ describe('resume analyze route', () => {
     });
     expect(runResumeAnalysis).toHaveBeenCalledWith(
       expect.anything(),
+      expect.objectContaining({ id: 'resume-1' }),
+    );
+  });
+
+  it('uses service-role client for analysis orchestration writes', async () => {
+    const supabase = createSupabaseMock();
+    const serviceRoleSupabase = { __role: 'service' };
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    createServiceRoleClient.mockReturnValue(serviceRoleSupabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1', email: null });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'READY',
+    });
+    getActiveResume.mockResolvedValue({ id: 'resume-1' });
+    runResumeAnalysis.mockResolvedValue({ matchCount: 12 });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    expect(runResumeAnalysis).toHaveBeenCalledWith(
+      serviceRoleSupabase,
       expect.objectContaining({ id: 'resume-1' }),
     );
   });
@@ -280,6 +321,7 @@ describe('resume analyze route', () => {
     const supabase = createSupabaseMock();
 
     createServerSupabaseClient.mockResolvedValue(supabase);
+    createServiceRoleClient.mockReturnValue({ __role: 'service' });
     getRequiredUser.mockResolvedValue({ id: 'user-1' });
     enforceRateLimit.mockResolvedValue({ success: true });
     getResumeById.mockResolvedValue({
@@ -306,6 +348,7 @@ describe('resume analyze route', () => {
     expect(response.status).toBe(403);
     expect(payload.error.code).toBe('FORBIDDEN');
     expect(runResumeAnalysis).not.toHaveBeenCalled();
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
   });
 
   it('returns 404 when resume does not exist', async () => {
@@ -441,5 +484,97 @@ describe('resume analyze route', () => {
       dbCode: '23514',
       targetStatus: 'ANALYZING',
     });
+  });
+
+  it('returns RESUME_ANALYSIS_RUNS_RLS_BLOCKED for run-tracking RLS violations', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1', email: null });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'READY',
+    });
+    runResumeAnalysis.mockRejectedValue(
+      new ResumePersistenceError(
+        'Could not create resume analysis run.',
+        {
+          operation: 'insert-analysis-run',
+          table: 'resume_analysis_runs',
+          resumeId: 'resume-1',
+          targetStatus: 'analyzing',
+        },
+        {
+          message:
+            'new row violates row-level security policy for table "resume_analysis_runs"',
+          code: '42501',
+          details: null,
+          hint: null,
+        },
+      ),
+    );
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload.error.code).toBe('RESUME_ANALYSIS_RUNS_RLS_BLOCKED');
+    expect(payload.error.details).toMatchObject({
+      table: 'resume_analysis_runs',
+      operation: 'insert-analysis-run',
+      dbCode: '42501',
+    });
+  });
+
+  it('returns ANALYSIS_SERVICE_UNAVAILABLE when service-role client is missing', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    createServiceRoleClient.mockReturnValue(null);
+    getRequiredUser.mockResolvedValue({ id: 'user-1', email: null });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'READY',
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe('ANALYSIS_SERVICE_UNAVAILABLE');
+    expect(payload.error.details).toMatchObject({
+      operation: 'resolve-orchestration-client',
+      table: 'resume_analysis_runs',
+      dbCode: 'CONFIG_MISSING',
+    });
+    expect(runResumeAnalysis).not.toHaveBeenCalled();
   });
 });

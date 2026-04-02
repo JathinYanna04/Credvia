@@ -26,6 +26,10 @@ export class ResumePersistenceError extends Error {
   get isConstraintViolation() {
     return this.sourceError.code === '23514';
   }
+
+  get isRlsViolation() {
+    return this.sourceError.code === '42501';
+  }
 }
 
 export function toResumePersistenceError(

@@ -2,6 +2,7 @@ import { fail, handleApiError, ok } from '@/lib/api';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { prepareResumeForAnalysis } from '@/lib/resume/analyze';
+import { resolveResumeOrchestrationClient } from '@/lib/resume/orchestration-client';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 import { logError, logInfo } from '@/lib/utils/logger';
@@ -256,7 +257,10 @@ export async function POST(request: Request) {
     });
 
     try {
-      await prepareResumeForAnalysis(supabase, resumeInsert.data, buffer, {});
+      const orchestrationClient = resolveResumeOrchestrationClient({
+        resumeId,
+      });
+      await prepareResumeForAnalysis(orchestrationClient, resumeInsert.data, buffer, {});
     } catch (preparationError) {
       logError('resume-upload', 'Initial preparation failed', {
         userId: user.id,

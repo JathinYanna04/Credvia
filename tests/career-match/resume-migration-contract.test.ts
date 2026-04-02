@@ -43,4 +43,23 @@ describe('resume lifecycle migration contract', () => {
       }
     }
   });
+
+  it('hardens resume_analysis_runs to owner-read-only for authenticated users', () => {
+    const migrationPath = join(
+      process.cwd(),
+      'supabase',
+      'migrations',
+      '016_resume_analysis_runs_rls_hardening.sql',
+    );
+    const sql = readFileSync(migrationPath, 'utf8');
+
+    expect(sql).toContain('ALTER TABLE public.resume_analysis_runs ENABLE ROW LEVEL SECURITY');
+    expect(sql).toContain('DROP POLICY IF EXISTS %I ON public.resume_analysis_runs');
+    expect(sql).toContain('CREATE POLICY "resume_analysis_runs: owner read"');
+    expect(sql).toContain('FOR SELECT');
+    expect(sql).toContain('resumes.user_id = auth.uid()');
+    expect(sql).not.toContain('FOR INSERT');
+    expect(sql).not.toContain('FOR UPDATE');
+    expect(sql).not.toContain('FOR DELETE');
+  });
 });

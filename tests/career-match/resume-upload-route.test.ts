@@ -4,6 +4,7 @@ const createServerSupabaseClient = vi.fn();
 const getRequiredUser = vi.fn();
 const enforceRateLimit = vi.fn();
 const prepareResumeForAnalysis = vi.fn();
+const createServiceRoleClient = vi.fn();
 
 vi.mock('@/lib/supabase/server', () => ({
   createServerSupabaseClient,
@@ -21,9 +22,14 @@ vi.mock('@/lib/resume/analyze', () => ({
   prepareResumeForAnalysis,
 }));
 
+vi.mock('@/lib/supabase/service', () => ({
+  createServiceRoleClient,
+}));
+
 describe('resume upload route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    createServiceRoleClient.mockReturnValue({ __role: 'service' });
     prepareResumeForAnalysis.mockResolvedValue(undefined);
   });
 
@@ -239,5 +245,36 @@ describe('resume upload route', () => {
       dbCode: '23514',
       targetStatus: 'UPLOADED',
     });
+  });
+
+  it('uses service-role client for post-upload preparation when available', async () => {
+    const { supabase } = createSupabaseMock();
+    const serviceRoleSupabase = { __role: 'service' };
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    createServiceRoleClient.mockReturnValue(serviceRoleSupabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+
+    const { POST } = await import('@/app/api/v1/resumes/route');
+    const formData = new FormData();
+    formData.set(
+      'resume',
+      new File(['Resume body'], 'resume.pdf', { type: 'application/pdf' }),
+    );
+
+    await POST(
+      new Request('http://localhost:3000/api/v1/resumes', {
+        method: 'POST',
+        body: formData,
+      }),
+    );
+
+    expect(prepareResumeForAnalysis).toHaveBeenCalledWith(
+      serviceRoleSupabase,
+      expect.objectContaining({ user_id: 'user-1' }),
+      expect.any(Buffer),
+      expect.any(Object),
+    );
   });
 });

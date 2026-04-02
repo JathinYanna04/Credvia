@@ -7,6 +7,7 @@ const getRequiredUser = vi.fn();
 const enforceRateLimit = vi.fn();
 const getResumeById = vi.fn();
 const prepareResumeForAnalysis = vi.fn();
+const createServiceRoleClient = vi.fn();
 const captureServerEvent = vi.fn();
 
 function createSupabaseMock(options?: {
@@ -59,6 +60,10 @@ vi.mock('@/lib/resume/analyze', () => ({
   prepareResumeForAnalysis,
 }));
 
+vi.mock('@/lib/supabase/service', () => ({
+  createServiceRoleClient,
+}));
+
 vi.mock('@/lib/analytics/capture-server-event', () => ({
   captureServerEvent,
 }));
@@ -66,6 +71,7 @@ vi.mock('@/lib/analytics/capture-server-event', () => ({
 describe('resume extract route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    createServiceRoleClient.mockReturnValue({ __role: 'service' });
   });
 
   it('extracts and prepares resume successfully', async () => {
@@ -246,6 +252,95 @@ describe('resume extract route', () => {
     );
   });
 
+  it('uses service-role client for orchestration writes after ownership check', async () => {
+    const supabase = createSupabaseMock();
+    const serviceRoleSupabase = { __role: 'service' };
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    createServiceRoleClient.mockReturnValue(serviceRoleSupabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+    prepareResumeForAnalysis.mockResolvedValue({
+      extraction: {
+        method: 'pdfjs-text',
+        attemptedMethods: ['pdfjs-text'],
+        usedOcr: false,
+        ocrAttempted: false,
+        ocrImprovedQuality: null,
+        ocrConfidence: null,
+        textLength: 1200,
+        readiness: 'good',
+        quality: {
+          textLength: 1200,
+          wordCount: 220,
+          confidenceScore: 88,
+          confidenceTier: 'high',
+          detectedSectionCount: 4,
+          junkRatio: 0.02,
+          likelyScannedPdf: false,
+          humanReadableRatio: 0.92,
+          suspiciousTokenCount: 0,
+          resumeHintCount: 8,
+        },
+      },
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    expect(prepareResumeForAnalysis).toHaveBeenCalledWith(
+      serviceRoleSupabase,
+      expect.objectContaining({ id: 'resume-1' }),
+      expect.any(Buffer),
+      expect.any(Object),
+    );
+  });
+
+  it('returns 403 and never invokes orchestration when resume is owned by another user', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    createServiceRoleClient.mockReturnValue({ __role: 'service' });
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-2',
+      file_path: 'user-2/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.error.code).toBe('FORBIDDEN');
+    expect(prepareResumeForAnalysis).not.toHaveBeenCalled();
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+  });
+
   it('returns 409 when extraction is already in progress', async () => {
     const supabase = createSupabaseMock();
 
@@ -390,5 +485,92 @@ describe('resume extract route', () => {
       targetStatus: 'EXTRACTING',
     });
     expect(payload.error.suggestedAction).toContain('migration');
+  });
+
+  it('returns RESUME_ANALYSIS_RUNS_RLS_BLOCKED for analysis-run RLS violations', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+    prepareResumeForAnalysis.mockRejectedValue(
+      new ResumePersistenceError(
+        'Could not create resume analysis run.',
+        {
+          operation: 'insert-analysis-run',
+          table: 'resume_analysis_runs',
+          resumeId: 'resume-1',
+          targetStatus: 'extracting',
+        },
+        {
+          message:
+            'new row violates row-level security policy for table "resume_analysis_runs"',
+          code: '42501',
+          details: null,
+          hint: null,
+        },
+      ),
+    );
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload.error.code).toBe('RESUME_ANALYSIS_RUNS_RLS_BLOCKED');
+    expect(payload.error.details).toMatchObject({
+      table: 'resume_analysis_runs',
+      operation: 'insert-analysis-run',
+      dbCode: '42501',
+    });
+  });
+
+  it('returns ANALYSIS_SERVICE_UNAVAILABLE when service-role client is not configured', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    createServiceRoleClient.mockReturnValue(null);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe('ANALYSIS_SERVICE_UNAVAILABLE');
+    expect(payload.error.details).toMatchObject({
+      operation: 'resolve-orchestration-client',
+      table: 'resume_analysis_runs',
+      dbCode: 'CONFIG_MISSING',
+    });
   });
 });
