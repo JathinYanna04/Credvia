@@ -350,86 +350,223 @@ export default function ResumePage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <header className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-3xl font-semibold">Resume Intelligence</h1>
+      <header className="flex flex-col gap-4 rounded-2xl bg-bg-surface/70 px-6 py-5 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold">Resume Intelligence</h1>
+            {selectedResume ? (
+              <Badge variant={parseStatusVariant(selectedResume.parse_status)}>
+                {humanizeParseStatus(selectedResume.parse_status)}
+              </Badge>
+            ) : null}
+          </div>
+          <p className="max-w-2xl text-sm text-text-secondary">
+            A clean ATS-ready view of your candidate profile, structured experience, and parsing confidence.
+          </p>
           {selectedResume ? (
-            <Badge variant={parseStatusVariant(selectedResume.parse_status)}>
-              {humanizeParseStatus(selectedResume.parse_status)}
-            </Badge>
+            <div className="text-xs text-text-tertiary">
+              Last updated {formatDateTime(selectedResume.updated_at ?? selectedResume.uploaded_at)}
+            </div>
           ) : null}
         </div>
-        <p className="max-w-3xl text-sm text-text-secondary">
-          Review your ATS-ready candidate profile, including structured experience, skills, and parsing confidence.
-        </p>
-        {selectedResume ? (
-          <div className="text-xs text-text-tertiary">
-            Last updated {formatDateTime(selectedResume.updated_at ?? selectedResume.uploaded_at)}
-          </div>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void handleAnalyze()}
+            disabled={!canAnalyzeSelected || !selectedResumeId || isActionRunning('analyze', selectedResumeId)}
+          >
+            {isActionRunning('analyze', selectedResumeId) ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            Analyze
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void handleRetryExtraction(false)}
+            disabled={!selectedResumeId || isActionRunning('retry', selectedResumeId)}
+          >
+            {isActionRunning('retry', selectedResumeId) ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCcw className="h-4 w-4" />
+            )}
+            Retry extraction
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void handleRetryExtraction(true)}
+            disabled={!selectedResumeId || isActionRunning('force-ocr', selectedResumeId)}
+          >
+            {isActionRunning('force-ocr', selectedResumeId) ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Wand2 className="h-4 w-4" />
+            )}
+            Force OCR
+          </Button>
+        </div>
       </header>
 
-      <section className="surface-panel space-y-4 p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-xs uppercase tracking-[0.18em] text-text-tertiary">Active resume</div>
-            <div className="mt-2 text-sm text-text-primary">
-              {selectedResume ? selectedResume.file_name : 'No resume uploaded yet'}
+      <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <div className="space-y-6">
+          <section className="rounded-2xl bg-bg-surface/70 px-6 py-5 shadow-sm">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-xs uppercase tracking-[0.18em] text-text-tertiary">Active resume</div>
+                <div className="mt-2 text-lg font-semibold text-text-primary">
+                  {selectedResume ? selectedResume.file_name : 'No resume uploaded yet'}
+                </div>
+                <div className="mt-1 text-xs text-text-tertiary">
+                  {selectedResume ? `${selectedResume.mime_type} - Uploaded ${formatDateTime(selectedResume.uploaded_at)}` : 'Upload a resume to start parsing.'}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {!selectedResume?.is_active && selectedResumeId ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void handleSetActive(selectedResumeId)}
+                    disabled={isActionRunning('set-active', selectedResumeId)}
+                  >
+                    {isActionRunning('set-active', selectedResumeId) ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="h-4 w-4" />
+                    )}
+                    Set active
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => selectedResumeId && void handleDeleteResume(selectedResumeId)}
+                  disabled={!selectedResumeId || isActionRunning('delete', selectedResumeId)}
+                >
+                  {selectedResumeId && isActionRunning('delete', selectedResumeId) ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Delete
+                </Button>
+              </div>
             </div>
-            <div className="mt-1 text-xs text-text-tertiary">
-              {selectedResume ? `${selectedResume.mime_type} - Uploaded ${formatDateTime(selectedResume.uploaded_at)}` : 'Upload a resume to start parsing.'}
+
+            <div className="mt-5">
+              <ResumeUploadCard
+                title={selectedResume ? 'Replace resume' : 'Upload your resume'}
+                description="Upload one private resume file. Credvia keeps the original file private and parses it into a structured ATS profile."
+                actionLabel={selectedResume ? 'Replace resume' : 'Upload resume'}
+                compact
+                onUploaded={async () => setRefreshKey((current) => current + 1)}
+              />
             </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void handleAnalyze()}
-              disabled={!canAnalyzeSelected || !selectedResumeId || isActionRunning('analyze', selectedResumeId)}
-            >
-              {isActionRunning('analyze', selectedResumeId) ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              Re-analyze
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void handleRetryExtraction(false)}
-              disabled={!selectedResumeId || isActionRunning('retry', selectedResumeId)}
-            >
-              {isActionRunning('retry', selectedResumeId) ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCcw className="h-4 w-4" />
-              )}
-              Retry extraction
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void handleRetryExtraction(true)}
-              disabled={!selectedResumeId || isActionRunning('force-ocr', selectedResumeId)}
-            >
-              {isActionRunning('force-ocr', selectedResumeId) ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Wand2 className="h-4 w-4" />
-              )}
-              Force OCR
-            </Button>
-          </div>
+          </section>
+
+          {selectedResume || detail ? (
+            <ResumeAnalysisStatus
+              resume={selectedResume ?? detail!.resume}
+              latestRun={detail?.analysisRuns?.[0] ?? null}
+              extractionMeta={detail?.profile?.raw_sections?.__meta ?? null}
+              analysisReadiness={analysisReadiness}
+              analyzing={analyzing}
+              analyzeError={analyzeError}
+            />
+          ) : (
+            <div className="rounded-2xl bg-bg-surface/70 px-5 py-4 text-sm text-text-secondary shadow-sm">
+              Upload a resume to see its extracted profile and skill summary.
+            </div>
+          )}
+
+          {detail ? <ParsedResumeInsights detail={detail} /> : null}
         </div>
 
-        <ResumeUploadCard
-          title={selectedResume ? 'Replace resume' : 'Upload your resume'}
-          description="Upload one private resume file. Credvia keeps the original file private and parses it into a structured ATS profile."
-          actionLabel={selectedResume ? 'Replace resume' : 'Upload resume'}
-          compact
-          onUploaded={async () => setRefreshKey((current) => current + 1)}
-        />
+        <aside className="space-y-6">
+          <section className="rounded-2xl bg-bg-surface/70 px-5 py-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Uploaded resumes</h2>
+                <p className="mt-1 text-sm text-text-secondary">Select the active resume to analyze.</p>
+              </div>
+            </div>
+            {resumes === null ? (
+              <div className="mt-4 space-y-3">
+                <div className="h-10 animate-pulse rounded-xl bg-bg-surface" />
+                <div className="h-10 animate-pulse rounded-xl bg-bg-surface" />
+              </div>
+            ) : resumes.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-dashed border-border-subtle px-4 py-5 text-sm text-text-secondary">
+                No resumes uploaded yet.
+              </div>
+            ) : (
+              <div className="mt-4 divide-y divide-border-subtle text-sm">
+                {resumes.map((resume) => (
+                  <button
+                    key={resume.id}
+                    type="button"
+                    onClick={() => setSelectedResumeId(resume.id)}
+                    className={`flex w-full items-center justify-between gap-3 px-2 py-3 text-left transition-colors ${
+                      resume.id === selectedResumeId ? 'bg-accent/10 text-text-primary' : 'hover:bg-bg-surface'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{resume.file_name}</div>
+                      <div className="mt-1 text-xs text-text-tertiary">
+                        Uploaded {formatDateTime(resume.uploaded_at)}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 text-xs text-text-tertiary">
+                      {resume.is_active ? <Badge variant="accent">Active</Badge> : null}
+                      <Badge variant={parseStatusVariant(resume.parse_status)}>
+                        {humanizeParseStatus(resume.parse_status)}
+                      </Badge>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl bg-bg-surface/70 px-5 py-4 shadow-sm">
+            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Match insights</div>
+            {detail && detail.topMatches.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {detail.topMatches.slice(0, 3).map((match) => (
+                  <Link
+                    key={match.id}
+                    href={`/career-match/${match.id}`}
+                    className="block rounded-xl bg-bg-surface px-4 py-3 hover:bg-bg-overlay"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-medium text-text-primary">
+                        {match.job?.title ?? 'Startup role'}
+                      </div>
+                      <div className="text-xs text-text-tertiary">{Math.round(match.overall_score)}%</div>
+                    </div>
+                    <div className="mt-2 h-1.5 w-full rounded-full bg-bg-overlay">
+                      <div
+                        className="h-1.5 rounded-full bg-accent"
+                        style={{ width: `${Math.min(100, Math.round(match.overall_score))}%` }}
+                      />
+                    </div>
+                    <div className="mt-2 text-xs text-text-tertiary">
+                      {match.job?.company?.company_name ?? 'Unknown company'}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-text-secondary">
+                Match insights will appear once analysis completes.
+              </p>
+            )}
+          </section>
+        </aside>
       </section>
 
       {process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_RESUME_DEBUG === 'true' ? (
@@ -437,143 +574,37 @@ export default function ResumePage() {
       ) : null}
 
       {authExpired ? (
-        <div className="surface-panel flex flex-col gap-3 p-5 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
-          <span>Your session expired. Sign in again to manage your resume.</span>
-          <Button asChild>
-            <Link href="/login">Sign in</Link>
-          </Button>
+        <div className="rounded-2xl bg-bg-surface/70 px-5 py-4 text-sm text-text-secondary shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>Your session expired. Sign in again to manage your resume.</span>
+            <Button asChild>
+              <Link href="/login">Sign in</Link>
+            </Button>
+          </div>
         </div>
       ) : null}
 
       {error ? (
-        <div className="surface-panel flex flex-col gap-3 p-5 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
-          <span>{error}</span>
-          <Button variant="secondary" onClick={() => setRefreshKey((current) => current + 1)}>
-            Retry
-          </Button>
+        <div className="rounded-2xl bg-bg-surface/70 px-5 py-4 text-sm text-text-secondary shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>{error}</span>
+            <Button variant="secondary" onClick={() => setRefreshKey((current) => current + 1)}>
+              Retry
+            </Button>
+          </div>
         </div>
       ) : null}
 
-      <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="surface-panel space-y-4 p-5">
-          <div>
-            <h2 className="text-lg font-semibold">Uploaded resumes</h2>
-            <p className="mt-2 text-sm text-text-secondary">
-              V1 uses one active resume at a time, but older uploads are still visible here.
-            </p>
+      {detailError ? (
+        <div className="rounded-2xl bg-bg-surface/70 px-5 py-4 text-sm text-text-secondary shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>{detailError}</span>
+            <Button variant="secondary" onClick={() => setRefreshKey((current) => current + 1)}>
+              Retry
+            </Button>
           </div>
-
-          {resumes === null ? (
-            <div className="space-y-3">
-              <div className="h-20 animate-pulse rounded-2xl bg-bg-surface" />
-              <div className="h-20 animate-pulse rounded-2xl bg-bg-surface" />
-            </div>
-          ) : resumes.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border-subtle px-4 py-5 text-sm text-text-secondary">
-              No resumes uploaded yet.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {resumes.map((resume) => (
-                <div
-                  key={resume.id}
-                  className={`w-full rounded-2xl border p-4 text-left shadow-sm transition-colors ${
-                    resume.id === selectedResumeId
-                      ? 'border-accent bg-accent/10'
-                      : 'border-border-subtle bg-bg-surface hover:border-border-default'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedResumeId(resume.id)}
-                    className="w-full text-left"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-text-primary">
-                          {resume.file_name}
-                        </div>
-                        <div className="mt-1 text-xs text-text-tertiary">
-                          Uploaded {formatDateTime(resume.uploaded_at)}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {resume.is_active ? <Badge variant="accent">Active</Badge> : null}
-                        <Badge variant={parseStatusVariant(resume.parse_status)}>
-                          {humanizeParseStatus(resume.parse_status)}
-                        </Badge>
-                      </div>
-                    </div>
-                  </button>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {!resume.is_active ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => void handleSetActive(resume.id)}
-                        disabled={isActionRunning('set-active', resume.id)}
-                      >
-                        {isActionRunning('set-active', resume.id) ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <ShieldCheck className="h-3.5 w-3.5" />
-                        )}
-                        Set active
-                      </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => void handleDeleteResume(resume.id)}
-                      disabled={isActionRunning('delete', resume.id)}
-                    >
-                      {isActionRunning('delete', resume.id) ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-3.5 w-3.5" />
-                      )}
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </aside>
-
-        <div className="space-y-6">
-          {selectedResume ? (
-            <>
-              <ResumeAnalysisStatus
-                resume={selectedResume}
-                latestRun={detail?.analysisRuns?.[0] ?? null}
-                extractionMeta={detail?.profile?.raw_sections?.__meta ?? null}
-                analysisReadiness={analysisReadiness}
-                analyzing={analyzing}
-                analyzeError={analyzeError}
-              />
-            </>
-          ) : (
-            <div className="surface-panel p-5 text-sm text-text-secondary">
-              Upload a resume to see its extracted profile and skill summary.
-            </div>
-          )}
-
-          {detailError ? (
-            <div className="surface-panel flex flex-col gap-3 p-5 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
-              <span>{detailError}</span>
-              <Button variant="secondary" onClick={() => setRefreshKey((current) => current + 1)}>
-                Retry
-              </Button>
-            </div>
-          ) : null}
-
-          {detail ? <ParsedResumeInsights detail={detail} /> : null}
         </div>
-      </section>
+      ) : null}
     </div>
   );
 }
