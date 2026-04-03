@@ -5,9 +5,10 @@ import { Badge } from '@/components/ui/badge';
 
 export interface ParsedResumeInsightsProps {
   detail: CareerResumeDetail;
+  variant?: 'main' | 'sidebar';
 }
 
-export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
+export function ParsedResumeInsights({ detail, variant = 'main' }: ParsedResumeInsightsProps) {
   const profile = detail.profile;
   const skills = detail.skills;
   const structured = profile?.raw_sections?.__structured;
@@ -446,8 +447,156 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
     highlightBuckets.certifications.length > 0 ? 'Certifications detected' : null,
   ].filter(Boolean) as string[];
 
+  if (variant === 'sidebar') {
+    return (
+      <aside className="space-y-6">
+        <article className="surface-panel p-5">
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Skill breakdown</div>
+          <div className="mt-4 space-y-3">
+            {skillGroups.map((group) =>
+              group.items.length > 0 ? (
+                <div key={group.label}>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-text-tertiary">{group.label}</div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-sm text-text-secondary">
+                    {group.items.map((item) => (
+                      <span key={`${group.label}-${item}`} className="rounded-full border border-border-subtle px-2.5 py-1">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null,
+            )}
+            {skillBuckets.spoken.length > 0 ? (
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.12em] text-text-tertiary">Spoken languages</div>
+                <div className="mt-2 flex flex-wrap gap-2 text-sm text-text-secondary">
+                  {skillBuckets.spoken.map((item) => (
+                    <span key={`spoken-${item}`} className="rounded-full border border-border-subtle px-2.5 py-1">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </article>
+
+        <article className="surface-panel p-5">
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Certifications and extras</div>
+          <div className="mt-4 space-y-3 text-sm text-text-secondary">
+            {highlightBuckets.certifications.length > 0 ? (
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.12em] text-text-tertiary">Certifications</div>
+                <ul className="mt-2 space-y-1">
+                  {highlightBuckets.certifications.slice(0, 5).map((item) => (
+                    <li key={`cert-${item}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {highlightBuckets.achievements.length > 0 ? (
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.12em] text-text-tertiary">Achievements</div>
+                <ul className="mt-2 space-y-1">
+                  {highlightBuckets.achievements.slice(0, 5).map((item) => (
+                    <li key={`ach-${item}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {highlightBuckets.competitions.length > 0 ? (
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.12em] text-text-tertiary">Hackathons and competitions</div>
+                <ul className="mt-2 space-y-1">
+                  {highlightBuckets.competitions.slice(0, 5).map((item) => (
+                    <li key={`comp-${item}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {highlightBuckets.leadership.length > 0 ? (
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.12em] text-text-tertiary">Leadership</div>
+                <ul className="mt-2 space-y-1">
+                  {highlightBuckets.leadership.slice(0, 5).map((item) => (
+                    <li key={`lead-${item}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {highlightBuckets.certifications.length === 0 &&
+            highlightBuckets.achievements.length === 0 &&
+            highlightBuckets.competitions.length === 0 &&
+            highlightBuckets.leadership.length === 0 ? (
+              <p>No extra qualifications detected yet.</p>
+            ) : null}
+          </div>
+        </article>
+
+        <article className="surface-panel p-5">
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Diagnostics</div>
+          <div className="mt-3 space-y-2 text-xs text-text-tertiary">
+            {parserMethodLabel ? <div>Method: {parserMethodLabel}</div> : null}
+            {parsedAtLabel ? <div>Updated: {parsedAtLabel}</div> : null}
+            {finalSourceLabel ? <div>Source: {finalSourceLabel}</div> : null}
+            {extractionMeta?.llmStatus ? <div>LLM status: {extractionMeta.llmStatus}</div> : null}
+            {confidenceTier ? <div>Confidence tier: {confidenceTier}</div> : null}
+          </div>
+        </article>
+
+        <article className="surface-panel p-5">
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Normalized skills</div>
+          {skills.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {skills.map((entry) => (
+                <Badge
+                  key={`${entry.skill.slug}-${entry.source}`}
+                  variant={entry.source === 'explicit' ? 'accent' : 'secondary'}
+                >
+                  {entry.skill.name}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-text-secondary">No normalized skills detected yet.</p>
+          )}
+        </article>
+
+        <article className="surface-panel p-5">
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Top match preview</div>
+          {detail.topMatches.length > 0 ? (
+            <div className="mt-3 space-y-3">
+              {detail.topMatches.slice(0, 3).map((match) => (
+                <Link
+                  key={match.id}
+                  href={`/career-match/${match.id}`}
+                  className="block rounded-2xl border border-border-subtle bg-bg-surface p-4 hover:border-border-default"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-medium text-text-primary">
+                      {match.job?.title ?? 'Startup role'}
+                    </div>
+                    <Badge variant="accent">{Math.round(match.overall_score)}% fit</Badge>
+                  </div>
+                  <div className="mt-1 text-xs text-text-tertiary">
+                    {match.job?.company?.company_name ?? 'Unknown company'}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-text-secondary">
+              Matches will appear here after analysis and recompute complete.
+            </p>
+          )}
+        </article>
+      </aside>
+    );
+  }
+
   return (
-    <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
+    <section className="space-y-6">
       <article className="space-y-6">
         <div className="surface-panel space-y-4 p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -558,134 +707,44 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
         </div>
 
         <div className="surface-panel space-y-4 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Skills</div>
-              <p className="mt-1 text-sm text-text-secondary">Grouped from the extracted resume.</p>
-            </div>
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
+            Experience and Projects
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            {skillGroups.map((group) =>
-              group.items.length > 0 ? (
-                <div key={group.label} className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">{group.label}</div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-sm text-text-secondary">
-                    {group.items.map((item) => (
-                      <span key={`${group.label}-${item}`} className="rounded-full border border-border-subtle px-3 py-1">
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null,
-            )}
-            {skillBuckets.spoken.length > 0 ? (
-              <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Spoken languages</div>
-                <div className="mt-3 flex flex-wrap gap-2 text-sm text-text-secondary">
-                  {skillBuckets.spoken.map((item) => (
-                    <span key={`spoken-${item}`} className="rounded-full border border-border-subtle px-3 py-1">
-                      {item}
-                    </span>
+            <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Experience</div>
+              {experienceEntries.length > 0 ? (
+                <div className="mt-3 space-y-3">
+                  {experienceEntries.map((entry, index) => (
+                    <div key={`exp-${index}`} className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-3">
+                      <div className="text-sm font-medium text-text-primary">{entry.title ?? 'Role'}</div>
+                      {entry.company ? <div className="mt-1 text-xs text-text-tertiary">{entry.company}</div> : null}
+                      {entry.location ? <div className="mt-1 text-xs text-text-tertiary">{entry.location}</div> : null}
+                      {entry.dates ? <div className="mt-1 text-xs text-text-tertiary">{entry.dates}</div> : null}
+                    </div>
                   ))}
                 </div>
-              </div>
-            ) : null}
-            {skillGroups.every((group) => group.items.length === 0) && skillBuckets.spoken.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-border-subtle px-4 py-5 text-sm text-text-secondary">
-                No skills detected yet.
-              </div>
-            ) : null}
+              ) : (
+                <div className="mt-3 text-sm text-text-secondary">No structured experience entries yet.</div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Projects</div>
+              {projectEntries.length > 0 ? (
+                <div className="mt-3 space-y-3">
+                  {projectEntries.map((entry, index) => (
+                    <div key={`proj-${index}`} className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-3">
+                      <div className="text-sm font-medium text-text-primary">{entry.name ?? 'Project'}</div>
+                      {entry.description ? <div className="mt-1 text-xs text-text-secondary">{entry.description}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 text-sm text-text-secondary">No structured project entries yet.</div>
+              )}
+            </div>
           </div>
-        </div>
-
-        <div className="surface-panel space-y-4 p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Experience</div>
-          {experienceEntries.length > 0 ? (
-            <div className="space-y-3">
-              {experienceEntries.map((entry, index) => (
-                <div key={`exp-${index}`} className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                  <div className="text-sm font-medium text-text-primary">{entry.title ?? 'Role'}</div>
-                  {entry.company ? (
-                    <div className="mt-1 text-xs text-text-tertiary">{entry.company}</div>
-                  ) : null}
-                  {entry.location ? (
-                    <div className="mt-1 text-xs text-text-tertiary">{entry.location}</div>
-                  ) : null}
-                  {entry.dates ? (
-                    <div className="mt-1 text-xs text-text-tertiary">{entry.dates}</div>
-                  ) : null}
-                  {entry.bullets && entry.bullets.length > 0 ? (
-                    <ul className="mt-3 space-y-1 text-sm text-text-secondary">
-                      {entry.bullets.slice(0, 4).map((bullet) => (
-                        <li key={`${index}-${bullet}`} className="leading-6">
-                          {bullet}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {entry.technologies && entry.technologies.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-text-secondary">
-                      {entry.technologies.map((tech) => (
-                        <span key={`${index}-tech-${tech}`} className="rounded-full border border-border-subtle px-3 py-1">
-                          {tech}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border-subtle px-4 py-5 text-sm text-text-secondary">
-              No structured experience entries yet.
-            </div>
-          )}
-        </div>
-
-        <div className="surface-panel space-y-4 p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Projects</div>
-          {projectEntries.length > 0 ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              {projectEntries.map((entry, index) => (
-                <div key={`proj-${index}`} className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                  <div className="text-sm font-medium text-text-primary">{entry.name ?? 'Project'}</div>
-                  {entry.description ? (
-                    <div className="mt-2 text-sm text-text-secondary">{entry.description}</div>
-                  ) : null}
-                  {entry.technologies && entry.technologies.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-text-secondary">
-                      {entry.technologies.map((tech) => (
-                        <span key={`${index}-proj-tech-${tech}`} className="rounded-full border border-border-subtle px-3 py-1">
-                          {tech}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {entry.links && entry.links.length > 0 ? (
-                    <div className="mt-3 space-y-1 text-xs text-text-tertiary">
-                      {entry.links.map((link) => (
-                        <div key={`${index}-proj-link-${link}`}>{link}</div>
-                      ))}
-                    </div>
-                  ) : null}
-                  {entry.bullets && entry.bullets.length > 0 ? (
-                    <ul className="mt-3 space-y-1 text-sm text-text-secondary">
-                      {entry.bullets.slice(0, 4).map((bullet) => (
-                        <li key={`${index}-proj-bullet-${bullet}`} className="leading-6">
-                          {bullet}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border-subtle px-4 py-5 text-sm text-text-secondary">
-              No structured project entries yet.
-            </div>
-          )}
         </div>
 
         <div className="surface-panel space-y-4 p-6">
@@ -722,109 +781,7 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
           )}
         </div>
 
-        <div className="surface-panel space-y-4 p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Highlights</div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {highlightBuckets.certifications.length > 0 ? (
-              <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Certifications</div>
-                <ul className="mt-3 space-y-2 text-sm text-text-secondary">
-                  {highlightBuckets.certifications.map((item) => (
-                    <li key={`cert-${item}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {highlightBuckets.achievements.length > 0 ? (
-              <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Achievements</div>
-                <ul className="mt-3 space-y-2 text-sm text-text-secondary">
-                  {highlightBuckets.achievements.map((item) => (
-                    <li key={`ach-${item}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {highlightBuckets.competitions.length > 0 ? (
-              <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Competitions</div>
-                <ul className="mt-3 space-y-2 text-sm text-text-secondary">
-                  {highlightBuckets.competitions.map((item) => (
-                    <li key={`comp-${item}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {highlightBuckets.leadership.length > 0 ? (
-              <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Leadership</div>
-                <ul className="mt-3 space-y-2 text-sm text-text-secondary">
-                  {highlightBuckets.leadership.map((item) => (
-                    <li key={`lead-${item}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </div>
-          {highlightBuckets.certifications.length === 0 &&
-          highlightBuckets.achievements.length === 0 &&
-          highlightBuckets.competitions.length === 0 &&
-          highlightBuckets.leadership.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border-subtle px-4 py-5 text-sm text-text-secondary">
-              No certifications or achievements detected yet.
-            </div>
-          ) : null}
-        </div>
       </article>
-
-      <aside className="space-y-5">
-        <article className="surface-panel p-5">
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Normalized skills</div>
-          {skills.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {skills.map((entry) => (
-                <Badge
-                  key={`${entry.skill.slug}-${entry.source}`}
-                  variant={entry.source === 'explicit' ? 'accent' : 'secondary'}
-                >
-                  {entry.skill.name}
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-text-secondary">No normalized skills detected yet.</p>
-          )}
-        </article>
-
-        <article className="surface-panel p-5">
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Top match preview</div>
-          {detail.topMatches.length > 0 ? (
-            <div className="mt-3 space-y-3">
-              {detail.topMatches.slice(0, 3).map((match) => (
-                <Link
-                  key={match.id}
-                  href={`/career-match/${match.id}`}
-                  className="block rounded-2xl border border-border-subtle bg-bg-surface p-4 hover:border-border-default"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-medium text-text-primary">
-                      {match.job?.title ?? 'Startup role'}
-                    </div>
-                    <Badge variant="accent">{Math.round(match.overall_score)}% fit</Badge>
-                  </div>
-                  <div className="mt-1 text-xs text-text-tertiary">
-                    {match.job?.company?.company_name ?? 'Unknown company'}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-text-secondary">
-              Matches will appear here after analysis and recompute complete.
-            </p>
-          )}
-        </article>
-      </aside>
     </section>
   );
 }
