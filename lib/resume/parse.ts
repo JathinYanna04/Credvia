@@ -7,7 +7,26 @@ export interface ParsedResumeSections {
   experience: string[];
   education: string[];
   other: string[];
-  __structured?: Record<string, unknown>;
+  __structured?: StructuredResumeProfile;
+}
+
+export interface StructuredResumeProfile {
+  candidate: Record<string, unknown>;
+  skills: Record<string, unknown>;
+  experience: Array<Record<string, unknown>>;
+  projects: Array<Record<string, unknown>>;
+  education: Array<Record<string, unknown>>;
+  additional: Record<string, unknown>;
+  diagnostics?: Record<string, unknown>;
+}
+
+export interface LegacyParsedResumeSections {
+  summary: string[];
+  skills: string[];
+  projects: string[];
+  experience: string[];
+  education: string[];
+  other: string[];
 }
 
 export interface ParsedResumeMeta {
@@ -60,7 +79,7 @@ export interface ParsedResume {
   inferredSkillSlugs: string[];
 }
 
-const SECTION_HEADERS: Record<keyof ParsedResumeSections, string[]> = {
+const SECTION_HEADERS: Record<keyof LegacyParsedResumeSections, string[]> = {
   summary: ['summary', 'profile', 'about', 'professional summary'],
   skills: ['skills', 'technical skills', 'core skills', 'tooling', 'technologies', 'stack'],
   projects: ['projects', 'selected projects', 'project experience'],
@@ -293,7 +312,12 @@ function inferCurrentTitle(lines: string[], fullName: string | null) {
   return null;
 }
 
-function inferSummary(sections: ParsedResumeSections, lines: string[], fullName: string | null, currentTitle: string | null) {
+function inferSummary(
+  sections: LegacyParsedResumeSections,
+  lines: string[],
+  fullName: string | null,
+  currentTitle: string | null,
+) {
   if (sections.summary.length > 0) {
     const filteredSummaryLines = sections.summary.filter((line) => {
       if (!line || line === fullName || line === currentTitle) {
@@ -339,7 +363,7 @@ export function parseResumeText(rawText: string, meta?: ParsedResumeMeta): Parse
     .map(normalizeLine)
     .filter(Boolean);
 
-  const sections: ParsedResumeSections = {
+  const sections: LegacyParsedResumeSections = {
     summary: [],
     skills: [],
     projects: [],
@@ -348,12 +372,12 @@ export function parseResumeText(rawText: string, meta?: ParsedResumeMeta): Parse
     other: [],
   };
 
-  let currentSection: keyof ParsedResumeSections = 'summary';
+  let currentSection: keyof LegacyParsedResumeSections = 'summary';
 
   for (const line of lines) {
     const sectionMatch = detectSection(line);
     if (sectionMatch && sectionMatch.section in sections) {
-      currentSection = sectionMatch.section as keyof ParsedResumeSections;
+      currentSection = sectionMatch.section as keyof LegacyParsedResumeSections;
       if (sectionMatch.remainder) {
         sections[currentSection].push(sectionMatch.remainder);
       }
