@@ -40,7 +40,6 @@ export default function ResumePage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
   const forceOCR = false;
-  const [uploading, setUploading] = useState(false);
   const [actionInFlight, setActionInFlight] = useState<
     | {
         resumeId: string;
@@ -430,7 +429,6 @@ export default function ResumePage() {
           actionLabel={selectedResume ? 'Replace resume' : 'Upload resume'}
           compact
           onUploaded={async () => setRefreshKey((current) => current + 1)}
-          onUploadStateChange={setUploading}
         />
       </section>
 
