@@ -31,6 +31,21 @@ PDF_INTERNAL_PATTERNS = [
     re.compile(r"\btrailer\b", re.I),
 ]
 
+PDF_CONTAMINATION_MARKERS = [
+    "%PDF",
+    " obj",
+    "endobj",
+    "stream",
+    "endstream",
+    "xref",
+    "trailer",
+    "/FlateDecode",
+    "/Length",
+    "/Type",
+    "/Filter",
+    "JFIF",
+]
+
 SECTION_HEADINGS = {
     "skills": re.compile(r"\bskills?\b", re.I),
     "education": re.compile(r"\beducation\b", re.I),
@@ -229,6 +244,25 @@ def contamination_score(text: str) -> float:
     return round(score, 2)
 
 
+def printable_ratio(text: str) -> float:
+    if not text:
+        return 0.0
+    printable = sum(1 for ch in text if 32 <= ord(ch) <= 126)
+    return printable / max(len(text), 1)
+
+
+def looks_like_pdf_binary(text: str) -> bool:
+    if not text:
+        return True
+    lowered = text.lower()
+    marker_hits = sum(1 for marker in PDF_CONTAMINATION_MARKERS if marker.lower() in lowered)
+    return marker_hits >= 3 or printable_ratio(text) < 0.7
+
+
+def is_probable_pdf_bytes(file_bytes: bytes) -> bool:
+    return file_bytes[:4] == b"%PDF"
+
+
 def clean_resume_text(raw: str) -> Tuple[str, List[str]]:
     lines = raw.splitlines()
     cleaned_lines = []
@@ -291,6 +325,32 @@ def extract_pdf_text(file_bytes: bytes) -> Tuple[str, int, List[Dict[str, str]]]
     return "\n".join(chunks), doc.page_count, page_methods
 
 
+def ocr_pdf_text(file_bytes: bytes) -> Tuple[str, int, List[Dict[str, str]], Optional[str]]:
+    try:
+        import fitz
+    except Exception:
+        return "", 0, [], "PyMuPDF unavailable for OCR."
+    try:
+        import pytesseract
+        from PIL import Image
+    except Exception:
+        return "", 0, [], "pytesseract or Pillow unavailable."
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+    except Exception:
+        return "", 0, [], "Failed to open PDF for OCR."
+    chunks: List[str] = []
+    page_methods: List[Dict[str, str]] = []
+    for index, page in enumerate(doc):
+        pix = page.get_pixmap(dpi=200)
+        mode = "RGB" if pix.alpha == 0 else "RGBA"
+        image = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+        text = pytesseract.image_to_string(image)
+        chunks.append(text)
+        page_methods.append({"page": str(index + 1), "method": "pdf-ocr"})
+    return "\n".join(chunks), doc.page_count, page_methods, None
+
+
 def extract_docx_text(file_bytes: bytes) -> str:
     try:
         import docx
@@ -310,16 +370,27 @@ def extract_rtf_text(file_bytes: bytes) -> str:
 
 def extract_text_by_type(
     file_bytes: bytes, mime_type: str, filename: str
-) -> Tuple[str, int, List[Dict[str, str]], str]:
+) -> Tuple[str, int, List[Dict[str, str]], str, List[str]]:
     lower = filename.lower()
-    if mime_type == "application/pdf" or lower.endswith(".pdf"):
+    actions: List[str] = []
+    is_pdf = mime_type == "application/pdf" or lower.endswith(".pdf") or is_probable_pdf_bytes(file_bytes)
+    if is_pdf:
         text, pages, page_methods = extract_pdf_text(file_bytes)
-        return text, pages, page_methods, "pdf-native"
+        if text and not looks_like_pdf_binary(text):
+            return text, pages, page_methods, "pdf-native", actions
+        actions.append("pdf_contamination_detected")
+        ocr_text, ocr_pages, ocr_methods, ocr_error = ocr_pdf_text(file_bytes)
+        if ocr_text.strip():
+            actions.append("pdf_ocr_fallback_used")
+            return ocr_text, ocr_pages, ocr_methods, "pdf-ocr", actions
+        if ocr_error:
+            actions.append("pdf_ocr_unavailable")
+        return text, pages, page_methods, "pdf-native", actions
     if lower.endswith(".docx") or "wordprocessingml.document" in mime_type:
-        return extract_docx_text(file_bytes), 1, [{"page": "1", "method": "docx"}], "docx"
+        return extract_docx_text(file_bytes), 1, [{"page": "1", "method": "docx"}], "docx", actions
     if lower.endswith(".rtf") or "rtf" in mime_type:
-        return extract_rtf_text(file_bytes), 1, [{"page": "1", "method": "rtf"}], "rtf"
-    return file_bytes.decode("utf-8", errors="ignore"), 1, [{"page": "1", "method": "text"}], "text"
+        return extract_rtf_text(file_bytes), 1, [{"page": "1", "method": "rtf"}], "rtf", actions
+    return file_bytes.decode("utf-8", errors="ignore"), 1, [{"page": "1", "method": "text"}], "text", actions
 
 
 def infer_candidate_basics(text: str) -> CandidateBasics:
@@ -535,6 +606,11 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/")
+def root():
+    return {"message": "resume-extractor is running"}
+
+
 @app.post("/extract", response_model=ExtractResponse)
 async def extract(
     file: UploadFile = File(...),
@@ -551,7 +627,7 @@ async def extract(
     resolved_filename = filename or file.filename or "resume"
     resolved_mime = mime_type or file.content_type or "application/octet-stream"
 
-    raw_text, page_count, page_methods, method_used = extract_text_by_type(
+    raw_text, page_count, page_methods, method_used, extraction_actions = extract_text_by_type(
         data, resolved_mime, resolved_filename
     )
     cleaned_text, cleaning_actions = clean_resume_text(raw_text)
@@ -562,6 +638,8 @@ async def extract(
     errors: List[str] = []
     if not cleaned_text.strip():
         errors.append("No readable text extracted.")
+    if looks_like_pdf_binary(raw_text):
+        warnings.append("PDF text extraction produced internal tokens; OCR fallback may be required.")
     if contamination > 60:
         warnings.append("Extraction contained noisy PDF internals; cleaned output may be partial.")
 
@@ -647,7 +725,7 @@ async def extract(
             page_methods=page_methods,
             contamination_score=contamination,
             salvage_score=round(confidence.overall * 100.0, 2),
-            cleaning_actions=cleaning_actions,
+            cleaning_actions=cleaning_actions + extraction_actions,
         ),
         normalized_resume=NormalizedResume(text=reconstructed_text, sections=section_map),
     )
