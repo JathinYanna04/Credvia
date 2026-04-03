@@ -17,6 +17,15 @@ export function ResumeExtractorPanel() {
   const education = useMemo(() => result?.sections.education ?? [], [result]);
   const experience = useMemo(() => result?.sections.experience ?? [], [result]);
   const projects = useMemo(() => result?.sections.projects ?? [], [result]);
+  const sanitizeDisplayValue = (value: string | null | undefined) => {
+    if (!value) return null;
+    const cleaned = value
+      .replace(/[\u00BD\u00D3\u00AF\u0087\u0011]/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/^[\[\(\-]+/g, '')
+      .trim();
+    return cleaned || null;
+  };
 
   async function handleFile(file: File) {
     setError(null);
@@ -84,19 +93,19 @@ export function ResumeExtractorPanel() {
             <div className="rounded-xl border border-border-subtle bg-bg-surface p-4">
               <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Candidate</div>
               <div className="mt-2 text-base font-semibold text-text-primary">
-                {result.candidate.full_name ?? 'Name not detected'}
+                {sanitizeDisplayValue(result.candidate.full_name) ?? 'Name not detected'}
               </div>
               <div className="mt-1 text-xs text-text-tertiary">
-                {result.candidate.email ?? 'Email not detected'}
+                {sanitizeDisplayValue(result.candidate.email) ?? 'Email not detected'}
               </div>
               <div className="mt-1 text-xs text-text-tertiary">
-                {result.candidate.phone ?? 'Phone not detected'}
+                {sanitizeDisplayValue(result.candidate.phone) ?? 'Phone not detected'}
               </div>
               <div className="mt-2 text-sm text-text-secondary">
-                {result.candidate.summary ?? 'Summary not detected yet.'}
+                {sanitizeDisplayValue(result.candidate.summary) ?? 'Summary not detected yet.'}
               </div>
               <div className="mt-3 text-xs text-text-tertiary">
-                {result.candidate.location ?? 'Location not detected'}
+                {sanitizeDisplayValue(result.candidate.location) ?? 'Location not detected'}
               </div>
             </div>
 

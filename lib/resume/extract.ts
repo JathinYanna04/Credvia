@@ -103,7 +103,8 @@ export type ResumeExtractionMethod =
   | 'pdfjs-text'
   | 'pdf-parse-fallback'
   | 'pdf-token-fallback'
-  | 'pdf-ocr';
+  | 'pdf-ocr'
+  | 'render-extractor';
 
 export interface ResumeTextQuality {
   isAcceptable: boolean;

@@ -14,7 +14,7 @@ import {
   toResumePersistenceError,
 } from '@/lib/resume/persistence-error';
 import { parseResumeText } from '@/lib/resume/parse';
-import { getSkillEntryBySlug } from '@/lib/resume/skill-taxonomy';
+import { detectSkillEntries, getSkillEntryBySlug } from '@/lib/resume/skill-taxonomy';
 import { logError, logInfo } from '@/lib/utils/logger';
 
 type TypedSupabaseClient = SupabaseClient<Database>;
@@ -83,6 +83,103 @@ function formatEducationLines(education: ExternalExtractionPayload['sections'] e
   });
 }
 
+function formatDateRangeV2(start: string | null | undefined, end: string | null | undefined) {
+  const startText = normalizeExternalString(start ?? null);
+  const endText = normalizeExternalString(end ?? null);
+  if (startText && endText) {
+    return `${startText} - ${endText}`;
+  }
+  return startText ?? endText ?? null;
+}
+
+function formatExperienceLinesV2(experience: ExternalExtractionPayload['sections'] extends { experience?: infer T }
+  ? T
+  : Array<Record<string, unknown>> = []) {
+  return (experience ?? []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const title = normalizeExternalString((entry as Record<string, unknown>).title);
+    const company = normalizeExternalString((entry as Record<string, unknown>).company);
+    const start = (entry as Record<string, unknown>).start_date as string | null | undefined;
+    const end = (entry as Record<string, unknown>).end_date as string | null | undefined;
+    const bullets = Array.isArray((entry as Record<string, unknown>).bullets)
+      ? ((entry as Record<string, unknown>).bullets as string[]).filter(Boolean)
+      : [];
+    const headerBase = title && company ? `${title} at ${company}` : title ?? company ?? null;
+    const dates = formatDateRangeV2(start, end);
+    const header = headerBase && dates ? `${headerBase} (${dates})` : headerBase ?? dates;
+    const lines = header ? [header] : [];
+    return [...lines, ...bullets];
+  });
+}
+
+function formatProjectLinesV2(projects: ExternalExtractionPayload['sections'] extends { projects?: infer T }
+  ? T
+  : Array<Record<string, unknown>> = []) {
+  return (projects ?? []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const name = normalizeExternalString((entry as Record<string, unknown>).name);
+    const description = normalizeExternalString((entry as Record<string, unknown>).description);
+    const bullets = Array.isArray((entry as Record<string, unknown>).bullets)
+      ? ((entry as Record<string, unknown>).bullets as string[]).filter(Boolean)
+      : [];
+    const header = name && description ? `${name} - ${description}` : name ?? description ?? null;
+    const lines = header ? [header] : [];
+    return [...lines, ...bullets];
+  });
+}
+
+function formatEducationLinesV2(education: ExternalExtractionPayload['sections'] extends { education?: infer T }
+  ? T
+  : Array<Record<string, unknown>> = []) {
+  return (education ?? []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const degree = normalizeExternalString((entry as Record<string, unknown>).degree);
+    const institution = normalizeExternalString((entry as Record<string, unknown>).institution);
+    const start = (entry as Record<string, unknown>).start_date as string | null | undefined;
+    const end = (entry as Record<string, unknown>).end_date as string | null | undefined;
+    const description = normalizeExternalString((entry as Record<string, unknown>).description);
+    const headerBase = degree && institution ? `${degree} - ${institution}` : degree ?? institution ?? null;
+    const dates = formatDateRangeV2(start, end);
+    const header = headerBase && dates ? `${headerBase} (${dates})` : headerBase ?? dates;
+    const lines = [header, description].filter(Boolean);
+    return lines;
+  });
+}
+
+function flattenExternalSkills(skills: ExternalExtractionPayload['sections'] extends { skills?: infer T }
+  ? T
+  : { [key: string]: string[] } | undefined) {
+  if (!skills || typeof skills !== 'object') return [];
+  const skillBuckets = skills as Record<string, string[]>;
+  return [
+    ...(skillBuckets.languages ?? []),
+    ...(skillBuckets.frameworks ?? []),
+    ...(skillBuckets.tools ?? []),
+    ...(skillBuckets.databases ?? []),
+    ...(skillBuckets.cloud ?? []),
+    ...(skillBuckets.others ?? []),
+  ].filter(Boolean);
+}
+
+function inferLocationFromText(text: string) {
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+
+  for (const line of lines) {
+    if (/@|linkedin|github|codechef|codeforces|hackerrank/i.test(line)) {
+      continue;
+    }
+    if (/,/.test(line) && /[A-Za-z]/.test(line)) {
+      return line.replace(/^[^\w]+/, '').trim();
+    }
+  }
+
+  return null;
+}
+
 interface ResumePreparationResult {
   extraction: Awaited<ReturnType<typeof extractResumeText>>;
   parsed: ReturnType<typeof parseResumeText>;
@@ -137,6 +234,11 @@ export interface ExternalExtractionPayload {
     education?: Array<Record<string, unknown>>;
     experience?: Array<Record<string, unknown>>;
     projects?: Array<Record<string, unknown>>;
+    certifications?: string[];
+    achievements?: string[];
+    positions_of_responsibility?: string[];
+    publications?: string[];
+    volunteering?: string[];
   };
   diagnostics?: {
     method_used?: string;
@@ -609,7 +711,7 @@ export async function prepareResumeFromExternalExtraction(
     supabase,
     resume,
     'extracting',
-    'fastapi-v1:prepare',
+    'render-extractor:prepare',
   );
 
   try {
@@ -631,13 +733,13 @@ export async function prepareResumeFromExternalExtraction(
     const salvageScore =
       external.diagnostics?.salvage_score ?? external.salvage_score ?? 0;
     const methodUsed =
-      external.diagnostics?.method_used ?? external.method_used ?? 'fastapi';
+      external.diagnostics?.method_used ?? external.method_used ?? 'render-extractor';
     const llmStatus = external.diagnostics?.llm_status ?? null;
     const llmFinalSource = external.diagnostics?.final_source ?? null;
     const llmError = external.diagnostics?.llm_error ?? null;
     const llmRawPresent = external.diagnostics?.llm_raw_present ?? null;
     const quality = assessResumeTextQuality(cleanedText);
-    const parsed = parseResumeText(reconstructedText, {
+    const fallbackParsed = parseResumeText(reconstructedText, {
       extractionMethod: methodUsed,
       attemptedMethods: [],
       extractionQuality: {
@@ -648,9 +750,14 @@ export async function prepareResumeFromExternalExtraction(
         humanReadableRatio: quality.humanReadableRatio,
         resumeHintCount: quality.resumeHintCount,
       },
+      contaminationScore,
+      salvageScore,
+      cleaningActions: external.diagnostics?.cleaning_actions ?? [],
       acceptedWithWarnings,
       warningCode: acceptedWithWarnings ? 'SALVAGED_FROM_NOISE' : null,
       warningMessage: warnings[0] ?? null,
+      textLength: rawText.length,
+      cleanedTextLength: cleanedText.length,
       rawText,
       cleanedText,
       finalSource: llmFinalSource ?? undefined,
@@ -658,21 +765,35 @@ export async function prepareResumeFromExternalExtraction(
       llmError,
       llmRawPresent,
     });
+    const parsed = fallbackParsed;
+    const externalExperience = external.sections
+      ? formatExperienceLinesV2(external.sections.experience)
+      : [];
+    const externalProjects = external.sections
+      ? formatProjectLinesV2(external.sections.projects)
+      : [];
+    const externalEducation = external.sections
+      ? formatEducationLinesV2(external.sections.education)
+      : [];
+    const externalSkills = external.sections?.skills
+      ? flattenExternalSkills(external.sections.skills)
+      : [];
+    const externalOther = [
+      ...(external.sections?.achievements ?? []),
+      ...(external.sections?.certifications ?? []),
+      ...(external.sections?.positions_of_responsibility ?? []),
+      ...(external.sections?.publications ?? []),
+      ...(external.sections?.volunteering ?? []),
+    ];
 
-    if (external.sections) {
-      const externalExperience = formatExperienceLines(external.sections.experience);
-      const externalProjects = formatProjectLines(external.sections.projects);
-      const externalEducation = formatEducationLines(external.sections.education);
-
-      if (externalExperience.length > 0) {
-        parsed.experience = externalExperience;
-      }
-      if (externalProjects.length > 0) {
-        parsed.projects = externalProjects;
-      }
-      if (externalEducation.length > 0) {
-        parsed.education = externalEducation;
-      }
+    if (externalExperience.length > 0) {
+      parsed.experience = externalExperience;
+    }
+    if (externalProjects.length > 0) {
+      parsed.projects = externalProjects;
+    }
+    if (externalEducation.length > 0) {
+      parsed.education = externalEducation;
     }
 
     if (external.candidate) {
@@ -681,7 +802,9 @@ export async function prepareResumeFromExternalExtraction(
       parsed.phone = normalizeExternalString(external.candidate.phone) ?? parsed.phone;
       parsed.summary = normalizeExternalString(external.candidate.summary) ?? parsed.summary;
       parsed.locationText =
-        normalizeExternalString(external.candidate.location) ?? parsed.locationText;
+        normalizeExternalString(external.candidate.location) ??
+        inferLocationFromText(cleanedText) ??
+        parsed.locationText;
     }
 
     if (external.sections?.experience && external.sections.experience.length > 0) {
@@ -698,6 +821,22 @@ export async function prepareResumeFromExternalExtraction(
         ...external.normalized_resume.sections,
       };
     }
+
+    if (externalSkills.length > 0) {
+      parsed.parsedSections.skills = externalSkills;
+      const directSkillEntries = detectSkillEntries(externalSkills.join(' '));
+      parsed.directSkillSlugs = directSkillEntries.map((entry) => entry.slug);
+      parsed.inferredSkillSlugs = [];
+    }
+
+    parsed.parsedSections.summary = parsed.summary
+      ? [parsed.summary]
+      : parsed.parsedSections.summary;
+    parsed.parsedSections.experience = parsed.experience;
+    parsed.parsedSections.projects = parsed.projects;
+    parsed.parsedSections.education = parsed.education;
+    parsed.parsedSections.other =
+      externalOther.length > 0 ? externalOther : parsed.parsedSections.other;
 
     const cleanedTextLength = cleanedText.length;
     logInfo('resume-preparation', 'External extraction completed', {
@@ -730,12 +869,17 @@ export async function prepareResumeFromExternalExtraction(
       errorMessage: null,
     });
 
+    const attemptedMethods = (external.diagnostics?.page_methods ?? [])
+      .map((entry) => entry.method)
+      .filter(Boolean);
+    const usedOcr = methodUsed.toLowerCase().includes('ocr');
+
     return {
       extraction: {
         text: cleanedText,
         rawText,
-        method: (methodUsed as ResumeExtractionMethod) ?? 'pdfjs-text',
-        usedOcr: false,
+        method: 'render-extractor',
+        usedOcr,
         ocrAttempted: false,
         ocrImprovedQuality: null,
         ocrConfidence: null,
@@ -744,7 +888,7 @@ export async function prepareResumeFromExternalExtraction(
         acceptedWithWarnings,
         warningCode: acceptedWithWarnings ? 'SALVAGED_FROM_NOISE' : null,
         warningMessage: warnings[0] ?? null,
-        attemptedMethods: [],
+        attemptedMethods,
         textLength: cleanedText.length,
         cleanedTextLength: cleanedText.length,
         contaminationScore,
@@ -776,7 +920,7 @@ export async function prepareResumeFromExternalExtraction(
     try {
       await completeRun(supabase, runId, {
         status: 'failed',
-        parserVersion: 'fastapi-v1:prepare',
+        parserVersion: 'render-extractor:prepare',
         errorMessage: toErrorMessage(error),
       });
     } catch (finalizeError) {
