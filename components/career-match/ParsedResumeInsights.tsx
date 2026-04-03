@@ -39,7 +39,7 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
     return cleaned || null;
   };
 
-  const isNoiseLine = (line: string) => {
+  const isNoiseLine = (line: string | null | undefined) => {
     if (!line) return true;
     if (!pdfInternalHint.test(line)) return false;
     const tokens = line.split(/\s+/).filter(Boolean);
@@ -57,7 +57,8 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
   const sanitizeLines = (items: string[]) =>
     items
       .map((item) => sanitizeDisplayValue(item))
-      .filter((item): item is string => Boolean(item) && !isNoiseLine(item));
+      .filter((item): item is string => Boolean(item))
+      .filter((item) => !isNoiseLine(item));
   const summaryText = sanitizeDisplayValue(profile?.summary ?? null);
   const sanitizedSummary = summaryText && !isNoiseLine(summaryText) ? summaryText : null;
   const sanitizedExperience = profile ? sanitizeLines(profile.experience) : [];

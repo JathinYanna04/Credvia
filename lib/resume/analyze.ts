@@ -6,7 +6,6 @@ import {
   assessResumeTextQuality,
   extractResumeText,
   ResumeExtractionError,
-  type ResumeExtractionMethod,
 } from '@/lib/resume/extract';
 import { RESUME_LIFECYCLE_STATUSES } from '@/lib/resume/lifecycle';
 import {
@@ -30,57 +29,6 @@ function normalizeExternalString(value: unknown) {
     return null;
   }
   return trimmed;
-}
-
-function formatExperienceLines(experience: ExternalExtractionPayload['sections'] extends { experience?: infer T }
-  ? T
-  : Array<Record<string, unknown>> = []) {
-  return (experience ?? []).flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return [];
-    const title = normalizeExternalString((entry as Record<string, unknown>).title);
-    const company = normalizeExternalString((entry as Record<string, unknown>).company);
-    const start = normalizeExternalString((entry as Record<string, unknown>).start_date);
-    const end = normalizeExternalString((entry as Record<string, unknown>).end_date);
-    const bullets = Array.isArray((entry as Record<string, unknown>).bullets)
-      ? ((entry as Record<string, unknown>).bullets as string[]).filter(Boolean)
-      : [];
-    const header = [title, company].filter(Boolean).join(' — ');
-    const dates = [start, end].filter(Boolean).join(' - ');
-    const lines = [header, dates].filter(Boolean);
-    return [...lines, ...bullets];
-  });
-}
-
-function formatProjectLines(projects: ExternalExtractionPayload['sections'] extends { projects?: infer T }
-  ? T
-  : Array<Record<string, unknown>> = []) {
-  return (projects ?? []).flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return [];
-    const name = normalizeExternalString((entry as Record<string, unknown>).name);
-    const description = normalizeExternalString((entry as Record<string, unknown>).description);
-    const bullets = Array.isArray((entry as Record<string, unknown>).bullets)
-      ? ((entry as Record<string, unknown>).bullets as string[]).filter(Boolean)
-      : [];
-    const lines = [name, description].filter(Boolean);
-    return [...lines, ...bullets];
-  });
-}
-
-function formatEducationLines(education: ExternalExtractionPayload['sections'] extends { education?: infer T }
-  ? T
-  : Array<Record<string, unknown>> = []) {
-  return (education ?? []).flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return [];
-    const degree = normalizeExternalString((entry as Record<string, unknown>).degree);
-    const institution = normalizeExternalString((entry as Record<string, unknown>).institution);
-    const start = normalizeExternalString((entry as Record<string, unknown>).start_date);
-    const end = normalizeExternalString((entry as Record<string, unknown>).end_date);
-    const description = normalizeExternalString((entry as Record<string, unknown>).description);
-    const header = [degree, institution].filter(Boolean).join(' — ');
-    const dates = [start, end].filter(Boolean).join(' - ');
-    const lines = [header, dates, description].filter(Boolean);
-    return lines;
-  });
 }
 
 function formatDateRangeV2(start: string | null | undefined, end: string | null | undefined) {
@@ -141,7 +89,7 @@ function formatEducationLinesV2(education: ExternalExtractionPayload['sections']
     const headerBase = degree && institution ? `${degree} - ${institution}` : degree ?? institution ?? null;
     const dates = formatDateRangeV2(start, end);
     const header = headerBase && dates ? `${headerBase} (${dates})` : headerBase ?? dates;
-    const lines = [header, description].filter(Boolean);
+    const lines = [header, description].filter((line): line is string => Boolean(line));
     return lines;
   });
 }
