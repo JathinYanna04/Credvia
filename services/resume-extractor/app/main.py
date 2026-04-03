@@ -129,6 +129,11 @@ STOPWORDS = {
     "resume",
 }
 
+PDF_INTERNAL_HINT = re.compile(r"\b(xref|flatedecode|objstm|endstream|startxref|endobj)\b", re.I)
+PDF_METADATA_HINT = re.compile(
+    r"/(Type|Length|Filter|DecodeParms|Root|Info|Pages|Catalog|Page|Font|Contents|MediaBox|Resources)\b"
+)
+
 SOFT_SKILLS = {
     "problem solving",
     "teamwork",
@@ -270,6 +275,7 @@ class RawBlock(BaseModel):
 
 class CandidateBasics(BaseModel):
     full_name: Optional[str] = None
+    current_title: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     linkedin: Optional[str] = None
@@ -286,6 +292,7 @@ class SkillsBlock(BaseModel):
     databases: List[str] = Field(default_factory=list)
     cloud: List[str] = Field(default_factory=list)
     others: List[str] = Field(default_factory=list)
+    spoken_languages: List[str] = Field(default_factory=list)
 
 
 class EducationEntry(BaseModel):
@@ -326,6 +333,7 @@ class SectionsBlock(BaseModel):
     certifications: List[str] = Field(default_factory=list)
     achievements: List[str] = Field(default_factory=list)
     positions_of_responsibility: List[str] = Field(default_factory=list)
+    hackathons: List[str] = Field(default_factory=list)
     publications: List[str] = Field(default_factory=list)
     volunteering: List[str] = Field(default_factory=list)
 
@@ -641,6 +649,7 @@ def classify_skills(tokens: List[str]) -> SkillsBlock:
     result = SkillsBlock()
     for normalized, original in normalized_to_original.items():
         if normalized in SPOKEN_LANGUAGES:
+            result.spoken_languages.append(original)
             continue
         if normalized in SOFT_SKILLS:
             result.others.append(original)
@@ -947,6 +956,17 @@ def should_use_llm_enhancement(
 
 def build_llm_prompt(cleaned_text: str, sections: Dict[str, Any]) -> str:
     schema = {
+        "candidate": {
+            "full_name": None,
+            "current_title": None,
+            "email": None,
+            "phone": None,
+            "location": None,
+            "linkedin": None,
+            "github": None,
+            "portfolio": None,
+            "summary": None,
+        },
         "skills": {
             "languages": [],
             "frameworks": [],
@@ -954,6 +974,7 @@ def build_llm_prompt(cleaned_text: str, sections: Dict[str, Any]) -> str:
             "databases": [],
             "cloud": [],
             "others": [],
+            "spoken_languages": [],
         },
         "education": [
             {
@@ -988,34 +1009,72 @@ def build_llm_prompt(cleaned_text: str, sections: Dict[str, Any]) -> str:
                 "bullets": [],
             }
         ],
+        "additional": {
+            "certifications": [],
+            "achievements": [],
+            "hackathons": [],
+            "leadership": [],
+            "volunteering": [],
+            "publications": [],
+        },
     }
 
     return (
         "You are a resume parsing assistant. Return ONLY JSON that matches the schema exactly. "
         "Do not add fields. Do not hallucinate. Use only information present in the text. "
-        "Only correct skills classification, education grouping, experience grouping, and project grouping. "
+        "Only correct candidate basics, skills classification, education grouping, experience grouping, project grouping, "
+        "and additional qualifications. "
         "Do NOT compute total experience months. "
         "Do NOT place spoken languages (English, Hindi, etc.) into programming languages. "
         "Do NOT output date-only project names. "
         "Do NOT hallucinate technologies not present in the text. "
-        "Certifications must only include real certifications.\n\n"
+        "Certifications must only include real certifications. "
+        "Keep achievements separate from hackathons and leadership.\n\n"
         f"Resume text:\n{cleaned_text}\n\n"
         f"Current parsed sections (may be imperfect):\n{json.dumps(sections, ensure_ascii=False)}\n\n"
         f"JSON schema to follow exactly:\n{json.dumps(schema, ensure_ascii=False)}"
     )
 
 
-def validate_refined_sections(refined: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    required = {"skills", "education", "experience", "projects"}
+def validate_refined_output(refined: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    required = {"candidate", "skills", "education", "experience", "projects", "additional"}
     if not required.issubset(refined.keys()):
+        return None
+
+    if not isinstance(refined.get("candidate"), dict):
+        return None
+    candidate = refined.get("candidate")
+    allowed_candidate_keys = {
+        "full_name",
+        "current_title",
+        "email",
+        "phone",
+        "location",
+        "linkedin",
+        "github",
+        "portfolio",
+        "summary",
+    }
+    if not set(candidate.keys()).issubset(allowed_candidate_keys):
         return None
 
     skills = refined.get("skills")
     if not isinstance(skills, dict):
         return None
-    for bucket in ["languages", "frameworks", "tools", "databases", "cloud", "others"]:
+    for bucket in [
+        "languages",
+        "frameworks",
+        "tools",
+        "databases",
+        "cloud",
+        "others",
+        "spoken_languages",
+    ]:
         if bucket not in skills or not isinstance(skills[bucket], list):
             return None
+
+    if not is_valid_skills_block(skills):
+        return None
 
     if not isinstance(refined.get("education"), list):
         return None
@@ -1023,6 +1082,64 @@ def validate_refined_sections(refined: Dict[str, Any]) -> Optional[Dict[str, Any
         return None
     if not isinstance(refined.get("projects"), list):
         return None
+
+    allowed_education_keys = {
+        "institution",
+        "degree",
+        "field_of_study",
+        "start_date",
+        "end_date",
+        "grade",
+        "location",
+        "description",
+    }
+    allowed_experience_keys = {
+        "company",
+        "title",
+        "location",
+        "start_date",
+        "end_date",
+        "currently_working",
+        "bullets",
+        "technologies",
+    }
+    allowed_project_keys = {"name", "description", "technologies", "links", "bullets"}
+
+    for entry in refined.get("education", []):
+        if isinstance(entry, dict) and not set(entry.keys()).issubset(allowed_education_keys):
+            return None
+    for entry in refined.get("experience", []):
+        if isinstance(entry, dict) and not set(entry.keys()).issubset(allowed_experience_keys):
+            return None
+    for entry in refined.get("projects", []):
+        if isinstance(entry, dict) and not set(entry.keys()).issubset(allowed_project_keys):
+            return None
+
+    education_entries = refined.get("education") or []
+    if education_entries and not is_valid_education_list(education_entries):
+        return None
+
+    experience_entries = refined.get("experience") or []
+    if experience_entries and not is_valid_experience_list(experience_entries):
+        return None
+
+    project_entries = refined.get("projects") or []
+    if project_entries and not is_valid_project_list(project_entries):
+        return None
+
+    additional = refined.get("additional")
+    if not isinstance(additional, dict):
+        return None
+    for bucket in [
+        "certifications",
+        "achievements",
+        "hackathons",
+        "leadership",
+        "volunteering",
+        "publications",
+    ]:
+        if bucket not in additional or not isinstance(additional[bucket], list):
+            return None
 
     return refined
 
@@ -1052,7 +1169,12 @@ def parse_llm_json(content: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Op
 def is_date_only_project(name: Optional[str]) -> bool:
     if not name:
         return True
-    return bool(re.fullmatch(r"(19|20)\d{2}", name.strip()))
+    cleaned = name.strip()
+    if re.fullmatch(r"(19|20)\d{2}", cleaned):
+        return True
+    if re.fullmatch(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}", cleaned, re.I):
+        return True
+    return False
 
 
 def is_valid_skills_block(skills: Dict[str, Any]) -> bool:
@@ -1102,27 +1224,97 @@ def is_valid_education_list(entries: List[Dict[str, Any]]) -> bool:
     return True
 
 
-def merge_refined_sections(base: SectionsBlock, refined: Dict[str, Any]) -> SectionsBlock:
-    base_dict = base.model_dump()
+def normalize_refined_value(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if not cleaned or cleaned.lower() in {"null", "none", "n/a", "na"}:
+        return None
+    return cleaned
 
+
+def is_noisy_summary(text: Optional[str]) -> bool:
+    if not text:
+        return True
+    lowered = text.lower()
+    if any(token in lowered for token in ["codechef", "codeforces", "hackerrank", "github", "linkedin"]):
+        return True
+    if any(token in lowered for token in ["declaration", "curriculum vitae", "resume"]):
+        return True
+    if PDF_INTERNAL_HINT.search(text) or PDF_METADATA_HINT.search(text):
+        return True
+    return len(text.split()) < 4
+
+
+def merge_refined_output(
+    candidate: CandidateBasics,
+    sections: SectionsBlock,
+    refined: Dict[str, Any],
+) -> Tuple[CandidateBasics, SectionsBlock, str]:
+    base_sections = sections.model_dump()
+    refined_candidate = refined.get("candidate", {})
+    candidate_dict = candidate.model_dump()
+    used_candidate = False
+
+    for field in [
+        "full_name",
+        "current_title",
+        "email",
+        "phone",
+        "location",
+        "linkedin",
+        "github",
+        "portfolio",
+        "summary",
+    ]:
+        refined_value = normalize_refined_value(refined_candidate.get(field))
+        if field == "summary" and is_noisy_summary(refined_value):
+            continue
+        if refined_value:
+            candidate_dict[field] = refined_value
+            used_candidate = True
+
+    skills = refined.get("skills")
+    used_skills = False
     if (
-        refined.get("skills")
-        and any(refined["skills"].get(bucket) for bucket in refined["skills"])
-        and is_valid_skills_block(refined["skills"])
+        skills
+        and any(skills.get(bucket) for bucket in skills)
+        and is_valid_skills_block(skills)
     ):
-        base_dict["skills"] = refined["skills"]
+        base_sections["skills"] = skills
+        used_skills = True
 
+    used_education = False
     if refined.get("education") and is_valid_education_list(refined["education"]):
-        base_dict["education"] = refined["education"]
+        base_sections["education"] = refined["education"]
+        used_education = True
+    used_experience = False
     if refined.get("experience") and is_valid_experience_list(refined["experience"]):
-        base_dict["experience"] = refined["experience"]
+        base_sections["experience"] = refined["experience"]
+        used_experience = True
+    used_projects = False
     if refined.get("projects") and is_valid_project_list(refined["projects"]):
-        base_dict["projects"] = refined["projects"]
+        base_sections["projects"] = refined["projects"]
+        used_projects = True
 
-    return SectionsBlock(**base_dict)
+    additional = refined.get("additional", {})
+    used_additional = True
+    base_sections["certifications"] = additional.get("certifications", base_sections.get("certifications", []))
+    base_sections["achievements"] = additional.get("achievements", base_sections.get("achievements", []))
+    base_sections["hackathons"] = additional.get("hackathons", base_sections.get("hackathons", []))
+    base_sections["positions_of_responsibility"] = additional.get(
+        "leadership", base_sections.get("positions_of_responsibility", [])
+    )
+    base_sections["volunteering"] = additional.get("volunteering", base_sections.get("volunteering", []))
+    base_sections["publications"] = additional.get("publications", base_sections.get("publications", []))
+    refined_applied = all([used_candidate, used_skills, used_education, used_experience, used_projects])
+    final_source = "llm" if refined_applied and used_additional else "merged"
+    return CandidateBasics(**candidate_dict), SectionsBlock(**base_sections), final_source
 
 
-def call_llm_refiner(cleaned_text: str, sections: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def call_llm_refiner(cleaned_text: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     call_llm_refiner.last_error = None
     call_llm_refiner.last_status = None
     call_llm_refiner.last_raw_present = False
@@ -1132,8 +1324,8 @@ def call_llm_refiner(cleaned_text: str, sections: Dict[str, Any]) -> Optional[Di
         call_llm_refiner.last_status = "error"
         return None
 
-    prompt = build_llm_prompt(cleaned_text, sections)
-    payload = {
+    prompt = build_llm_prompt(cleaned_text, payload)
+    request_payload = {
         "model": GROQ_MODEL,
         "temperature": 0.1,
         "messages": [
@@ -1152,7 +1344,7 @@ def call_llm_refiner(cleaned_text: str, sections: Dict[str, Any]) -> Optional[Di
             response = client.post(
                 f"{GROQ_BASE_URL}/chat/completions",
                 headers=headers,
-                json=payload,
+                json=request_payload,
             )
         if response.status_code in (401, 403, 429):
             call_llm_refiner.last_error = "rate_limited"
@@ -1167,8 +1359,13 @@ def call_llm_refiner(cleaned_text: str, sections: Dict[str, Any]) -> Optional[Di
             call_llm_refiner.last_error = parse_error
             call_llm_refiner.last_status = "invalid_json"
             return None
+        validated = validate_refined_output(refined or {})
+        if not validated:
+            call_llm_refiner.last_error = "invalid_schema"
+            call_llm_refiner.last_status = "invalid_json"
+            return None
         call_llm_refiner.last_status = "success"
-        return validate_refined_sections(refined or {})
+        return validated
     except httpx.TimeoutException:
         call_llm_refiner.last_error = "timeout"
         call_llm_refiner.last_status = "timeout"
@@ -1246,6 +1443,7 @@ def fix_skill_buckets(skills: SkillsBlock, actions: List[str]) -> SkillsBlock:
             skills.others.append(lang)
     if moved_spoken:
         actions.append("spoken_languages_rebucketed")
+        skills.spoken_languages = list(dict.fromkeys(skills.spoken_languages + moved_spoken))
     skills.languages = list(dict.fromkeys(new_languages))
     skills.others = list(dict.fromkeys(skills.others))
     return skills
@@ -1622,6 +1820,7 @@ async def extract(
         certifications=certifications,
         achievements=achievements,
         positions_of_responsibility=positions_of_responsibility,
+        hackathons=hackathons,
         publications=section_map.get("publications", []),
         volunteering=section_map.get("volunteering", []),
     )
@@ -1629,15 +1828,22 @@ async def extract(
     confidence = compute_confidence(candidate, sections)
     actions_post: List[str] = []
 
-    llm_action = "llm_skipped_strong_deterministic"
+    llm_action = "llm_attempted"
     llm_status: str = "skipped"
     llm_error: Optional[str] = None
     llm_raw_present: Optional[bool] = None
-    if should_use_llm_enhancement(sections, confidence, section_map):
+    llm_final_source: Optional[str] = None
+    if cleaned_text.strip():
         trimmed_text = cleaned_text[:MAX_LLM_TEXT_CHARS]
-        refined = call_llm_refiner(trimmed_text, sections.model_dump())
+        refined = call_llm_refiner(
+            trimmed_text,
+            {
+                "candidate": candidate.model_dump(),
+                "sections": sections.model_dump(),
+            },
+        )
         if refined:
-            sections = merge_refined_sections(sections, refined)
+            candidate, sections, llm_final_source = merge_refined_output(candidate, sections, refined)
             llm_action = "llm_enhanced"
             llm_status = "success"
             llm_raw_present = getattr(call_llm_refiner, "last_raw_present", None)
@@ -1654,6 +1860,9 @@ async def extract(
                 llm_action = "llm_missing_api_key"
             else:
                 llm_action = "llm_invalid_json_fallback"
+    else:
+        llm_action = "llm_skipped_empty_text"
+        llm_status = "skipped"
     if llm_status == "skipped":
         llm_raw_present = False
     if GROQ_FORCE:
@@ -1701,16 +1910,11 @@ async def extract(
 
     final_source = "heuristic_fallback"
     if llm_status == "success":
-        if not sections.education and not sections.experience and not sections.projects:
-            final_source = "llm"
-        else:
-            final_source = "merged"
+        final_source = llm_final_source or "merged"
 
     parser_version = PARSER_VERSION
-    if final_source == "merged":
+    if final_source in {"merged", "llm"}:
         parser_version = f"{PARSER_VERSION}+llm"
-    elif final_source == "llm":
-        parser_version = "phase2-llm"
 
     parsed_at = datetime.now(timezone.utc).isoformat()
 

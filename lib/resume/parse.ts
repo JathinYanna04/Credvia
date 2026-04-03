@@ -7,6 +7,7 @@ export interface ParsedResumeSections {
   experience: string[];
   education: string[];
   other: string[];
+  __structured?: Record<string, unknown>;
 }
 
 export interface ParsedResumeMeta {

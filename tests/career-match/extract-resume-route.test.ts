@@ -227,19 +227,73 @@ describe('resume extract route', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        raw_text: 'raw text',
-        cleaned_text: 'cleaned text',
-        reconstructed_text: 'cleaned text',
-        structured_profile: {
-          full_name: 'Jane Builder',
-          email: 'jane@example.com',
-          summary: 'Product engineer',
+        schema_version: '2.0.0',
+        parser_version: 'phase2-heuristic+llm',
+        request: {
+          request_id: 'req-1',
+          filename: 'resume.pdf',
+          mime_type: 'application/pdf',
+          file_size_bytes: 12,
+          parsed_at: new Date().toISOString(),
         },
-        contamination_score: 20,
-        salvage_score: 55,
-        accepted_with_warnings: true,
-        warnings: ['Recovered from noisy PDF'],
-        method_used: 'pymupdf',
+        status: {
+          success: true,
+          processing_mode: 'pdf-native',
+          warnings: [],
+          errors: [],
+          confidence_overall: 0.86,
+        },
+        raw: {
+          raw_text: 'raw text',
+          cleaned_text: 'cleaned text',
+          page_count: 1,
+        },
+        candidate: {
+          full_name: 'Jane Builder',
+          current_title: 'Product Engineer',
+          email: 'jane@example.com',
+          phone: '+1 555 555 1234',
+          location: 'Bangalore, India',
+          summary: 'Product engineer',
+          linkedin: 'linkedin.com/in/jane',
+          github: 'github.com/jane',
+          portfolio: 'jane.dev',
+        },
+        sections: {
+          skills: {
+            languages: ['TypeScript'],
+            frameworks: ['React'],
+            tools: ['Docker'],
+            databases: ['PostgreSQL'],
+            cloud: ['AWS'],
+            others: ['Product strategy'],
+            spoken_languages: ['English'],
+          },
+          education: [],
+          experience: [],
+          projects: [],
+          certifications: [],
+          achievements: [],
+          positions_of_responsibility: [],
+          hackathons: ['Hackathon X'],
+          publications: [],
+          volunteering: [],
+        },
+        diagnostics: {
+          method_used: 'pdf-native',
+          page_methods: [{ page: '1', method: 'pdf-native' }],
+          contamination_score: 20,
+          salvage_score: 55,
+          cleaning_actions: ['normalized_whitespace'],
+          final_source: 'merged',
+          llm_status: 'success',
+          llm_error: null,
+          llm_raw_present: true,
+        },
+        normalized_resume: {
+          text: 'cleaned text',
+          sections: {},
+        },
       }),
     });
 
@@ -305,7 +359,18 @@ describe('resume extract route', () => {
 
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalled();
-    expect(prepareResumeFromExternalExtraction).toHaveBeenCalled();
+    expect(prepareResumeFromExternalExtraction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 'resume-1' }),
+      expect.objectContaining({
+        candidate: expect.objectContaining({ current_title: 'Product Engineer' }),
+        sections: expect.objectContaining({
+          skills: expect.objectContaining({ spoken_languages: ['English'] }),
+          hackathons: ['Hackathon X'],
+        }),
+        diagnostics: expect.objectContaining({ final_source: 'merged' }),
+      }),
+    );
     expect(payload.data.extracted).toBe(true);
   });
 

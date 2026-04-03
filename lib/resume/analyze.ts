@@ -44,6 +44,13 @@ function normalizeExternalString(value: unknown) {
   return trimmed;
 }
 
+function normalizeExternalStringArray(values: unknown) {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => normalizeExternalString(value))
+    .filter((value): value is string => Boolean(value));
+}
+
 function toResumeExtractionMethod(value: unknown) {
   if (typeof value !== 'string') return null;
   return RESUME_EXTRACTION_METHODS.has(value as ResumeExtractionMethod)
@@ -129,6 +136,134 @@ function flattenExternalSkills(skills: ExternalExtractionPayload['sections'] ext
   ].filter(Boolean);
 }
 
+function buildStructuredProfile(
+  external: ExternalExtractionPayload,
+  options: {
+    methodUsed: string;
+    attemptedMethods: ResumeExtractionMethod[];
+    usedOcr: boolean;
+  },
+) {
+  const candidate = external.candidate ?? {};
+  const sections = external.sections ?? {};
+
+  const structuredCandidate = {
+    full_name: normalizeExternalString(candidate.full_name),
+    current_title: normalizeExternalString(candidate.current_title),
+    email: normalizeExternalString(candidate.email),
+    phone: normalizeExternalString(candidate.phone),
+    location: normalizeExternalString(candidate.location),
+    linkedin: normalizeExternalString(candidate.linkedin),
+    github: normalizeExternalString(candidate.github),
+    portfolio: normalizeExternalString(candidate.portfolio),
+    summary: normalizeExternalString(candidate.summary),
+  };
+
+  const structuredSkills = {
+    languages: normalizeExternalStringArray(sections.skills?.languages),
+    frameworks: normalizeExternalStringArray(sections.skills?.frameworks),
+    tools: normalizeExternalStringArray(sections.skills?.tools),
+    databases: normalizeExternalStringArray(sections.skills?.databases),
+    cloud: normalizeExternalStringArray(sections.skills?.cloud),
+    others: normalizeExternalStringArray(sections.skills?.others),
+    spoken_languages: normalizeExternalStringArray(sections.skills?.spoken_languages),
+  };
+
+  const structuredExperience = (sections.experience ?? []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const record = entry as Record<string, unknown>;
+    const bullets = normalizeExternalStringArray(record.bullets);
+    const technologies = normalizeExternalStringArray(record.technologies);
+    const normalized = {
+      company: normalizeExternalString(record.company),
+      title: normalizeExternalString(record.title),
+      location: normalizeExternalString(record.location),
+      start_date: normalizeExternalString(record.start_date),
+      end_date: normalizeExternalString(record.end_date),
+      currently_working: Boolean(record.currently_working),
+      bullets,
+      technologies,
+    };
+    const hasContent =
+      normalized.company ||
+      normalized.title ||
+      normalized.location ||
+      normalized.start_date ||
+      normalized.end_date ||
+      bullets.length > 0 ||
+      technologies.length > 0;
+    return hasContent ? [normalized] : [];
+  });
+
+  const structuredProjects = (sections.projects ?? []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const record = entry as Record<string, unknown>;
+    const bullets = normalizeExternalStringArray(record.bullets);
+    const technologies = normalizeExternalStringArray(record.technologies);
+    const links = normalizeExternalStringArray(record.links);
+    const normalized = {
+      name: normalizeExternalString(record.name),
+      description: normalizeExternalString(record.description),
+      technologies,
+      links,
+      bullets,
+    };
+    const hasContent =
+      normalized.name ||
+      normalized.description ||
+      bullets.length > 0 ||
+      technologies.length > 0 ||
+      links.length > 0;
+    return hasContent ? [normalized] : [];
+  });
+
+  const structuredEducation = (sections.education ?? []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const record = entry as Record<string, unknown>;
+    const normalized = {
+      institution: normalizeExternalString(record.institution),
+      degree: normalizeExternalString(record.degree),
+      field_of_study: normalizeExternalString(record.field_of_study),
+      start_date: normalizeExternalString(record.start_date),
+      end_date: normalizeExternalString(record.end_date),
+      grade: normalizeExternalString(record.grade),
+      location: normalizeExternalString(record.location),
+      description: normalizeExternalString(record.description),
+    };
+    const hasContent = Object.values(normalized).some(Boolean);
+    return hasContent ? [normalized] : [];
+  });
+
+  const structuredAdditional = {
+    certifications: normalizeExternalStringArray(sections.certifications),
+    achievements: normalizeExternalStringArray(sections.achievements),
+    hackathons: normalizeExternalStringArray(sections.hackathons),
+    leadership: normalizeExternalStringArray(sections.positions_of_responsibility),
+    volunteering: normalizeExternalStringArray(sections.volunteering),
+    publications: normalizeExternalStringArray(sections.publications),
+  };
+
+  return {
+    candidate: structuredCandidate,
+    skills: structuredSkills,
+    experience: structuredExperience,
+    projects: structuredProjects,
+    education: structuredEducation,
+    additional: structuredAdditional,
+    diagnostics: {
+      parserVersion: external.parser_version ?? null,
+      finalSource: external.diagnostics?.final_source ?? null,
+      llmStatus: external.diagnostics?.llm_status ?? null,
+      llmError: external.diagnostics?.llm_error ?? null,
+      llmRawPresent: external.diagnostics?.llm_raw_present ?? null,
+      confidence: external.status?.confidence_overall ?? null,
+      usedOcr: options.usedOcr,
+      extractionMethod: options.methodUsed,
+      attemptedMethods: options.attemptedMethods,
+    },
+  };
+}
+
 function inferLocationFromText(text: string) {
   const lines = text
     .split('\n')
@@ -182,6 +317,7 @@ export interface ExternalExtractionPayload {
   };
   candidate?: {
     full_name?: string | null;
+    current_title?: string | null;
     email?: string | null;
     phone?: string | null;
     linkedin?: string | null;
@@ -198,6 +334,7 @@ export interface ExternalExtractionPayload {
       databases?: string[];
       cloud?: string[];
       others?: string[];
+      spoken_languages?: string[];
     };
     education?: Array<Record<string, unknown>>;
     experience?: Array<Record<string, unknown>>;
@@ -205,6 +342,7 @@ export interface ExternalExtractionPayload {
     certifications?: string[];
     achievements?: string[];
     positions_of_responsibility?: string[];
+    hackathons?: string[];
     publications?: string[];
     volunteering?: string[];
   };
@@ -749,6 +887,7 @@ export async function prepareResumeFromExternalExtraction(
     const externalOther = [
       ...(external.sections?.achievements ?? []),
       ...(external.sections?.certifications ?? []),
+      ...(external.sections?.hackathons ?? []),
       ...(external.sections?.positions_of_responsibility ?? []),
       ...(external.sections?.publications ?? []),
       ...(external.sections?.volunteering ?? []),
@@ -769,6 +908,8 @@ export async function prepareResumeFromExternalExtraction(
       parsed.email = normalizeExternalString(external.candidate.email) ?? parsed.email;
       parsed.phone = normalizeExternalString(external.candidate.phone) ?? parsed.phone;
       parsed.summary = normalizeExternalString(external.candidate.summary) ?? parsed.summary;
+      parsed.currentTitle =
+        normalizeExternalString(external.candidate.current_title) ?? parsed.currentTitle;
       parsed.locationText =
         normalizeExternalString(external.candidate.location) ??
         inferLocationFromText(cleanedText) ??
@@ -806,6 +947,21 @@ export async function prepareResumeFromExternalExtraction(
     parsed.parsedSections.other =
       externalOther.length > 0 ? externalOther : parsed.parsedSections.other;
 
+    const attemptedMethods = (external.diagnostics?.page_methods ?? [])
+      .map((entry) =>
+        entry && typeof entry === 'object'
+          ? toResumeExtractionMethod((entry as Record<string, unknown>).method)
+          : null,
+      )
+      .filter((method): method is ResumeExtractionMethod => Boolean(method));
+    const usedOcr = methodUsed.toLowerCase().includes('ocr');
+
+    parsed.parsedSections.__structured = buildStructuredProfile(external, {
+      methodUsed,
+      attemptedMethods,
+      usedOcr,
+    });
+
     const cleanedTextLength = cleanedText.length;
     logInfo('resume-preparation', 'External extraction completed', {
       resumeId: resume.id,
@@ -836,15 +992,6 @@ export async function prepareResumeFromExternalExtraction(
       parserVersion,
       errorMessage: null,
     });
-
-    const attemptedMethods = (external.diagnostics?.page_methods ?? [])
-      .map((entry) =>
-        entry && typeof entry === 'object'
-          ? toResumeExtractionMethod((entry as Record<string, unknown>).method)
-          : null,
-      )
-      .filter((method): method is ResumeExtractionMethod => Boolean(method));
-    const usedOcr = methodUsed.toLowerCase().includes('ocr');
 
     return {
       extraction: {

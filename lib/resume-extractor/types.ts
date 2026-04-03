@@ -22,6 +22,7 @@ export type ExtractResponse = {
   };
   candidate: {
     full_name?: string | null;
+    current_title?: string | null;
     email?: string | null;
     phone?: string | null;
     linkedin?: string | null;
@@ -38,6 +39,7 @@ export type ExtractResponse = {
       databases: string[];
       cloud: string[];
       others: string[];
+      spoken_languages: string[];
     };
     education: Array<{
       institution?: string | null;
@@ -69,6 +71,7 @@ export type ExtractResponse = {
     certifications: string[];
     achievements: string[];
     positions_of_responsibility: string[];
+    hackathons: string[];
     publications: string[];
     volunteering: string[];
   };

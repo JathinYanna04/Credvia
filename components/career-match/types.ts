@@ -62,6 +62,89 @@ export interface CareerResumeAnalysisReadiness {
   message: string | null;
 }
 
+export interface CareerStructuredCandidate {
+  full_name: string | null;
+  current_title: string | null;
+  email: string | null;
+  phone: string | null;
+  location: string | null;
+  linkedin: string | null;
+  github: string | null;
+  portfolio: string | null;
+  summary: string | null;
+}
+
+export interface CareerStructuredSkills {
+  languages: string[];
+  frameworks: string[];
+  tools: string[];
+  databases: string[];
+  cloud: string[];
+  others: string[];
+  spoken_languages: string[];
+}
+
+export interface CareerStructuredExperience {
+  company: string | null;
+  title: string | null;
+  location: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  currently_working: boolean;
+  bullets: string[];
+  technologies: string[];
+}
+
+export interface CareerStructuredProject {
+  name: string | null;
+  description: string | null;
+  technologies: string[];
+  links: string[];
+  bullets: string[];
+}
+
+export interface CareerStructuredEducation {
+  institution: string | null;
+  degree: string | null;
+  field_of_study: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  grade: string | null;
+  location: string | null;
+  description: string | null;
+}
+
+export interface CareerStructuredAdditional {
+  certifications: string[];
+  achievements: string[];
+  hackathons: string[];
+  leadership: string[];
+  volunteering: string[];
+  publications: string[];
+}
+
+export interface CareerStructuredDiagnostics {
+  parserVersion?: string | null;
+  finalSource?: 'llm' | 'heuristic_fallback' | 'merged' | null;
+  llmStatus?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped' | null;
+  llmError?: string | null;
+  llmRawPresent?: boolean | null;
+  confidence?: number | null;
+  usedOcr?: boolean;
+  extractionMethod?: string | null;
+  attemptedMethods?: string[];
+}
+
+export interface CareerStructuredProfile {
+  candidate: CareerStructuredCandidate;
+  skills: CareerStructuredSkills;
+  experience: CareerStructuredExperience[];
+  projects: CareerStructuredProject[];
+  education: CareerStructuredEducation[];
+  additional: CareerStructuredAdditional;
+  diagnostics?: CareerStructuredDiagnostics;
+}
+
 export interface CareerResumeSections {
   summary: string[];
   skills: string[];
@@ -70,6 +153,7 @@ export interface CareerResumeSections {
   education: string[];
   other: string[];
   __meta?: CareerResumeExtractionMeta;
+  __structured?: CareerStructuredProfile;
 }
 
 export interface CareerResumeProfile {

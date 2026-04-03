@@ -10,10 +10,18 @@ export interface ParsedResumeInsightsProps {
 export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
   const profile = detail.profile;
   const skills = detail.skills;
+  const structured = profile?.raw_sections?.__structured;
+  const structuredCandidate = structured?.candidate;
+  const structuredSkills = structured?.skills;
+  const structuredExperience = structured?.experience ?? [];
+  const structuredProjects = structured?.projects ?? [];
+  const structuredEducation = structured?.education ?? [];
+  const structuredAdditional = structured?.additional;
+  const structuredDiagnostics = structured?.diagnostics;
   const extractionMeta = profile?.raw_sections?.__meta;
   const latestRun = detail.analysisRuns[0] ?? null;
   const showStaleParsedBanner = Boolean(profile && latestRun?.status === 'failed');
-  const finalSource = extractionMeta?.finalSource ?? null;
+  const finalSource = structuredDiagnostics?.finalSource ?? extractionMeta?.finalSource ?? null;
   const acceptedWithWarnings =
     extractionMeta?.acceptedWithWarnings === true ||
     extractionMeta?.warningCode != null ||
@@ -60,18 +68,38 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
       .map((item) => sanitizeDisplayValue(item))
       .filter((item): item is string => Boolean(item))
       .filter((item) => !isNoiseLine(item));
-  const summaryText = sanitizeDisplayValue(profile?.summary ?? null);
+  const normalizeStructuredSkillList = (items?: Array<string | null>) =>
+    (items ?? [])
+      .map((item) => sanitizeDisplayValue(item ?? null))
+      .filter((item): item is string => Boolean(item));
+  const summaryText = sanitizeDisplayValue(structuredCandidate?.summary ?? profile?.summary ?? null);
   const sanitizedSummary = summaryText && !isNoiseLine(summaryText) ? summaryText : null;
   const sanitizedExperience = profile ? sanitizeLines(profile.experience) : [];
   const sanitizedProjects = profile ? sanitizeLines(profile.projects) : [];
   const sanitizedEducation = profile ? sanitizeLines(profile.education) : [];
-  const sanitizedTitle = sanitizeDisplayValue(profile?.current_title ?? null);
-  const sanitizedLocation = sanitizeDisplayValue(profile?.location ?? null);
-  const sanitizedName = sanitizeDisplayValue(profile?.full_name ?? null);
-  const sanitizedEmail = sanitizeDisplayValue(profile?.email ?? null);
-  const sanitizedPhone = sanitizeDisplayValue(profile?.phone ?? null);
+  const sanitizedTitle = sanitizeDisplayValue(
+    structuredCandidate?.current_title ?? profile?.current_title ?? null,
+  );
+  const sanitizedLocation = sanitizeDisplayValue(
+    structuredCandidate?.location ?? profile?.location ?? null,
+  );
+  const sanitizedName = sanitizeDisplayValue(
+    structuredCandidate?.full_name ?? profile?.full_name ?? null,
+  );
+  const sanitizedEmail = sanitizeDisplayValue(
+    structuredCandidate?.email ?? profile?.email ?? null,
+  );
+  const sanitizedPhone = sanitizeDisplayValue(
+    structuredCandidate?.phone ?? profile?.phone ?? null,
+  );
+  const sanitizedLinkedIn = sanitizeDisplayValue(structuredCandidate?.linkedin ?? null);
+  const sanitizedGithub = sanitizeDisplayValue(structuredCandidate?.github ?? null);
+  const sanitizedPortfolio = sanitizeDisplayValue(structuredCandidate?.portfolio ?? null);
   const hasStructuredContent =
     Boolean(sanitizedSummary) ||
+    structuredExperience.length > 0 ||
+    structuredProjects.length > 0 ||
+    structuredEducation.length > 0 ||
     sanitizedExperience.length > 0 ||
     sanitizedProjects.length > 0 ||
     sanitizedEducation.length > 0;
@@ -86,17 +114,20 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
 
   const parserMethodLabel = describeAnalysisMethod(latestRun?.parser_version);
   const parsedAtLabel = profile?.parsed_at ? formatDateTime(profile.parsed_at) : null;
+  const usedOcr = structuredDiagnostics?.usedOcr ?? extractionMeta?.usedOcr;
+  const confidenceTier = extractionMeta?.extractionQuality?.confidenceTier ?? null;
+
   const metaBadges = [
     finalSourceLabel ? { label: finalSourceLabel, variant: 'secondary' as const } : null,
-    extractionMeta?.llmStatus === 'success' ? { label: 'AI parsed', variant: 'accent' as const } : null,
-    extractionMeta
-      ? extractionMeta.usedOcr
+    (structuredDiagnostics?.llmStatus ?? extractionMeta?.llmStatus) === 'success'
+      ? { label: 'AI parsed', variant: 'accent' as const }
+      : null,
+    usedOcr !== undefined
+      ? usedOcr
         ? { label: 'OCR used', variant: 'warning' as const }
         : { label: 'OCR not needed', variant: 'secondary' as const }
       : null,
-    extractionMeta?.extractionQuality?.confidenceTier
-      ? { label: `Confidence ${extractionMeta.extractionQuality.confidenceTier}`, variant: 'secondary' as const }
-      : null,
+    confidenceTier ? { label: `Confidence ${confidenceTier}`, variant: 'secondary' as const } : null,
   ].filter(Boolean) as Array<{ label: string; variant: 'accent' | 'secondary' | 'warning' }>;
 
   const skillSource = profile?.raw_sections?.skills ?? [];
@@ -119,6 +150,20 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
       bucket.push(value);
     }
   };
+  const structuredSkillValues = structuredSkills
+    ? {
+        languages: normalizeStructuredSkillList(structuredSkills.languages),
+        frameworks: normalizeStructuredSkillList(structuredSkills.frameworks),
+        databases: normalizeStructuredSkillList(structuredSkills.databases),
+        tools: normalizeStructuredSkillList(structuredSkills.tools),
+        cloud: normalizeStructuredSkillList(structuredSkills.cloud),
+        others: normalizeStructuredSkillList(structuredSkills.others),
+        spoken: normalizeStructuredSkillList(structuredSkills.spoken_languages),
+      }
+    : null;
+  const hasStructuredSkills =
+    structuredSkillValues &&
+    Object.values(structuredSkillValues).some((bucket) => bucket.length > 0);
   const spokenLanguages = new Set([
     'english',
     'hindi',
@@ -194,40 +239,64 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
     'render',
   ]);
 
-  rawSkillValues.forEach((skill) => {
-    const normalized = skill.toLowerCase();
-    if (spokenLanguages.has(normalized)) {
-      pushUnique(skillBuckets.spoken, skill);
-      return;
-    }
-    if (languageSkills.has(normalized)) {
-      pushUnique(skillBuckets.languages, skill);
-      return;
-    }
-    if (frameworkSkills.has(normalized)) {
-      pushUnique(skillBuckets.frameworks, skill);
-      return;
-    }
-    if (databaseSkills.has(normalized) || normalized.includes('sql')) {
-      pushUnique(skillBuckets.databases, skill);
-      return;
-    }
-    if (cloudSkills.has(normalized)) {
-      pushUnique(skillBuckets.cloud, skill);
-      return;
-    }
-    if (toolSkills.has(normalized)) {
-      pushUnique(skillBuckets.tools, skill);
-      return;
-    }
-    pushUnique(skillBuckets.others, skill);
-  });
+  if (structuredSkillValues && hasStructuredSkills) {
+    skillBuckets.languages = structuredSkillValues.languages;
+    skillBuckets.frameworks = structuredSkillValues.frameworks;
+    skillBuckets.databases = structuredSkillValues.databases;
+    skillBuckets.tools = structuredSkillValues.tools;
+    skillBuckets.cloud = structuredSkillValues.cloud;
+    skillBuckets.others = structuredSkillValues.others;
+    skillBuckets.spoken = structuredSkillValues.spoken;
+  } else {
+    rawSkillValues.forEach((skill) => {
+      const normalized = skill.toLowerCase();
+      if (spokenLanguages.has(normalized)) {
+        pushUnique(skillBuckets.spoken, skill);
+        return;
+      }
+      if (languageSkills.has(normalized)) {
+        pushUnique(skillBuckets.languages, skill);
+        return;
+      }
+      if (frameworkSkills.has(normalized)) {
+        pushUnique(skillBuckets.frameworks, skill);
+        return;
+      }
+      if (databaseSkills.has(normalized) || normalized.includes('sql')) {
+        pushUnique(skillBuckets.databases, skill);
+        return;
+      }
+      if (cloudSkills.has(normalized)) {
+        pushUnique(skillBuckets.cloud, skill);
+        return;
+      }
+      if (toolSkills.has(normalized)) {
+        pushUnique(skillBuckets.tools, skill);
+        return;
+      }
+      pushUnique(skillBuckets.others, skill);
+    });
+  }
 
   const parseLineWithDates = (line: string) => {
     const dateMatch = line.match(/\(([^)]+)\)/);
     const dates = dateMatch ? dateMatch[1] : null;
     const base = dateMatch ? line.replace(dateMatch[0], '').trim() : line;
     return { base, dates };
+  };
+
+  const formatStructuredDateRange = (
+    startDate: string | null | undefined,
+    endDate: string | null | undefined,
+    currentlyWorking?: boolean,
+  ) => {
+    const sanitizedStart = sanitizeDisplayValue(startDate ?? null);
+    const sanitizedEnd = sanitizeDisplayValue(endDate ?? null);
+    if (currentlyWorking && sanitizedStart) {
+      return `${sanitizedStart} - Present`;
+    }
+    if (sanitizedStart && sanitizedEnd) return `${sanitizedStart} - ${sanitizedEnd}`;
+    return sanitizedStart ?? sanitizedEnd ?? null;
   };
 
   const parseExperienceLine = (line: string) => {
@@ -252,17 +321,71 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
     return { name: base, description: null };
   };
 
-  const experienceEntries = sanitizedExperience.map(parseExperienceLine);
-  const projectEntries = sanitizedProjects.map(parseProjectLine);
-  const educationEntries = sanitizedEducation.map((line) => {
+  const structuredExperienceEntries = structuredExperience
+    .map((entry) => ({
+      title: sanitizeDisplayValue(entry.title ?? null),
+      company: sanitizeDisplayValue(entry.company ?? null),
+      location: sanitizeDisplayValue(entry.location ?? null),
+      dates: formatStructuredDateRange(entry.start_date, entry.end_date, entry.currently_working),
+      bullets: sanitizeLines(entry.bullets ?? []),
+      technologies: sanitizeLines(entry.technologies ?? []),
+    }))
+    .filter((entry) => entry.title || entry.company || entry.bullets.length > 0);
+
+  const fallbackExperienceEntries = sanitizedExperience.map((line) => ({
+    ...parseExperienceLine(line),
+    location: null as string | null,
+    bullets: [] as string[],
+    technologies: [] as string[],
+  }));
+  const experienceEntries =
+    structuredExperienceEntries.length > 0 ? structuredExperienceEntries : fallbackExperienceEntries;
+
+  const structuredProjectEntries = structuredProjects
+    .map((entry) => ({
+      name: sanitizeDisplayValue(entry.name ?? null),
+      description: sanitizeDisplayValue(entry.description ?? null),
+      technologies: sanitizeLines(entry.technologies ?? []),
+      links: sanitizeLines(entry.links ?? []),
+      bullets: sanitizeLines(entry.bullets ?? []),
+    }))
+    .filter((entry) => entry.name || entry.description || entry.bullets.length > 0);
+
+  const fallbackProjectEntries = sanitizedProjects.map((line) => ({
+    ...parseProjectLine(line),
+    technologies: [] as string[],
+    links: [] as string[],
+    bullets: [] as string[],
+  }));
+  const projectEntries =
+    structuredProjectEntries.length > 0 ? structuredProjectEntries : fallbackProjectEntries;
+
+  const structuredEducationEntries = structuredEducation
+    .map((entry) => ({
+      degree: sanitizeDisplayValue(entry.degree ?? null),
+      institution: sanitizeDisplayValue(entry.institution ?? null),
+      fieldOfStudy: sanitizeDisplayValue(entry.field_of_study ?? null),
+      grade: sanitizeDisplayValue(entry.grade ?? null),
+      description: sanitizeDisplayValue(entry.description ?? null),
+      dates: formatStructuredDateRange(entry.start_date, entry.end_date),
+    }))
+    .filter((entry) => entry.degree || entry.institution || entry.description);
+
+  const fallbackEducationEntries = sanitizedEducation.map((line) => {
     const { base, dates } = parseLineWithDates(line);
     const dashSplit = base.split(' - ');
     return {
       degree: dashSplit[0] ?? base,
       institution: dashSplit[1] ?? null,
+      fieldOfStudy: null,
+      grade: null,
+      description: null,
       dates,
     };
   });
+
+  const educationEntries =
+    structuredEducationEntries.length > 0 ? structuredEducationEntries : fallbackEducationEntries;
 
   const skillGroups = [
     { label: 'Programming languages', items: skillBuckets.languages },
@@ -274,37 +397,48 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
   ];
 
   const otherLines = profile ? sanitizeLines(profile.raw_sections?.other ?? []) : [];
-  const findLinkLine = (pattern: RegExp) =>
-    otherLines.find((line) => pattern.test(line));
-  const linkedInLine = findLinkLine(/linkedin/i);
-  const githubLine = findLinkLine(/github/i);
-  const portfolioLine = findLinkLine(/portfolio|website|site|http/i);
+  const findLinkLine = (pattern: RegExp) => otherLines.find((line) => pattern.test(line));
+  const linkedInLine = sanitizedLinkedIn ?? findLinkLine(/linkedin/i);
+  const githubLine = sanitizedGithub ?? findLinkLine(/github/i);
+  const portfolioLine = sanitizedPortfolio ?? findLinkLine(/portfolio|website|site|http/i);
   const highlightBuckets = {
     certifications: [] as string[],
     achievements: [] as string[],
     leadership: [] as string[],
     competitions: [] as string[],
   };
-  otherLines.forEach((line) => {
-    const normalized = line.toLowerCase();
-    if (/certified|certification|specialization|certificate|associate/.test(normalized)) {
-      highlightBuckets.certifications.push(line);
-      return;
-    }
-    if (/hackathon|competition|contest|challenge/.test(normalized)) {
-      highlightBuckets.competitions.push(line);
-      return;
-    }
-    if (/volunteer|member|leader|lead|chair|coordinator|responsibility/.test(normalized)) {
-      highlightBuckets.leadership.push(line);
-      return;
-    }
-    highlightBuckets.achievements.push(line);
-  });
+
+  const hasStructuredAdditional =
+    structuredAdditional &&
+    Object.values(structuredAdditional).some((bucket) => (bucket ?? []).length > 0);
+
+  if (structuredAdditional && hasStructuredAdditional) {
+    highlightBuckets.certifications = normalizeStructuredSkillList(structuredAdditional.certifications);
+    highlightBuckets.achievements = normalizeStructuredSkillList(structuredAdditional.achievements);
+    highlightBuckets.leadership = normalizeStructuredSkillList(structuredAdditional.leadership);
+    highlightBuckets.competitions = normalizeStructuredSkillList(structuredAdditional.hackathons);
+  } else {
+    otherLines.forEach((line) => {
+      const normalized = line.toLowerCase();
+      if (/certified|certification|specialization|certificate|associate/.test(normalized)) {
+        highlightBuckets.certifications.push(line);
+        return;
+      }
+      if (/hackathon|competition|contest|challenge/.test(normalized)) {
+        highlightBuckets.competitions.push(line);
+        return;
+      }
+      if (/volunteer|member|leader|lead|chair|coordinator|responsibility/.test(normalized)) {
+        highlightBuckets.leadership.push(line);
+        return;
+      }
+      highlightBuckets.achievements.push(line);
+    });
+  }
 
   const insightItems = [
-    sanitizedExperience.length > 0 ? 'Experience entries detected' : null,
-    sanitizedEducation.length > 0 ? 'Education history detected' : null,
+    experienceEntries.length > 0 ? 'Experience entries detected' : null,
+    educationEntries.length > 0 ? 'Education history detected' : null,
     skillBuckets.languages.length > 0 || skillBuckets.frameworks.length > 0
       ? 'Technical stack identified'
       : null,
@@ -336,7 +470,7 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
             </div>
           </div>
 
-          {extractionMeta?.usedOcr ? (
+          {usedOcr ? (
             <div className="rounded-2xl border border-info/30 bg-info/10 px-4 py-2 text-xs text-info">
               OCR fallback was used for this extraction because native PDF text quality was too low.
             </div>
@@ -447,7 +581,7 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
             )}
             {skillBuckets.spoken.length > 0 ? (
               <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Languages</div>
+                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Spoken languages</div>
                 <div className="mt-3 flex flex-wrap gap-2 text-sm text-text-secondary">
                   {skillBuckets.spoken.map((item) => (
                     <span key={`spoken-${item}`} className="rounded-full border border-border-subtle px-3 py-1">
@@ -471,12 +605,33 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
             <div className="space-y-3">
               {experienceEntries.map((entry, index) => (
                 <div key={`exp-${index}`} className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                  <div className="text-sm font-medium text-text-primary">{entry.title}</div>
+                  <div className="text-sm font-medium text-text-primary">{entry.title ?? 'Role'}</div>
                   {entry.company ? (
                     <div className="mt-1 text-xs text-text-tertiary">{entry.company}</div>
                   ) : null}
+                  {entry.location ? (
+                    <div className="mt-1 text-xs text-text-tertiary">{entry.location}</div>
+                  ) : null}
                   {entry.dates ? (
                     <div className="mt-1 text-xs text-text-tertiary">{entry.dates}</div>
+                  ) : null}
+                  {entry.bullets && entry.bullets.length > 0 ? (
+                    <ul className="mt-3 space-y-1 text-sm text-text-secondary">
+                      {entry.bullets.slice(0, 4).map((bullet) => (
+                        <li key={`${index}-${bullet}`} className="leading-6">
+                          {bullet}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {entry.technologies && entry.technologies.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-text-secondary">
+                      {entry.technologies.map((tech) => (
+                        <span key={`${index}-tech-${tech}`} className="rounded-full border border-border-subtle px-3 py-1">
+                          {tech}
+                        </span>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
               ))}
@@ -494,9 +649,34 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
             <div className="grid gap-3 md:grid-cols-2">
               {projectEntries.map((entry, index) => (
                 <div key={`proj-${index}`} className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                  <div className="text-sm font-medium text-text-primary">{entry.name}</div>
+                  <div className="text-sm font-medium text-text-primary">{entry.name ?? 'Project'}</div>
                   {entry.description ? (
                     <div className="mt-2 text-sm text-text-secondary">{entry.description}</div>
+                  ) : null}
+                  {entry.technologies && entry.technologies.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-text-secondary">
+                      {entry.technologies.map((tech) => (
+                        <span key={`${index}-proj-tech-${tech}`} className="rounded-full border border-border-subtle px-3 py-1">
+                          {tech}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {entry.links && entry.links.length > 0 ? (
+                    <div className="mt-3 space-y-1 text-xs text-text-tertiary">
+                      {entry.links.map((link) => (
+                        <div key={`${index}-proj-link-${link}`}>{link}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {entry.bullets && entry.bullets.length > 0 ? (
+                    <ul className="mt-3 space-y-1 text-sm text-text-secondary">
+                      {entry.bullets.slice(0, 4).map((bullet) => (
+                        <li key={`${index}-proj-bullet-${bullet}`} className="leading-6">
+                          {bullet}
+                        </li>
+                      ))}
+                    </ul>
                   ) : null}
                 </div>
               ))}
@@ -514,12 +694,23 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
             <div className="grid gap-3 md:grid-cols-2">
               {educationEntries.map((entry, index) => (
                 <div key={`edu-${index}`} className="rounded-2xl border border-border-subtle bg-bg-surface p-4">
-                  <div className="text-sm font-medium text-text-primary">{entry.degree}</div>
+                  <div className="text-sm font-medium text-text-primary">
+                    {entry.degree ?? 'Education'}
+                  </div>
                   {entry.institution ? (
                     <div className="mt-1 text-xs text-text-tertiary">{entry.institution}</div>
                   ) : null}
+                  {entry.fieldOfStudy ? (
+                    <div className="mt-1 text-xs text-text-tertiary">{entry.fieldOfStudy}</div>
+                  ) : null}
                   {entry.dates ? (
                     <div className="mt-1 text-xs text-text-tertiary">{entry.dates}</div>
+                  ) : null}
+                  {entry.grade ? (
+                    <div className="mt-1 text-xs text-text-tertiary">Grade: {entry.grade}</div>
+                  ) : null}
+                  {entry.description ? (
+                    <div className="mt-2 text-sm text-text-secondary">{entry.description}</div>
                   ) : null}
                 </div>
               ))}
