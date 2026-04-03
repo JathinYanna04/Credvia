@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import math
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -9,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+import httpx
 
 app = FastAPI(title="Credvia Resume Extractor", version="0.2.0")
 
@@ -58,8 +62,33 @@ SECTION_HEADINGS = {
     "volunteering": re.compile(r"\bvolunteer(ing)?\b", re.I),
 }
 
+SECTION_SYNONYMS = {
+    "skills": ["technical skills", "skills", "skillset", "tooling", "technologies", "technical expertise"],
+    "core_competencies": ["core competencies", "core strengths", "competencies"],
+    "education": ["education", "academics", "academic", "qualification", "qualifications"],
+    "experience": [
+        "experience",
+        "work experience",
+        "professional experience",
+        "employment",
+        "work history",
+        "internships",
+    ],
+    "projects": ["projects", "project work", "academic projects", "personal projects"],
+    "certifications": ["certifications", "certification", "licenses"],
+    "achievements": ["achievements", "awards", "honors"],
+    "positions_of_responsibility": ["positions of responsibility", "leadership", "responsibilities"],
+    "roles_responsibilities": ["roles & responsibilities", "roles and responsibilities"],
+    "publications": ["publications", "research"],
+    "volunteering": ["volunteering", "volunteer", "community"],
+    "languages": ["languages", "language proficiency"],
+    "courses": ["courses", "coursework", "relevant coursework"],
+    "declaration": ["declaration"],
+    "extra_curricular": ["extra curricular", "extra-curricular", "activities"],
+}
+
 DEGREE_KEYWORDS = re.compile(
-    r"\b(b\.?sc|bachelor|m\.?sc|master|ph\.?d|mba|b\.?tech|m\.?tech|associate)\b",
+    r"\b(b\.?sc|bachelor|m\.?sc|master|ph\.?d|mba|b\.?tech|m\.?tech|associate|intermediate|class\s*xii|class\s*x)\b",
     re.I,
 )
 
@@ -98,6 +127,122 @@ STOPWORDS = {
     "had",
     "resume",
 }
+
+SOFT_SKILLS = {
+    "problem solving",
+    "teamwork",
+    "communication",
+    "analytical thinking",
+    "backend development",
+    "agile development",
+}
+
+SPOKEN_LANGUAGES = {
+    "english",
+    "hindi",
+    "telugu",
+    "spanish",
+    "french",
+    "german",
+    "mandarin",
+    "tamil",
+    "kannada",
+    "malayalam",
+}
+
+PROGRAMMING_LANGUAGES = {
+    "java",
+    "python",
+    "c",
+    "c++",
+    "c#",
+    "javascript",
+    "typescript",
+    "sql",
+    "go",
+    "rust",
+    "kotlin",
+    "swift",
+    "php",
+    "ruby",
+    "r",
+    "scala",
+    "dart",
+}
+
+TECHNOLOGY_CANONICAL = {
+    "react": "React",
+    "react.js": "React",
+    "fastapi": "FastAPI",
+    "javalin": "Javalin",
+    "jdbc": "JDBC",
+    "postgresql": "PostgreSQL",
+    "postgres": "PostgreSQL",
+    "supabase": "Supabase",
+    "yolo": "YOLO",
+    "opencv": "OpenCV",
+    "node.js": "Node.js",
+    "nodejs": "Node.js",
+    "mongodb": "MongoDB",
+    "docker": "Docker",
+    "firebase": "Firebase",
+    "power bi": "Power BI",
+    "pypdf": "PyPDF",
+}
+
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+MAX_LLM_TEXT_CHARS = 12000
+
+
+def read_env_value(name: str, default: Optional[str] = None) -> Optional[str]:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    trimmed = value.strip()
+    return trimmed if trimmed else default
+
+
+def read_env_float(name: str, default: float) -> float:
+    raw = read_env_value(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+GROQ_MODEL = read_env_value("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_TIMEOUT_SECONDS = read_env_float("GROQ_TIMEOUT_SECONDS", 5.0)
+GROQ_FORCE = read_env_value("GROQ_FORCE", "false").lower() == "true"
+RESUME_CACHE_ENABLED = read_env_value("RESUME_CACHE_ENABLED", "false").lower() == "true"
+
+RESUME_CACHE: Dict[str, Dict[str, Any]] = {}
+RESUME_CACHE_MAX = 32
+
+
+def log_event(message: str) -> None:
+    if read_env_value("RESUME_LOG_LEVEL", "info").lower() == "none":
+        return
+    print(f"[resume-extractor] {message}")
+
+
+def get_cache_key(file_bytes: bytes) -> str:
+    return hashlib.sha256(file_bytes).hexdigest()
+
+
+def get_cached_parse(cache_key: str) -> Optional[Dict[str, Any]]:
+    if not RESUME_CACHE_ENABLED:
+        return None
+    return RESUME_CACHE.get(cache_key)
+
+
+def set_cached_parse(cache_key: str, payload: Dict[str, Any]) -> None:
+    if not RESUME_CACHE_ENABLED:
+        return
+    if len(RESUME_CACHE) >= RESUME_CACHE_MAX:
+        RESUME_CACHE.pop(next(iter(RESUME_CACHE)))
+    RESUME_CACHE[cache_key] = payload
 
 
 class RequestMeta(BaseModel):
@@ -268,10 +413,16 @@ def clean_resume_text(raw: str) -> Tuple[str, List[str]]:
     cleaned_lines = []
     actions: List[str] = []
     removed_lines = 0
+    normalized_bullets = 0
     for line in lines:
         stripped = line.strip()
         if not stripped:
             continue
+        before = stripped
+        stripped = stripped.replace("\uf0b7", "•").replace("\u2023", "•").replace("\u25e6", "•")
+        stripped = stripped.replace("â€¢", "•").replace("Â·", "•").replace("·", "•")
+        if stripped != before:
+            normalized_bullets += 1
         tokens = re.findall(r"\S+", stripped)
         alpha_words = re.findall(r"\b[A-Za-z]{2,}\b", stripped)
         internal_hits = count_hits(stripped, PDF_INTERNAL_PATTERNS)
@@ -293,6 +444,10 @@ def clean_resume_text(raw: str) -> Tuple[str, List[str]]:
     cleaned = re.sub(r"[^\S\n]+", " ", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     cleaned = re.sub(r"([A-Za-z])-\n(?=[A-Za-z])", r"\1", cleaned)
+    cleaned = re.sub(r"\s+\n", "\n", cleaned)
+    if normalized_bullets:
+        actions.append("normalized_bullets")
+    actions.append("normalized_whitespace")
     return cleaned.strip(), actions
 
 
@@ -433,65 +588,142 @@ def infer_candidate_basics(text: str) -> CandidateBasics:
     )
 
 
+def normalize_heading_text(text: str) -> str:
+    merged = re.sub(r"([A-Za-z])-\s*\n\s*([A-Za-z])", r"\1\2", text)
+    merged = merged.replace("\n", " ").strip()
+    merged = re.sub(r"[^A-Za-z0-9\s&/+-]", "", merged)
+    return re.sub(r"\s+", " ", merged).lower()
+
+
 def split_sections(text: str) -> Dict[str, List[str]]:
-    sections: Dict[str, List[str]] = {key: [] for key in SECTION_HEADINGS}
-    current = None
+    sections: Dict[str, List[str]] = {key: [] for key in SECTION_SYNONYMS}
+    current = "unknown"
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
-        heading = next((key for key, pattern in SECTION_HEADINGS.items() if pattern.search(stripped)), None)
-        if heading:
-            current = heading
-            continue
-        if current:
+        normalized = normalize_heading_text(stripped)
+        if len(stripped) <= 40 and stripped.isupper():
+            for key, synonyms in SECTION_SYNONYMS.items():
+                if any(normalized == label for label in synonyms):
+                    current = key
+                    normalized = ""
+                    break
+        if normalized:
+            for key, synonyms in SECTION_SYNONYMS.items():
+                if any(normalized.startswith(label) for label in synonyms):
+                    current = key
+                    normalized = ""
+                    break
+        if current in sections and normalized:
             sections[current].append(stripped)
     return sections
 
 
-def infer_skills(text: str, skills_section: List[str]) -> SkillsBlock:
-    skills_blob = " ".join(skills_section) if skills_section else text
-    tokens = re.split(r"[,/|•·\u2022]\s*", skills_blob)
-    tokens = [t.strip(" -:").lower() for t in tokens if len(t.strip()) > 1]
+def classify_skills(tokens: List[str]) -> SkillsBlock:
     catalog = {
-        "languages": {"python", "java", "javascript", "typescript", "go", "c++", "c#", "ruby"},
-        "frameworks": {"react", "next.js", "fastapi", "django", "flask", "express", "spring"},
-        "tools": {"git", "docker", "kubernetes", "terraform", "figma"},
-        "databases": {"postgresql", "mysql", "mongodb", "redis", "sqlite"},
-        "cloud": {"aws", "gcp", "azure", "lambda"},
+        "languages": PROGRAMMING_LANGUAGES,
+        "frameworks": {"react", "fastapi", "node.js", "node", "express", "django", "spring", "javalin"},
+        "tools": {"git", "linux", "kali linux", "docker", "postman", "power bi", "firebase", "opencv", "yolo"},
+        "databases": {"postgresql", "mysql", "mongodb", "supabase", "oracle"},
+        "cloud": {"aws", "gcp", "azure", "vercel", "netlify"},
     }
-    result = SkillsBlock()
+    normalized_to_original: Dict[str, str] = {}
     for token in tokens:
-        if token in catalog["languages"]:
-            result.languages.append(token)
-        elif token in catalog["frameworks"]:
-            result.frameworks.append(token)
-        elif token in catalog["tools"]:
-            result.tools.append(token)
-        elif token in catalog["databases"]:
-            result.databases.append(token)
-        elif token in catalog["cloud"]:
-            result.cloud.append(token)
-        elif len(token) > 2 and token not in STOPWORDS:
-            result.others.append(token)
+        cleaned = token.strip()
+        if cleaned:
+            normalized_to_original[cleaned.lower()] = cleaned
+    result = SkillsBlock()
+    for normalized, original in normalized_to_original.items():
+        if normalized in SPOKEN_LANGUAGES:
+            continue
+        if normalized in SOFT_SKILLS:
+            result.others.append(original)
+            continue
+        if normalized in catalog["languages"]:
+            result.languages.append(original)
+        elif normalized in catalog["frameworks"]:
+            result.frameworks.append(original)
+        elif normalized in catalog["tools"]:
+            result.tools.append(original)
+        elif normalized in catalog["databases"]:
+            result.databases.append(original)
+        elif normalized in catalog["cloud"]:
+            result.cloud.append(original)
+        elif len(normalized) > 2 and normalized not in STOPWORDS:
+            result.others.append(original)
     return result
+
+
+def parse_skills_section(lines: List[str]) -> SkillsBlock:
+    tokens: List[str] = []
+    for line in lines:
+        if re.search(r"\bcore competencies\b", line, re.I):
+            continue
+        parts = re.split(r"[•,|/;]\s*", line)
+        for part in parts:
+            part = part.strip(" :-")
+            if len(part) > 1:
+                tokens.append(part)
+    return classify_skills(tokens)
 
 
 def parse_education(lines: List[str]) -> List[EducationEntry]:
     entries: List[EducationEntry] = []
-    for line in lines:
-        degree = None
-        match = DEGREE_KEYWORDS.search(line)
-        if match:
-            degree = match.group(0)
-        years = re.findall(r"(19|20)\d{2}", line)
-        entry = EducationEntry(
-            institution=line if not degree else None,
-            degree=degree,
-            end_date=years[-1] if years else None,
-            description=line,
+    current: Optional[EducationEntry] = None
+
+    def extract_field_of_study(degree_line: str) -> Optional[str]:
+        cleaned = re.sub(r"\b(b\.?sc|bachelor|m\.?sc|master|ph\.?d|mba|b\.?tech|m\.?tech|associate)\b", "", degree_line, flags=re.I)
+        cleaned = re.sub(r"\b(class\s*xii|class\s*x)\b", "", cleaned, flags=re.I)
+        cleaned = cleaned.strip(" -")
+        return cleaned if cleaned else None
+
+    def parse_years(text: str) -> Tuple[Optional[str], Optional[str]]:
+        range_match = re.search(
+            r"(19|20)\d{2}\s*[–-]\s*(19|20)\d{2}|(19|20)\d{2}\s*[–-]\s*present",
+            text,
+            re.I,
         )
-        entries.append(entry)
+        if range_match:
+            years = re.findall(r"(19|20)\d{2}", text)
+            if len(years) >= 2:
+                return years[0], years[1]
+            if years:
+                return years[0], "Present"
+        single_year = re.search(r"(19|20)\d{2}", text)
+        if single_year:
+            return None, single_year.group(0)
+        return None, None
+
+    for line in lines:
+        if re.search(r"\b(declaration|roles?\s*&?\s*responsibilities)\b", line, re.I):
+            break
+        if DEGREE_KEYWORDS.search(line):
+            if current:
+                entries.append(current)
+            current = EducationEntry(degree=line)
+            current.field_of_study = extract_field_of_study(line)
+            continue
+        if re.search(r"\b(CGPA|GPA|Grade|Score)\b", line, re.I):
+            if current:
+                grade_match = re.search(r"(CGPA|GPA|Score)\s*[:\-]?\s*([0-9.]+(\s*/\s*\d+)?)", line, re.I)
+                current.grade = grade_match.group(2) if grade_match else line
+            continue
+        start_year, end_year = parse_years(line)
+        if start_year or end_year:
+            if current:
+                current.start_date = start_year or current.start_date
+                current.end_date = end_year or current.end_date
+            continue
+        if current and not current.institution:
+            current.institution = line
+        elif current:
+            if re.search(r"\brelevant coursework\b", line, re.I):
+                current.description = line if not current.description else f"{current.description}\n{line}"
+            else:
+                current.description = f"{current.description}\n{line}".strip() if current.description else line
+    if current:
+        entries.append(current)
     return entries
 
 
@@ -499,25 +731,29 @@ def parse_experience(lines: List[str]) -> List[ExperienceEntry]:
     entries: List[ExperienceEntry] = []
     current: Optional[ExperienceEntry] = None
     for line in lines:
+        if re.search(r"\b(projects?|education|certifications|declaration)\b", line, re.I):
+            break
         date_range = re.search(r"\b(\w{3,9}\s+\d{4}).*(\w{3,9}\s+\d{4}|Present)\b", line, re.I)
         if date_range:
             if current:
                 entries.append(current)
             current = ExperienceEntry(
-                title=line,
                 start_date=date_range.group(1),
                 end_date=date_range.group(2),
                 currently_working="present" in date_range.group(2).lower(),
             )
             continue
-        if line.startswith(("-", "•", "*")):
+        if line.startswith(("-", "•", "â€¢", "*")):
             if not current:
                 current = ExperienceEntry()
-            current.bullets.append(line.lstrip("-•* ").strip())
-        elif current and not current.company:
+            current.bullets.append(line.lstrip("-•â€¢* ").strip())
+            continue
+        if current and not current.company:
             current.company = line
         elif current and not current.title:
             current.title = line
+        elif current and current.location is None and re.search(r"\b[A-Z][a-z]+,\s?[A-Z]{2}\b", line):
+            current.location = line
     if current:
         entries.append(current)
     return entries
@@ -527,10 +763,16 @@ def parse_projects(lines: List[str]) -> List[ProjectEntry]:
     entries: List[ProjectEntry] = []
     current: Optional[ProjectEntry] = None
     for line in lines:
-        if line.startswith(("-", "•", "*")):
+        if re.search(r"\bdeclaration\b", line, re.I):
+            break
+        if re.match(r"^(19|20)\d{2}", line):
+            if current:
+                current.description = f"{current.description}\n{line}".strip() if current.description else line
+            continue
+        if line.startswith(("-", "•", "â€¢", "*")):
             if not current:
                 current = ProjectEntry()
-            current.bullets.append(line.lstrip("-•* ").strip())
+            current.bullets.append(line.lstrip("-•â€¢* ").strip())
             continue
         if current:
             entries.append(current)
@@ -538,6 +780,364 @@ def parse_projects(lines: List[str]) -> List[ProjectEntry]:
     if current:
         entries.append(current)
     return entries
+
+
+def parse_experience_v2(lines: List[str]) -> List[ExperienceEntry]:
+    entries: List[ExperienceEntry] = []
+    current: Optional[ExperienceEntry] = None
+    pending_header: List[str] = []
+
+    def is_date_line(text: str) -> bool:
+        return bool(
+            re.search(r"(19|20)\d{2}\s*[–-]\s*(19|20)\d{2}|(19|20)\d{2}\s*[–-]\s*present", text, re.I)
+            or re.search(r"\b([A-Za-z]{3,9}\s+\d{4}).*(Present|[A-Za-z]{3,9}\s+\d{4})\b", text, re.I)
+        )
+
+    def extract_date_range(text: str) -> Tuple[Optional[str], Optional[str]]:
+        month_years = re.findall(r"[A-Za-z]{3,9}\s+\d{4}", text)
+        if month_years:
+            start = month_years[0]
+            end = month_years[1] if len(month_years) > 1 else None
+            if re.search(r"present", text, re.I):
+                end = "Present"
+            return start, end
+        years = re.findall(r"(19|20)\d{2}", text)
+        if years:
+            start = years[0]
+            end = years[-1] if len(years) > 1 else None
+            if re.search(r"present", text, re.I):
+                end = "Present"
+            return start, end
+        return None, None
+
+    def apply_header(entry: ExperienceEntry, header_lines: List[str]) -> None:
+        if not header_lines:
+            return
+        entry.company = header_lines[0] if len(header_lines) > 0 else entry.company
+        entry.title = header_lines[1] if len(header_lines) > 1 else entry.title
+
+    for line in lines:
+        if re.search(r"\b(projects?|education|certifications|declaration)\b", line, re.I):
+            break
+        if is_date_line(line):
+            if not current:
+                current = ExperienceEntry()
+                apply_header(current, pending_header)
+                pending_header = []
+            start_date, end_date = extract_date_range(line)
+            if start_date:
+                current.start_date = start_date
+                current.end_date = end_date
+                current.currently_working = bool(end_date and "present" in end_date.lower())
+            continue
+        if line.startswith(("-", "•", "*")):
+            if not current:
+                current = ExperienceEntry()
+            current.bullets.append(line.lstrip("-•* ").strip())
+            continue
+        if not current:
+            pending_header.append(line)
+        else:
+            if not current.company:
+                current.company = line
+            elif not current.title:
+                current.title = line
+            elif current.location is None and re.search(r"\b[A-Z][a-z]+,\s?[A-Z]{2}\b", line):
+                current.location = line
+    if current:
+        entries.append(current)
+    return entries
+
+
+def parse_projects_v2(lines: List[str]) -> List[ProjectEntry]:
+    entries: List[ProjectEntry] = []
+    current: Optional[ProjectEntry] = None
+
+    def is_date_only(text: str) -> bool:
+        return bool(re.fullmatch(r"(19|20)\d{2}", text.strip()))
+
+    for line in lines:
+        if re.search(r"\bdeclaration\b", line, re.I):
+            break
+        if line.startswith(("-", "•", "*")):
+            if not current:
+                current = ProjectEntry()
+            current.bullets.append(line.lstrip("-•* ").strip())
+            continue
+        if is_date_only(line):
+            if current and not current.description:
+                current.description = line.strip()
+            continue
+        if current and current.name and (current.bullets or current.description):
+            entries.append(current)
+            current = ProjectEntry(name=line)
+            continue
+        if not current:
+            current = ProjectEntry(name=line)
+        elif current.name and not current.description:
+            current.description = line
+        else:
+            entries.append(current)
+            current = ProjectEntry(name=line)
+    if current:
+        entries.append(current)
+    return entries
+
+
+def should_use_llm_enhancement(
+    sections: SectionsBlock,
+    confidence: ConfidenceBlock,
+    section_map: Dict[str, List[str]],
+) -> bool:
+    if GROQ_FORCE:
+        return True
+    if confidence.overall < 0.85:
+        return True
+
+    skills_core_count = sum(
+        len(bucket)
+        for bucket in [
+            sections.skills.languages,
+            sections.skills.frameworks,
+            sections.skills.tools,
+            sections.skills.databases,
+            sections.skills.cloud,
+        ]
+    )
+    if skills_core_count == 0:
+        return True
+
+    experience_missing = any(
+        entry.bullets and not (entry.company or entry.title) for entry in sections.experience
+    )
+    if experience_missing:
+        return True
+
+    fragmented_education = (
+        len(sections.education) >= 4
+        and sum(1 for entry in sections.education if entry.degree or entry.institution)
+        < len(sections.education) * 0.6
+    )
+    if fragmented_education:
+        return True
+
+    projects_bad = any(
+        (entry.name and re.search(r"\bdeclaration\b", entry.name, re.I))
+        or (entry.name and re.match(r"^(19|20)\d{2}$", entry.name.strip()))
+        for entry in sections.projects
+    )
+    if projects_bad or section_map.get("declaration"):
+        return True
+
+    if (
+        len(sections.experience) == 0
+        and len(sections.projects) == 0
+        and len(sections.education) == 0
+        and skills_core_count == 0
+    ):
+        return True
+
+    return False
+
+
+def build_llm_prompt(cleaned_text: str, sections: Dict[str, Any]) -> str:
+    schema = {
+        "skills": {
+            "languages": [],
+            "frameworks": [],
+            "tools": [],
+            "databases": [],
+            "cloud": [],
+            "others": [],
+        },
+        "education": [
+            {
+                "institution": None,
+                "degree": None,
+                "field_of_study": None,
+                "start_date": None,
+                "end_date": None,
+                "grade": None,
+                "location": None,
+                "description": None,
+            }
+        ],
+        "experience": [
+            {
+                "company": None,
+                "title": None,
+                "location": None,
+                "start_date": None,
+                "end_date": None,
+                "currently_working": False,
+                "bullets": [],
+                "technologies": [],
+            }
+        ],
+        "projects": [
+            {
+                "name": None,
+                "description": None,
+                "technologies": [],
+                "links": [],
+                "bullets": [],
+            }
+        ],
+    }
+
+    return (
+        "You are a resume parsing assistant. Return ONLY JSON that matches the schema exactly. "
+        "Do not add fields. Do not hallucinate. Use only information present in the text. "
+        "Only correct skills classification, education grouping, experience grouping, and project grouping. "
+        "Do NOT compute total experience months. "
+        "Do NOT place spoken languages (English, Hindi, etc.) into programming languages. "
+        "Do NOT output date-only project names. "
+        "Do NOT hallucinate technologies not present in the text. "
+        "Certifications must only include real certifications.\n\n"
+        f"Resume text:\n{cleaned_text}\n\n"
+        f"Current parsed sections (may be imperfect):\n{json.dumps(sections, ensure_ascii=False)}\n\n"
+        f"JSON schema to follow exactly:\n{json.dumps(schema, ensure_ascii=False)}"
+    )
+
+
+def validate_refined_sections(refined: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    required = {"skills", "education", "experience", "projects"}
+    if not required.issubset(refined.keys()):
+        return None
+
+    skills = refined.get("skills")
+    if not isinstance(skills, dict):
+        return None
+    for bucket in ["languages", "frameworks", "tools", "databases", "cloud", "others"]:
+        if bucket not in skills or not isinstance(skills[bucket], list):
+            return None
+
+    if not isinstance(refined.get("education"), list):
+        return None
+    if not isinstance(refined.get("experience"), list):
+        return None
+    if not isinstance(refined.get("projects"), list):
+        return None
+
+    return refined
+
+
+def is_date_only_project(name: Optional[str]) -> bool:
+    if not name:
+        return True
+    return bool(re.fullmatch(r"(19|20)\d{2}", name.strip()))
+
+
+def is_valid_skills_block(skills: Dict[str, Any]) -> bool:
+    if not isinstance(skills, dict):
+        return False
+    languages = skills.get("languages", [])
+    if languages and all(str(lang).lower() in SPOKEN_LANGUAGES for lang in languages):
+        return False
+    return True
+
+
+def is_valid_experience_list(entries: List[Dict[str, Any]]) -> bool:
+    if not entries:
+        return False
+    has_header = False
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return False
+        if entry.get("company") or entry.get("title"):
+            has_header = True
+        if entry.get("bullets") and not (entry.get("company") or entry.get("title")):
+            return False
+    return has_header
+
+
+def is_valid_project_list(entries: List[Dict[str, Any]]) -> bool:
+    if not entries:
+        return False
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return False
+        if is_date_only_project(entry.get("name")):
+            return False
+        if entry.get("name") and re.search(r"\bdeclaration\b", entry.get("name"), re.I):
+            return False
+    return True
+
+
+def is_valid_education_list(entries: List[Dict[str, Any]]) -> bool:
+    if not entries:
+        return False
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return False
+        if not (entry.get("degree") or entry.get("institution")):
+            return False
+    return True
+
+
+def merge_refined_sections(base: SectionsBlock, refined: Dict[str, Any]) -> SectionsBlock:
+    base_dict = base.model_dump()
+
+    if (
+        refined.get("skills")
+        and any(refined["skills"].get(bucket) for bucket in refined["skills"])
+        and is_valid_skills_block(refined["skills"])
+    ):
+        base_dict["skills"] = refined["skills"]
+
+    if refined.get("education") and is_valid_education_list(refined["education"]):
+        base_dict["education"] = refined["education"]
+    if refined.get("experience") and is_valid_experience_list(refined["experience"]):
+        base_dict["experience"] = refined["experience"]
+    if refined.get("projects") and is_valid_project_list(refined["projects"]):
+        base_dict["projects"] = refined["projects"]
+
+    return SectionsBlock(**base_dict)
+
+
+def call_llm_refiner(cleaned_text: str, sections: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    call_llm_refiner.last_error = None
+    api_key = read_env_value("GROQ_API_KEY")
+    if not api_key:
+        call_llm_refiner.last_error = "missing_api_key"
+        return None
+
+    prompt = build_llm_prompt(cleaned_text, sections)
+    payload = {
+        "model": GROQ_MODEL,
+        "temperature": 0.1,
+        "messages": [
+            {"role": "system", "content": "Return ONLY JSON that matches the schema exactly."},
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        with httpx.Client(timeout=GROQ_TIMEOUT_SECONDS) as client:
+            response = client.post(
+                f"{GROQ_BASE_URL}/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+        if response.status_code in (401, 403, 429):
+            call_llm_refiner.last_error = "rate_limited"
+            return None
+        response.raise_for_status()
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        refined = json.loads(content)
+        return validate_refined_sections(refined)
+    except httpx.TimeoutException:
+        call_llm_refiner.last_error = "timeout"
+        return None
+    except (json.JSONDecodeError, KeyError, TypeError, httpx.HTTPError):
+        call_llm_refiner.last_error = "invalid_json"
+        return None
 
 
 def infer_keywords(text: str, max_count: int = 12) -> List[str]:
@@ -549,6 +1149,196 @@ def infer_keywords(text: str, max_count: int = 12) -> List[str]:
         counts[word] = counts.get(word, 0) + 1
     return [w for w, _ in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:max_count]]
 
+
+def clamp_score(value: float, min_value: float, max_value: float) -> float:
+    return max(min_value, min(max_value, value))
+
+
+def parse_month_year(value: Optional[str]) -> Optional[Tuple[int, int]]:
+    if not value:
+        return None
+    normalized = value.strip()
+    if re.search(r"present", normalized, re.I):
+        now = datetime.now(timezone.utc)
+        return now.year, now.month
+    month_match = re.search(r"\b([A-Za-z]{3,9})\s+((19|20)\d{2})\b", normalized)
+    if month_match:
+        month_name = month_match.group(1).lower()[:3]
+        month = MONTHS.get(month_name)
+        year = int(month_match.group(2))
+        if month:
+            return year, month
+    year_match = re.search(r"(19|20)\d{2}", normalized)
+    if year_match:
+        return int(year_match.group(0)), 1
+    return None
+
+
+def compute_total_experience_months(experience: List[ExperienceEntry]) -> int:
+    total = 0
+    for entry in experience:
+        start = parse_month_year(entry.start_date)
+        end = parse_month_year(entry.end_date)
+        if not start:
+            continue
+        end_date = end or (datetime.now(timezone.utc).year, datetime.now(timezone.utc).month)
+        start_months = start[0] * 12 + start[1]
+        end_months = end_date[0] * 12 + end_date[1]
+        if end_months < start_months:
+            continue
+        total += end_months - start_months
+    return int(clamp_score(total, 0, 600))
+
+
+def fix_skill_buckets(skills: SkillsBlock, actions: List[str]) -> SkillsBlock:
+    new_languages: List[str] = []
+    moved_spoken: List[str] = []
+    for lang in skills.languages:
+        normalized = lang.strip().lower()
+        if normalized in SPOKEN_LANGUAGES:
+            moved_spoken.append(lang)
+        elif normalized in PROGRAMMING_LANGUAGES:
+            new_languages.append(lang)
+        else:
+            skills.others.append(lang)
+    if moved_spoken:
+        actions.append("spoken_languages_rebucketed")
+    skills.languages = list(dict.fromkeys(new_languages))
+    skills.others = list(dict.fromkeys(skills.others))
+    return skills
+
+
+def normalize_certifications(lines: List[str]) -> List[str]:
+    certs: List[str] = []
+    for line in lines:
+        if re.search(
+            r"\b(certified|certification|specialization|certificate|associate|professional certificate)\b",
+            line,
+            re.I,
+        ):
+            if re.search(r"\b(hackathon|challenge|codefrenzy|innovathon|webathon)\b", line, re.I):
+                continue
+            if re.search(r"\b(course|coursework|training)\b", line, re.I):
+                continue
+            certs.append(line.strip("• ").strip())
+    return list(dict.fromkeys(certs))
+
+
+def recalculate_extraction_quality_score(
+    candidate: CandidateBasics,
+    sections: SectionsBlock,
+    confidence: ConfidenceBlock,
+    has_cert_section: bool,
+) -> float:
+    score = 100.0
+    if not candidate.full_name:
+        score -= 8
+    if not candidate.email:
+        score -= 6
+    if not candidate.phone:
+        score -= 4
+
+    if not any(
+        [
+            sections.skills.languages,
+            sections.skills.frameworks,
+            sections.skills.tools,
+            sections.skills.databases,
+            sections.skills.cloud,
+        ]
+    ):
+        score -= 15
+
+    for entry in sections.education:
+        if not entry.degree or not entry.institution:
+            score -= 6
+
+    for entry in sections.experience:
+        if entry.bullets and not (entry.company or entry.title):
+            score -= 8
+
+    for entry in sections.projects:
+        if not entry.name or is_date_only_project(entry.name):
+            score -= 10
+        if not entry.technologies and entry.bullets:
+            score -= 4
+
+    if has_cert_section and not sections.certifications:
+        score -= 6
+    if sections.certifications:
+        score += 2
+
+    score += min(5.0, confidence.overall * 5.0)
+    return clamp_score(score, 0, 100)
+
+
+def extract_technologies(text: str) -> List[str]:
+    if not text:
+        return []
+    normalized = text.lower()
+    found: List[str] = []
+    for key, canonical in TECHNOLOGY_CANONICAL.items():
+        if key in normalized:
+            found.append(canonical)
+    return list(dict.fromkeys(found))
+
+
+def infer_role_from_sections(sections: SectionsBlock) -> Optional[str]:
+    combined = " ".join(
+        filter(
+            None,
+            [
+                " ".join([entry.title or "" for entry in sections.experience]),
+                " ".join([entry.description or "" for entry in sections.projects]),
+                " ".join([entry.name or "" for entry in sections.projects]),
+                " ".join([entry.bullets[0] for entry in sections.projects if entry.bullets]),
+            ],
+        )
+    )
+    techs = extract_technologies(combined)
+    lowered = " ".join(techs).lower()
+    if any(item in lowered for item in ["opencv", "yolo"]):
+        return "Computer Vision Developer"
+    if any(item in lowered for item in ["fastapi", "postgresql", "supabase", "pypdf"]):
+        if any(item in lowered for item in ["react", "node.js"]):
+            return "Full Stack Developer"
+        return "Backend Developer"
+    if any(item in lowered for item in ["react", "node.js"]) and not any(
+        item in lowered for item in ["fastapi", "postgresql", "supabase"]
+    ):
+        return "Frontend Developer"
+    if any(item in lowered for item in ["react", "node.js"]) and any(
+        item in lowered for item in ["fastapi", "postgresql", "supabase"]
+    ):
+        return "Full Stack Developer"
+    return None
+
+
+def post_process_parsed_resume(sections: SectionsBlock, actions: List[str]) -> SectionsBlock:
+    sections.skills = fix_skill_buckets(sections.skills, actions)
+
+    project_techs_applied = False
+    for project in sections.projects:
+        combined = " ".join(filter(None, [project.name, project.description] + project.bullets))
+        techs = extract_technologies(combined)
+        if techs:
+            project.technologies = list(dict.fromkeys(project.technologies + techs))
+            project_techs_applied = True
+    if project_techs_applied:
+        actions.append("project_technologies_inferred")
+
+    experience_techs_applied = False
+    for entry in sections.experience:
+        combined = " ".join(filter(None, [entry.title or "", entry.company or ""] + entry.bullets))
+        techs = extract_technologies(combined)
+        if techs:
+            entry.technologies = list(dict.fromkeys(entry.technologies + techs))
+            experience_techs_applied = True
+    if experience_techs_applied:
+        actions.append("experience_technologies_inferred")
+
+    actions.append("post_processed_v2")
+    return sections
 
 def compute_confidence(candidate: CandidateBasics, sections: SectionsBlock) -> ConfidenceBlock:
     basics_score = sum(
@@ -564,30 +1354,24 @@ def compute_confidence(candidate: CandidateBasics, sections: SectionsBlock) -> C
             sections.skills.others,
         ]
     ) else 0.2
-    education_score = min(1.0, len(sections.education) / 2.0)
-    experience_score = min(1.0, len(sections.experience) / 2.0)
-    projects_score = min(1.0, len(sections.projects) / 2.0)
+    education_quality = sum(1 for entry in sections.education if entry.degree and entry.institution)
+    education_score = min(1.0, education_quality / max(len(sections.education), 1))
+    experience_quality = sum(1 for entry in sections.experience if entry.company or entry.title)
+    experience_score = min(1.0, experience_quality / max(len(sections.experience), 1))
+    projects_score = min(1.0, len(sections.projects) / 3.0)
     overall = round((basics_score + skills_score + education_score + experience_score + projects_score) / 5.0, 2)
     return ConfidenceBlock(
-        candidate_basics=round(basics_score, 2),
-        skills=round(skills_score, 2),
-        education=round(education_score, 2),
-        experience=round(experience_score, 2),
-        projects=round(projects_score, 2),
-        overall=overall,
+        candidate_basics=clamp_score(round(basics_score, 2), 0, 1),
+        skills=clamp_score(round(skills_score, 2), 0, 1),
+        education=clamp_score(round(education_score, 2), 0, 1),
+        experience=clamp_score(round(experience_score, 2), 0, 1),
+        projects=clamp_score(round(projects_score, 2), 0, 1),
+        overall=clamp_score(overall, 0, 1),
     )
 
 
 def estimate_experience_months(experience: List[ExperienceEntry]) -> int:
-    total = 0
-    current_year = datetime.now(timezone.utc).year
-    for entry in experience:
-        years = re.findall(r"(19|20)\d{2}", " ".join(filter(None, [entry.start_date, entry.end_date])))
-        if len(years) >= 2:
-            total += (int(years[1]) - int(years[0])) * 12
-        elif len(years) == 1:
-            total += max(0, current_year - int(years[0])) * 12
-    return max(total, 0)
+    return compute_total_experience_months(experience)
 
 
 def infer_seniority(experience: List[ExperienceEntry]) -> Optional[str]:
@@ -627,6 +1411,64 @@ async def extract(
     resolved_filename = filename or file.filename or "resume"
     resolved_mime = mime_type or file.content_type or "application/octet-stream"
 
+    cache_key = get_cache_key(data)
+    cached = get_cached_parse(cache_key)
+    if cached:
+        log_event("cache hit")
+        raw_text = cached["raw_text"]
+        cleaned_text = cached["cleaned_text"]
+        page_count = cached["page_count"]
+        page_methods = cached["page_methods"]
+        method_used = cached["method_used"]
+        contamination = cached["contamination"]
+        candidate = CandidateBasics(**cached["candidate"])
+        sections = SectionsBlock(**cached["sections"])
+        confidence = ConfidenceBlock(**cached["confidence"])
+        ats_cached = cached["ats"]
+        llm_action = cached.get("llm_action", "llm_cached")
+        actions_post: List[str] = ["cache_hit"]
+        status = StatusBlock(
+            success=True,
+            processing_mode=method_used,
+            warnings=cached.get("warnings", []),
+            errors=cached.get("errors", []),
+            confidence_overall=confidence.overall,
+        )
+
+        parsed_at = datetime.now(timezone.utc).isoformat()
+        return ExtractResponse(
+            schema_version=SCHEMA_VERSION,
+            parser_version=PARSER_VERSION,
+            request=RequestMeta(
+                request_id=str(uuid.uuid4()),
+                filename=resolved_filename,
+                mime_type=resolved_mime,
+                file_size_bytes=len(data),
+                parsed_at=parsed_at,
+            ),
+            status=status,
+            raw=RawBlock(raw_text=raw_text, cleaned_text=cleaned_text, page_count=page_count),
+            candidate=candidate,
+            sections=sections,
+            ats=AtsFields(
+                total_experience_months=ats_cached["total_experience_months"],
+                inferred_role=ats_cached["inferred_role"],
+                seniority_level=ats_cached["seniority_level"],
+                top_keywords=ats_cached["top_keywords"],
+                missing_fields=ats_cached["missing_fields"],
+                extraction_quality_score=ats_cached["extraction_quality_score"],
+            ),
+            confidence=confidence,
+            diagnostics=DiagnosticsBlock(
+                method_used=method_used,
+                page_methods=page_methods,
+                contamination_score=contamination,
+                salvage_score=round(confidence.overall * 100.0, 2),
+                cleaning_actions=cached.get("cleaning_actions", []) + actions_post + [llm_action, "post_processed_v2"],
+            ),
+            normalized_resume=NormalizedResume(text=cached["normalized_text"], sections=cached["section_map"]),
+        )
+
     raw_text, page_count, page_methods, method_used, extraction_actions = extract_text_by_type(
         data, resolved_mime, resolved_filename
     )
@@ -653,12 +1495,19 @@ async def extract(
 
     candidate = infer_candidate_basics(reconstructed_text)
     section_map = split_sections(reconstructed_text)
+    skills = parse_skills_section(section_map.get("skills", []))
+    education = parse_education(section_map.get("education", []))
+    experience = parse_experience_v2(section_map.get("experience", []))
+    projects = parse_projects_v2(section_map.get("projects", []))
+    certifications = normalize_certifications(
+        section_map.get("achievements", []) + section_map.get("certifications", [])
+    )
     sections = SectionsBlock(
-        skills=infer_skills(reconstructed_text, section_map.get("skills", [])),
-        education=parse_education(section_map.get("education", [])),
-        experience=parse_experience(section_map.get("experience", [])),
-        projects=parse_projects(section_map.get("projects", [])),
-        certifications=section_map.get("certifications", []),
+        skills=skills,
+        education=education,
+        experience=experience,
+        projects=projects,
+        certifications=certifications,
         achievements=section_map.get("achievements", []),
         positions_of_responsibility=section_map.get("positions_of_responsibility", []),
         publications=section_map.get("publications", []),
@@ -666,10 +1515,39 @@ async def extract(
     )
 
     confidence = compute_confidence(candidate, sections)
+    actions_post: List[str] = []
+
+    llm_action = "llm_skipped_strong_deterministic"
+    if should_use_llm_enhancement(sections, confidence, section_map):
+        trimmed_text = cleaned_text[:MAX_LLM_TEXT_CHARS]
+        refined = call_llm_refiner(trimmed_text, sections.model_dump())
+        if refined:
+            sections = merge_refined_sections(sections, refined)
+            llm_action = "llm_enhanced"
+        else:
+            last_error = getattr(call_llm_refiner, "last_error", None)
+            if last_error == "timeout":
+                llm_action = "llm_timeout_fallback"
+            elif last_error == "rate_limited":
+                llm_action = "llm_rate_limited"
+            elif last_error == "missing_api_key":
+                llm_action = "llm_missing_api_key"
+            else:
+                llm_action = "llm_invalid_json_fallback"
+    if GROQ_FORCE:
+        actions_post.append("llm_forced")
+
+    sections = post_process_parsed_resume(sections, actions_post)
+    if certifications:
+        actions_post.append("certifications_normalized")
+
+    confidence = compute_confidence(candidate, sections)
     status.confidence_overall = confidence.overall
 
-    total_experience = estimate_experience_months(sections.experience)
-    inferred_role = sections.experience[0].title if sections.experience else None
+    total_experience = compute_total_experience_months(sections.experience)
+    inferred_role = infer_role_from_sections(sections) or (sections.experience[0].title if sections.experience else None)
+    if inferred_role:
+        actions_post.append("role_inferred")
     seniority = infer_seniority(sections.experience)
     top_keywords = infer_keywords(reconstructed_text)
     missing_fields = [
@@ -693,11 +1571,14 @@ async def extract(
         if not value
     ]
 
-    extraction_quality_score = max(0.0, 100.0 - contamination + (confidence.overall * 20))
+    has_cert_section = bool(section_map.get("certifications") or section_map.get("achievements"))
+    extraction_quality_score = recalculate_extraction_quality_score(
+        candidate, sections, confidence, has_cert_section
+    )
 
     parsed_at = datetime.now(timezone.utc).isoformat()
 
-    return ExtractResponse(
+    response = ExtractResponse(
         schema_version=SCHEMA_VERSION,
         parser_version=PARSER_VERSION,
         request=RequestMeta(
@@ -725,7 +1606,46 @@ async def extract(
             page_methods=page_methods,
             contamination_score=contamination,
             salvage_score=round(confidence.overall * 100.0, 2),
-            cleaning_actions=cleaning_actions + extraction_actions,
+            cleaning_actions=cleaning_actions
+            + extraction_actions
+            + ["parsed_sections_v2", llm_action]
+            + actions_post
+            + ["experience_months_recomputed", "ats_score_recalculated", "post_processed_v2"]
+            + (["ignored_declaration"] if section_map.get("declaration") else []),
         ),
         normalized_resume=NormalizedResume(text=reconstructed_text, sections=section_map),
     )
+    set_cached_parse(
+        cache_key,
+        {
+            "raw_text": raw_text,
+            "cleaned_text": cleaned_text,
+            "page_count": page_count,
+            "page_methods": page_methods,
+            "method_used": method_used,
+            "contamination": contamination,
+            "candidate": candidate.model_dump(),
+            "sections": sections.model_dump(),
+            "confidence": confidence.model_dump(),
+            "ats": {
+                "total_experience_months": total_experience,
+                "inferred_role": inferred_role,
+                "seniority_level": seniority,
+                "top_keywords": top_keywords,
+                "missing_fields": missing_fields,
+                "extraction_quality_score": round(extraction_quality_score, 2),
+            },
+            "llm_action": llm_action,
+            "cleaning_actions": cleaning_actions
+            + extraction_actions
+            + ["parsed_sections_v2", llm_action]
+            + actions_post
+            + ["experience_months_recomputed", "ats_score_recalculated", "post_processed_v2"],
+            "normalized_text": reconstructed_text,
+            "section_map": section_map,
+            "warnings": warnings,
+            "errors": errors,
+        },
+    )
+    log_event(f"extract complete: llm={llm_action}")
+    return response
