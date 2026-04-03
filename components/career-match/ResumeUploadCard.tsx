@@ -83,10 +83,15 @@ export function ResumeUploadCard({ onUploaded, onUploadStateChange }: ResumeUplo
         />
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border-subtle bg-bg-surface/80 text-accent">
+              <UploadCloud className="h-5 w-5" />
+            </div>
+            <div className="space-y-1">
             <p className="text-sm text-text-primary">Supported formats: PDF, DOCX, TXT, RTF, PNG, JPG</p>
             <p className="text-xs text-text-tertiary">Legacy DOC requires conversion to DOCX/PDF before upload</p>
             <p className="text-xs text-text-tertiary">Max file size: 10 MB</p>
+            </div>
           </div>
           <Button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}

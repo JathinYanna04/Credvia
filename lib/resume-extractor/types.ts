@@ -73,7 +73,7 @@ export type ExtractResponse = {
     volunteering: string[];
   };
   ats: {
-    total_experience_months: number;
+    total_experience_months: number | null;
     inferred_role?: string | null;
     seniority_level?: string | null;
     top_keywords: string[];
@@ -94,6 +94,10 @@ export type ExtractResponse = {
     contamination_score: number;
     salvage_score: number;
     cleaning_actions: string[];
+    final_source?: 'llm' | 'heuristic_fallback' | 'merged';
+    llm_status?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
+    llm_error?: string | null;
+    llm_raw_present?: boolean | null;
   };
   normalized_resume: {
     text: string;

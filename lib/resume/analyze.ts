@@ -82,6 +82,10 @@ export interface ExternalExtractionPayload {
     contamination_score?: number;
     salvage_score?: number;
     cleaning_actions?: string[];
+    final_source?: 'llm' | 'heuristic_fallback' | 'merged';
+    llm_status?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
+    llm_error?: string | null;
+    llm_raw_present?: boolean;
   };
   normalized_resume?: {
     text?: string | null;
@@ -566,6 +570,9 @@ export async function prepareResumeFromExternalExtraction(
       external.diagnostics?.salvage_score ?? external.salvage_score ?? 0;
     const methodUsed =
       external.diagnostics?.method_used ?? external.method_used ?? 'fastapi';
+    const llmStatus = external.diagnostics?.llm_status ?? null;
+    const llmFinalSource = external.diagnostics?.final_source ?? null;
+    const llmError = external.diagnostics?.llm_error ?? null;
     const quality = assessResumeTextQuality(cleanedText);
     const parsed = parseResumeText(reconstructedText, {
       extractionMethod: methodUsed,
@@ -592,6 +599,9 @@ export async function prepareResumeFromExternalExtraction(
       cleanedTextLength,
       contaminationScore,
       salvageScore,
+      llmStatus,
+      llmFinalSource,
+      llmError,
     });
 
     await updateResumeLifecycleStatus(
@@ -631,7 +641,7 @@ export async function prepareResumeFromExternalExtraction(
         cleanedTextLength: cleanedText.length,
         contaminationScore,
         salvageScore,
-        cleaningActions: [],
+        cleaningActions: external.diagnostics?.cleaning_actions ?? [],
         readiness: quality.isAcceptable ? 'partial' : 'poor',
         quality,
       },

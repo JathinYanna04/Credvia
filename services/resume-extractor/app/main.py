@@ -79,6 +79,7 @@ SECTION_SYNONYMS = {
     "achievements": ["achievements", "awards", "honors"],
     "positions_of_responsibility": ["positions of responsibility", "leadership", "responsibilities"],
     "roles_responsibilities": ["roles & responsibilities", "roles and responsibilities"],
+    "hackathons": ["hackathons", "hackathons & competitions", "competitions", "contests"],
     "publications": ["publications", "research"],
     "volunteering": ["volunteering", "volunteer", "community"],
     "languages": ["languages", "language proficiency"],
@@ -330,7 +331,7 @@ class SectionsBlock(BaseModel):
 
 
 class AtsFields(BaseModel):
-    total_experience_months: int = 0
+    total_experience_months: Optional[int] = None
     inferred_role: Optional[str] = None
     seniority_level: Optional[str] = None
     top_keywords: List[str] = Field(default_factory=list)
@@ -353,6 +354,10 @@ class DiagnosticsBlock(BaseModel):
     contamination_score: float = 0.0
     salvage_score: float = 0.0
     cleaning_actions: List[str] = Field(default_factory=list)
+    final_source: Optional[str] = None
+    llm_status: Optional[str] = None
+    llm_error: Optional[str] = None
+    llm_raw_present: Optional[bool] = None
 
 
 class NormalizedResume(BaseModel):
@@ -830,10 +835,10 @@ def parse_experience_v2(lines: List[str]) -> List[ExperienceEntry]:
                 current.end_date = end_date
                 current.currently_working = bool(end_date and "present" in end_date.lower())
             continue
-        if line.startswith(("-", "•", "*")):
+        if line.startswith(("-", "•", "â€¢", "*")):
             if not current:
                 current = ExperienceEntry()
-            current.bullets.append(line.lstrip("-•* ").strip())
+            current.bullets.append(line.lstrip("-•â€¢* ").strip())
             continue
         if not current:
             pending_header.append(line)
@@ -859,10 +864,10 @@ def parse_projects_v2(lines: List[str]) -> List[ProjectEntry]:
     for line in lines:
         if re.search(r"\bdeclaration\b", line, re.I):
             break
-        if line.startswith(("-", "•", "*")):
+        if line.startswith(("-", "•", "â€¢", "*")):
             if not current:
                 current = ProjectEntry()
-            current.bullets.append(line.lstrip("-•* ").strip())
+            current.bullets.append(line.lstrip("-•â€¢* ").strip())
             continue
         if is_date_only(line):
             if current and not current.description:
@@ -1022,6 +1027,28 @@ def validate_refined_sections(refined: Dict[str, Any]) -> Optional[Dict[str, Any
     return refined
 
 
+def parse_llm_json(content: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Optional[str], bool]:
+    if content is None:
+        return None, "empty_response", False
+    raw_present = bool(content.strip())
+    if not raw_present:
+        return None, "empty_response", False
+    cleaned = content.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```[a-zA-Z]*\n", "", cleaned)
+        cleaned = cleaned.rsplit("```", 1)[0].strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None, "no_json_object", raw_present
+    candidate = cleaned[start : end + 1]
+    try:
+        parsed = json.loads(candidate)
+        return parsed, None, raw_present
+    except json.JSONDecodeError as exc:
+        return None, f"json_decode_error:{exc.msg}", raw_present
+
+
 def is_date_only_project(name: Optional[str]) -> bool:
     if not name:
         return True
@@ -1097,9 +1124,12 @@ def merge_refined_sections(base: SectionsBlock, refined: Dict[str, Any]) -> Sect
 
 def call_llm_refiner(cleaned_text: str, sections: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     call_llm_refiner.last_error = None
+    call_llm_refiner.last_status = None
+    call_llm_refiner.last_raw_present = False
     api_key = read_env_value("GROQ_API_KEY")
     if not api_key:
         call_llm_refiner.last_error = "missing_api_key"
+        call_llm_refiner.last_status = "error"
         return None
 
     prompt = build_llm_prompt(cleaned_text, sections)
@@ -1126,17 +1156,26 @@ def call_llm_refiner(cleaned_text: str, sections: Dict[str, Any]) -> Optional[Di
             )
         if response.status_code in (401, 403, 429):
             call_llm_refiner.last_error = "rate_limited"
+            call_llm_refiner.last_status = "error"
             return None
         response.raise_for_status()
         data = response.json()
         content = data["choices"][0]["message"]["content"]
-        refined = json.loads(content)
-        return validate_refined_sections(refined)
+        refined, parse_error, raw_present = parse_llm_json(content)
+        call_llm_refiner.last_raw_present = raw_present
+        if parse_error:
+            call_llm_refiner.last_error = parse_error
+            call_llm_refiner.last_status = "invalid_json"
+            return None
+        call_llm_refiner.last_status = "success"
+        return validate_refined_sections(refined or {})
     except httpx.TimeoutException:
         call_llm_refiner.last_error = "timeout"
+        call_llm_refiner.last_status = "timeout"
         return None
     except (json.JSONDecodeError, KeyError, TypeError, httpx.HTTPError):
         call_llm_refiner.last_error = "invalid_json"
+        call_llm_refiner.last_status = "error"
         return None
 
 
@@ -1174,19 +1213,23 @@ def parse_month_year(value: Optional[str]) -> Optional[Tuple[int, int]]:
     return None
 
 
-def compute_total_experience_months(experience: List[ExperienceEntry]) -> int:
+def compute_total_experience_months(experience: List[ExperienceEntry]) -> Optional[int]:
     total = 0
+    has_valid = False
     for entry in experience:
         start = parse_month_year(entry.start_date)
         end = parse_month_year(entry.end_date)
         if not start:
             continue
+        has_valid = True
         end_date = end or (datetime.now(timezone.utc).year, datetime.now(timezone.utc).month)
         start_months = start[0] * 12 + start[1]
         end_months = end_date[0] * 12 + end_date[1]
         if end_months < start_months:
             continue
         total += end_months - start_months
+    if not has_valid:
+        return None
     return int(clamp_score(total, 0, 600))
 
 
@@ -1283,6 +1326,23 @@ def extract_technologies(text: str) -> List[str]:
     return list(dict.fromkeys(found))
 
 
+def normalize_nullable(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    lowered = value.strip().lower()
+    if lowered in {"null", "none", "n/a", "na"}:
+        return None
+    return value
+
+
+def infer_location_from_text(text: str) -> Optional[str]:
+    for line in text.splitlines():
+        match = re.search(r"\b([A-Z][a-z]+,\s*[A-Z][a-z]+)\b", line)
+        if match:
+            return match.group(1)
+    return None
+
+
 def infer_role_from_sections(sections: SectionsBlock) -> Optional[str]:
     combined = " ".join(
         filter(
@@ -1314,6 +1374,23 @@ def infer_role_from_sections(sections: SectionsBlock) -> Optional[str]:
     return None
 
 
+def post_process_candidate(candidate: CandidateBasics, text: str, actions: List[str]) -> CandidateBasics:
+    candidate.location = normalize_nullable(candidate.location)
+    if not candidate.location:
+        inferred = infer_location_from_text(text)
+        if inferred:
+            candidate.location = inferred
+            actions.append("location_salvaged")
+    candidate.full_name = normalize_nullable(candidate.full_name)
+    candidate.email = normalize_nullable(candidate.email)
+    candidate.phone = normalize_nullable(candidate.phone)
+    candidate.linkedin = normalize_nullable(candidate.linkedin)
+    candidate.github = normalize_nullable(candidate.github)
+    candidate.portfolio = normalize_nullable(candidate.portfolio)
+    candidate.summary = normalize_nullable(candidate.summary)
+    return candidate
+
+
 def post_process_parsed_resume(sections: SectionsBlock, actions: List[str]) -> SectionsBlock:
     sections.skills = fix_skill_buckets(sections.skills, actions)
 
@@ -1336,6 +1413,27 @@ def post_process_parsed_resume(sections: SectionsBlock, actions: List[str]) -> S
             experience_techs_applied = True
     if experience_techs_applied:
         actions.append("experience_technologies_inferred")
+
+    for entry in sections.education:
+        entry.institution = normalize_nullable(entry.institution)
+        entry.degree = normalize_nullable(entry.degree)
+        entry.field_of_study = normalize_nullable(entry.field_of_study)
+        entry.start_date = normalize_nullable(entry.start_date)
+        entry.end_date = normalize_nullable(entry.end_date)
+        entry.grade = normalize_nullable(entry.grade)
+        entry.location = normalize_nullable(entry.location)
+        entry.description = normalize_nullable(entry.description)
+
+    for entry in sections.experience:
+        entry.company = normalize_nullable(entry.company)
+        entry.title = normalize_nullable(entry.title)
+        entry.location = normalize_nullable(entry.location)
+        entry.start_date = normalize_nullable(entry.start_date)
+        entry.end_date = normalize_nullable(entry.end_date)
+
+    for entry in sections.projects:
+        entry.name = normalize_nullable(entry.name)
+        entry.description = normalize_nullable(entry.description)
 
     actions.append("post_processed_v2")
     return sections
@@ -1370,7 +1468,7 @@ def compute_confidence(candidate: CandidateBasics, sections: SectionsBlock) -> C
     )
 
 
-def estimate_experience_months(experience: List[ExperienceEntry]) -> int:
+def estimate_experience_months(experience: List[ExperienceEntry]) -> Optional[int]:
     return compute_total_experience_months(experience)
 
 
@@ -1438,7 +1536,7 @@ async def extract(
         parsed_at = datetime.now(timezone.utc).isoformat()
         return ExtractResponse(
             schema_version=SCHEMA_VERSION,
-            parser_version=PARSER_VERSION,
+            parser_version=cached.get("parser_version", PARSER_VERSION),
             request=RequestMeta(
                 request_id=str(uuid.uuid4()),
                 filename=resolved_filename,
@@ -1465,6 +1563,10 @@ async def extract(
                 contamination_score=contamination,
                 salvage_score=round(confidence.overall * 100.0, 2),
                 cleaning_actions=cached.get("cleaning_actions", []) + actions_post + [llm_action, "post_processed_v2"],
+                final_source=cached.get("final_source"),
+                llm_status=cached.get("llm_status"),
+                llm_error=cached.get("llm_error"),
+                llm_raw_present=cached.get("llm_raw_present"),
             ),
             normalized_resume=NormalizedResume(text=cached["normalized_text"], sections=cached["section_map"]),
         )
@@ -1499,8 +1601,18 @@ async def extract(
     education = parse_education(section_map.get("education", []))
     experience = parse_experience_v2(section_map.get("experience", []))
     projects = parse_projects_v2(section_map.get("projects", []))
+    hackathons = section_map.get("hackathons", [])
+    achievements = [
+        line
+        for line in section_map.get("achievements", [])
+        if not re.search(r"\b(hackathon|competition|contest)\b", line, re.I)
+    ]
     certifications = normalize_certifications(
         section_map.get("achievements", []) + section_map.get("certifications", [])
+    )
+    positions_of_responsibility = (
+        section_map.get("positions_of_responsibility", [])
+        + section_map.get("roles_responsibilities", [])
     )
     sections = SectionsBlock(
         skills=skills,
@@ -1508,8 +1620,8 @@ async def extract(
         experience=experience,
         projects=projects,
         certifications=certifications,
-        achievements=section_map.get("achievements", []),
-        positions_of_responsibility=section_map.get("positions_of_responsibility", []),
+        achievements=achievements,
+        positions_of_responsibility=positions_of_responsibility,
         publications=section_map.get("publications", []),
         volunteering=section_map.get("volunteering", []),
     )
@@ -1518,14 +1630,22 @@ async def extract(
     actions_post: List[str] = []
 
     llm_action = "llm_skipped_strong_deterministic"
+    llm_status: str = "skipped"
+    llm_error: Optional[str] = None
+    llm_raw_present: Optional[bool] = None
     if should_use_llm_enhancement(sections, confidence, section_map):
         trimmed_text = cleaned_text[:MAX_LLM_TEXT_CHARS]
         refined = call_llm_refiner(trimmed_text, sections.model_dump())
         if refined:
             sections = merge_refined_sections(sections, refined)
             llm_action = "llm_enhanced"
+            llm_status = "success"
+            llm_raw_present = getattr(call_llm_refiner, "last_raw_present", None)
         else:
             last_error = getattr(call_llm_refiner, "last_error", None)
+            llm_status = getattr(call_llm_refiner, "last_status", "error")
+            llm_error = last_error
+            llm_raw_present = getattr(call_llm_refiner, "last_raw_present", None)
             if last_error == "timeout":
                 llm_action = "llm_timeout_fallback"
             elif last_error == "rate_limited":
@@ -1534,9 +1654,12 @@ async def extract(
                 llm_action = "llm_missing_api_key"
             else:
                 llm_action = "llm_invalid_json_fallback"
+    if llm_status == "skipped":
+        llm_raw_present = False
     if GROQ_FORCE:
         actions_post.append("llm_forced")
 
+    candidate = post_process_candidate(candidate, reconstructed_text, actions_post)
     sections = post_process_parsed_resume(sections, actions_post)
     if certifications:
         actions_post.append("certifications_normalized")
@@ -1576,11 +1699,24 @@ async def extract(
         candidate, sections, confidence, has_cert_section
     )
 
+    final_source = "heuristic_fallback"
+    if llm_status == "success":
+        if not sections.education and not sections.experience and not sections.projects:
+            final_source = "llm"
+        else:
+            final_source = "merged"
+
+    parser_version = PARSER_VERSION
+    if final_source == "merged":
+        parser_version = f"{PARSER_VERSION}+llm"
+    elif final_source == "llm":
+        parser_version = "phase2-llm"
+
     parsed_at = datetime.now(timezone.utc).isoformat()
 
     response = ExtractResponse(
         schema_version=SCHEMA_VERSION,
-        parser_version=PARSER_VERSION,
+        parser_version=parser_version,
         request=RequestMeta(
             request_id=str(uuid.uuid4()),
             filename=resolved_filename,
@@ -1612,6 +1748,10 @@ async def extract(
             + actions_post
             + ["experience_months_recomputed", "ats_score_recalculated", "post_processed_v2"]
             + (["ignored_declaration"] if section_map.get("declaration") else []),
+            final_source=final_source,
+            llm_status=llm_status,
+            llm_error=llm_error,
+            llm_raw_present=llm_raw_present,
         ),
         normalized_resume=NormalizedResume(text=reconstructed_text, sections=section_map),
     )
@@ -1627,6 +1767,7 @@ async def extract(
             "candidate": candidate.model_dump(),
             "sections": sections.model_dump(),
             "confidence": confidence.model_dump(),
+            "parser_version": parser_version,
             "ats": {
                 "total_experience_months": total_experience,
                 "inferred_role": inferred_role,
@@ -1636,6 +1777,10 @@ async def extract(
                 "extraction_quality_score": round(extraction_quality_score, 2),
             },
             "llm_action": llm_action,
+            "llm_status": llm_status,
+            "llm_error": llm_error,
+            "llm_raw_present": llm_raw_present,
+            "final_source": final_source,
             "cleaning_actions": cleaning_actions
             + extraction_actions
             + ["parsed_sections_v2", llm_action]
@@ -1647,5 +1792,7 @@ async def extract(
             "errors": errors,
         },
     )
-    log_event(f"extract complete: llm={llm_action}")
+    log_event(
+        f"llm_status={llm_status} final_source={final_source} llm_error={llm_error or 'none'}"
+    )
     return response

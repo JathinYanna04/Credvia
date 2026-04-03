@@ -245,6 +245,12 @@ export async function POST(
         }
 
         const payload = (await response.json()) as ExternalExtractionPayload;
+        logInfo('resume-extract', 'Extractor diagnostics', {
+          resumeId: resume.id,
+          llmStatus: payload.diagnostics?.llm_status ?? null,
+          llmFinalSource: payload.diagnostics?.final_source ?? null,
+          llmError: payload.diagnostics?.llm_error ?? null,
+        });
         preparation = await prepareResumeFromExternalExtraction(orchestrationClient, resume, payload);
       } finally {
         clearTimeout(timeout);
