@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ParsedResumeInsights } from '@/components/career-match/ParsedResumeInsights';
 import { ResumeAnalysisStatus } from '@/components/career-match/ResumeAnalysisStatus';
 import { ResumeUploadCard } from '@/components/career-match/ResumeUploadCard';
+import { ResumeExtractorPanel } from '@/components/resume/ResumeExtractorPanel';
 import {
   canAnalyzeFromStatus,
   formatDateTime,
@@ -361,6 +362,8 @@ export default function ResumePage() {
         onUploaded={async () => setRefreshKey((current) => current + 1)}
         onUploadStateChange={setUploading}
       />
+
+      <ResumeExtractorPanel />
 
       {authExpired ? (
         <div className="surface-panel flex flex-col gap-3 p-5 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">

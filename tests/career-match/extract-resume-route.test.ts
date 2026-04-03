@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResumeExtractionError } from '@/lib/resume/extract';
 import { ResumePersistenceError } from '@/lib/resume/persistence-error';
 
@@ -7,6 +7,7 @@ const getRequiredUser = vi.fn();
 const enforceRateLimit = vi.fn();
 const getResumeById = vi.fn();
 const prepareResumeForAnalysis = vi.fn();
+const prepareResumeFromExternalExtraction = vi.fn();
 const createServiceRoleClient = vi.fn();
 const captureServerEvent = vi.fn();
 
@@ -58,6 +59,7 @@ vi.mock('@/lib/career-match/queries', () => ({
 
 vi.mock('@/lib/resume/analyze', () => ({
   prepareResumeForAnalysis,
+  prepareResumeFromExternalExtraction,
 }));
 
 vi.mock('@/lib/supabase/service', () => ({
@@ -69,9 +71,14 @@ vi.mock('@/lib/analytics/capture-server-event', () => ({
 }));
 
 describe('resume extract route', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals?.();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     createServiceRoleClient.mockReturnValue({ __role: 'service' });
+    delete process.env.RESUME_EXTRACTOR_URL;
   });
 
   it('extracts and prepares resume successfully', async () => {
@@ -212,6 +219,94 @@ describe('resume extract route', () => {
         resumeHintCount: 10,
       }),
     });
+  });
+
+  it('uses the external extractor service when RESUME_EXTRACTOR_URL is set', async () => {
+    const supabase = createSupabaseMock();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        raw_text: 'raw text',
+        cleaned_text: 'cleaned text',
+        reconstructed_text: 'cleaned text',
+        structured_profile: {
+          full_name: 'Jane Builder',
+          email: 'jane@example.com',
+          summary: 'Product engineer',
+        },
+        contamination_score: 20,
+        salvage_score: 55,
+        accepted_with_warnings: true,
+        warnings: ['Recovered from noisy PDF'],
+        method_used: 'pymupdf',
+      }),
+    });
+
+    process.env.RESUME_EXTRACTOR_URL = 'http://extractor.test';
+    vi.stubGlobal('fetch', fetchMock);
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+    prepareResumeFromExternalExtraction.mockResolvedValue({
+      extraction: {
+        method: 'pymupdf',
+        attemptedMethods: [],
+        usedOcr: false,
+        ocrAttempted: false,
+        ocrImprovedQuality: null,
+        ocrConfidence: null,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+        acceptedWithWarnings: true,
+        warningCode: 'SALVAGED_FROM_NOISE',
+        warningMessage: 'Recovered from noisy PDF',
+        textLength: 1200,
+        cleanedTextLength: 1200,
+        contaminationScore: 20,
+        salvageScore: 55,
+        cleaningActions: [],
+        readiness: 'partial',
+        quality: {
+          textLength: 1200,
+          wordCount: 220,
+          confidenceScore: 70,
+          confidenceTier: 'medium',
+          detectedSectionCount: 3,
+          junkRatio: 0.1,
+          likelyScannedPdf: false,
+          humanReadableRatio: 0.72,
+          suspiciousTokenCount: 2,
+          resumeHintCount: 6,
+        },
+      },
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retry: true }),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalled();
+    expect(prepareResumeFromExternalExtraction).toHaveBeenCalled();
+    expect(payload.data.extracted).toBe(true);
   });
 
   it('returns 422 with diagnostics when extraction is truly unreadable', async () => {

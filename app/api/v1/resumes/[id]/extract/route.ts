@@ -1,7 +1,11 @@
 import { fail, handleApiError, ok } from '@/lib/api';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { getResumeById } from '@/lib/career-match/queries';
-import { prepareResumeForAnalysis } from '@/lib/resume/analyze';
+import {
+  prepareResumeForAnalysis,
+  prepareResumeFromExternalExtraction,
+  type ExternalExtractionPayload,
+} from '@/lib/resume/analyze';
 import { ResumeExtractionError } from '@/lib/resume/extract';
 import {
   ResumePersistenceError,
@@ -218,9 +222,38 @@ export async function POST(
       resumeId: resume.id,
     });
     const buffer = Buffer.from(await download.data.arrayBuffer());
-    const preparation = await prepareResumeForAnalysis(orchestrationClient, resume, buffer, {
-      forceOCR: body.forceOCR ?? body.forceOcr,
-    });
+    const extractorUrl = process.env.RESUME_EXTRACTOR_URL ?? null;
+    let preparation;
+
+    if (extractorUrl) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000);
+      try {
+        const form = new FormData();
+        form.set('file', new Blob([buffer]), resume.file_name);
+        form.set('mime_type', resume.mime_type);
+        form.set('filename', resume.file_name);
+
+        const response = await fetch(`${extractorUrl.replace(/\/$/, '')}/extract`, {
+          method: 'POST',
+          body: form,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Extractor service failed (${response.status}).`);
+        }
+
+        const payload = (await response.json()) as ExternalExtractionPayload;
+        preparation = await prepareResumeFromExternalExtraction(orchestrationClient, resume, payload);
+      } finally {
+        clearTimeout(timeout);
+      }
+    } else {
+      preparation = await prepareResumeForAnalysis(orchestrationClient, resume, buffer, {
+        forceOCR: body.forceOCR ?? body.forceOcr,
+      });
+    }
 
     await captureServerEvent({
       event: 'resume_extraction_completed',

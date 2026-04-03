@@ -2,7 +2,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database, Json } from '@/lib/supabase/types';
 import type { AnalyzeResumeRequest } from '@/lib/types';
 import { recomputeMatchesForResume } from '@/lib/matching/service';
-import { extractResumeText, ResumeExtractionError } from '@/lib/resume/extract';
+import {
+  assessResumeTextQuality,
+  extractResumeText,
+  ResumeExtractionError,
+  type ResumeExtractionMethod,
+} from '@/lib/resume/extract';
 import { RESUME_LIFECYCLE_STATUSES } from '@/lib/resume/lifecycle';
 import {
   ResumePersistenceError,
@@ -24,6 +29,84 @@ interface ResumePreparationResult {
     source: 'direct' | 'inferred';
     confidence: number;
   }>;
+}
+
+export interface ExternalExtractionPayload {
+  schema_version?: string;
+  parser_version?: string;
+  request?: {
+    request_id?: string;
+    filename?: string;
+    mime_type?: string;
+    file_size_bytes?: number;
+    parsed_at?: string;
+  };
+  status?: {
+    success?: boolean;
+    processing_mode?: string;
+    warnings?: string[];
+    errors?: string[];
+    confidence_overall?: number;
+  };
+  raw?: {
+    raw_text?: string | null;
+    cleaned_text?: string | null;
+    page_count?: number;
+  };
+  candidate?: {
+    full_name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    linkedin?: string | null;
+    github?: string | null;
+    portfolio?: string | null;
+    location?: string | null;
+    summary?: string | null;
+  };
+  sections?: {
+    skills?: {
+      languages?: string[];
+      frameworks?: string[];
+      tools?: string[];
+      databases?: string[];
+      cloud?: string[];
+      others?: string[];
+    };
+    education?: Array<Record<string, unknown>>;
+    experience?: Array<Record<string, unknown>>;
+    projects?: Array<Record<string, unknown>>;
+  };
+  diagnostics?: {
+    method_used?: string;
+    page_methods?: Array<Record<string, unknown>>;
+    contamination_score?: number;
+    salvage_score?: number;
+    cleaning_actions?: string[];
+  };
+  normalized_resume?: {
+    text?: string | null;
+    sections?: Record<string, string[]>;
+  };
+  // Backward compatibility for legacy fields
+  raw_text?: string | null;
+  cleaned_text?: string | null;
+  reconstructed_text?: string | null;
+  structured_profile?: {
+    full_name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    summary?: string | null;
+    skills?: string[] | null;
+    projects?: string[] | null;
+    experience?: string[] | null;
+    education?: string[] | null;
+  };
+  page_methods?: Array<Record<string, unknown>>;
+  contamination_score?: number;
+  salvage_score?: number;
+  accepted_with_warnings?: boolean;
+  warnings?: string[];
+  method_used?: string;
 }
 
 function toErrorMessage(error: unknown) {
@@ -445,6 +528,149 @@ export async function prepareResumeForAnalysis(
         operation: finalizePersistenceError.context.operation,
         dbCode: finalizePersistenceError.sourceError.code ?? null,
       });
+    }
+
+    throw error;
+  }
+}
+
+export async function prepareResumeFromExternalExtraction(
+  supabase: TypedSupabaseClient,
+  resume: ResumeRow,
+  external: ExternalExtractionPayload,
+): Promise<ResumePreparationResult> {
+  const runId = await createAnalysisRun(
+    supabase,
+    resume,
+    'extracting',
+    'fastapi-v1:prepare',
+  );
+
+  try {
+    await updateResumeLifecycleStatus(
+      supabase,
+      resume.id,
+      RESUME_LIFECYCLE_STATUSES.EXTRACTING,
+    );
+
+    const rawText = external.raw?.raw_text ?? external.raw_text ?? '';
+    const cleanedText = external.raw?.cleaned_text ?? external.cleaned_text ?? '';
+    const reconstructedText =
+      external.normalized_resume?.text ?? external.reconstructed_text ?? cleanedText;
+    const warnings = external.status?.warnings ?? external.warnings ?? [];
+    const acceptedWithWarnings =
+      external.accepted_with_warnings ?? (warnings.length > 0 ? true : false);
+    const contaminationScore =
+      external.diagnostics?.contamination_score ?? external.contamination_score ?? 0;
+    const salvageScore =
+      external.diagnostics?.salvage_score ?? external.salvage_score ?? 0;
+    const methodUsed =
+      external.diagnostics?.method_used ?? external.method_used ?? 'fastapi';
+    const quality = assessResumeTextQuality(cleanedText);
+    const parsed = parseResumeText(reconstructedText, {
+      extractionMethod: methodUsed,
+      attemptedMethods: [],
+      extractionQuality: {
+        contaminationScore,
+        salvageScore,
+        confidenceScore: quality.confidenceScore,
+        confidenceTier: quality.confidenceTier,
+        humanReadableRatio: quality.humanReadableRatio,
+        resumeHintCount: quality.resumeHintCount,
+      },
+      acceptedWithWarnings,
+      warningCode: acceptedWithWarnings ? 'SALVAGED_FROM_NOISE' : null,
+      warningMessage: warnings[0] ?? null,
+      rawText,
+      cleanedText,
+    });
+
+    const cleanedTextLength = cleanedText.length;
+    logInfo('resume-preparation', 'External extraction completed', {
+      resumeId: resume.id,
+      method: methodUsed,
+      cleanedTextLength,
+      contaminationScore,
+      salvageScore,
+    });
+
+    await updateResumeLifecycleStatus(
+      supabase,
+      resume.id,
+      acceptedWithWarnings
+        ? RESUME_LIFECYCLE_STATUSES.EXTRACTED_WITH_WARNINGS
+        : RESUME_LIFECYCLE_STATUSES.EXTRACTED,
+    );
+
+    await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.PARSED);
+    const matchedSkillRows = await persistParsedResume(supabase, resume, cleanedText, parsed);
+    await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.READY);
+
+    await completeRun(supabase, runId, {
+      status: 'completed',
+      parserVersion: `fastapi-v1:${external.method_used ?? 'extractor'}`,
+      errorMessage: null,
+    });
+
+    return {
+      extraction: {
+        text: cleanedText,
+        rawText,
+        method: (methodUsed as ResumeExtractionMethod) ?? 'pdfjs-text',
+        usedOcr: false,
+        ocrAttempted: false,
+        ocrImprovedQuality: null,
+        ocrConfidence: null,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+        acceptedWithWarnings,
+        warningCode: acceptedWithWarnings ? 'SALVAGED_FROM_NOISE' : null,
+        warningMessage: warnings[0] ?? null,
+        attemptedMethods: [],
+        textLength: cleanedText.length,
+        cleanedTextLength: cleanedText.length,
+        contaminationScore,
+        salvageScore,
+        cleaningActions: [],
+        readiness: quality.isAcceptable ? 'partial' : 'poor',
+        quality,
+      },
+      parsed,
+      matchedSkillRows,
+    };
+  } catch (error) {
+    const lifecycleStatus = resolvePreparationFailureStatus(error);
+
+    try {
+      await updateResumeLifecycleStatus(supabase, resume.id, lifecycleStatus);
+    } catch (finalizeError) {
+      if (finalizeError instanceof ResumePersistenceError) {
+        logError('resume-preparation', 'Finalize persistence failed', {
+          resumeId: resume.id,
+          operation: finalizeError.context.operation,
+          dbCode: finalizeError.sourceError.code ?? null,
+        });
+      } else {
+        throw finalizeError;
+      }
+    }
+
+    try {
+      await completeRun(supabase, runId, {
+        status: 'failed',
+        parserVersion: 'fastapi-v1:prepare',
+        errorMessage: toErrorMessage(error),
+      });
+    } catch (finalizeError) {
+      if (finalizeError instanceof ResumePersistenceError) {
+        logError('resume-preparation', 'Finalize persistence failed', {
+          resumeId: resume.id,
+          operation: finalizeError.context.operation,
+          dbCode: finalizeError.sourceError.code ?? null,
+        });
+      } else {
+        throw finalizeError;
+      }
     }
 
     throw error;
