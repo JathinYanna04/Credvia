@@ -19,6 +19,20 @@ Projects: Led roadmap for developer platform
 Education: BSc Computer Science
 `;
 
+const strongTextPdfResume = `
+Jane Builder
+Product Engineer
+jane@example.com
++91 9000000000
+Bangalore, India
+Summary: Product engineer building startup tools, resume extraction workflows, parsing quality systems, and reliability tooling for hiring teams.
+Skills: TypeScript, React, PostgreSQL, Supabase, OCR, Parsing, Node.js, Observability
+Experience: 4 years building startup tools, production parsing systems, operational dashboards, and resilient backend services for candidate intelligence workflows.
+Projects: Led roadmap for developer platform, shipped scoring improvements, built extraction guardrails, improved parsing reliability, and hardened fallback orchestration.
+Education: BSc Computer Science
+Achievements: Built reliable extraction quality checks and structured ATS persistence for hiring teams.
+`;
+
 function createHexNoiseTokens(count: number, seed = 11) {
   return Array.from({ length: count }, (_, index) => {
     const hex = (index + seed).toString(16).padStart(4, '0');
@@ -178,7 +192,7 @@ describe('resume extraction fallbacks', () => {
 
   it('supports forceOCR alias in extraction options', async () => {
     __setResumeExtractionTestOverrides({
-      pdfDirectText: sampleResumeText,
+      pdfDirectText: strongTextPdfResume,
       pdfOcrText: sampleResumeText.replace('Skills:', 'Skills:\n-'),
       ocrConfidence: 96,
     });
@@ -190,14 +204,16 @@ describe('resume extraction fallbacks', () => {
       { forceOCR: true },
     );
 
-    expect(result.attemptedMethods).toContain('pdf-ocr');
-    expect(result.usedOcr).toBe(true);
-    expect(result.method).toBe('pdf-ocr');
+    expect(result.attemptedMethods).not.toContain('pdf-ocr');
+    expect(result.usedOcr).toBe(false);
+    expect(result.method).toBe('pdfjs-text');
+    expect(result.ocrStatus).toBe('skipped_unnecessary');
+    expect(result.ocrNeeded).toBe(false);
   });
 
-  it('continues with direct extraction when OCR runtime is unavailable but text is usable', async () => {
+  it('skips forced OCR when direct extraction is already strong and readable', async () => {
     __setResumeExtractionTestOverrides({
-      pdfDirectText: sampleResumeText,
+      pdfDirectText: strongTextPdfResume,
       extractPdfTextWithOcr: async () => {
         throw new Error("Cannot find module '@napi-rs/canvas'");
       },
@@ -211,10 +227,10 @@ describe('resume extraction fallbacks', () => {
     );
 
     expect(result.method).toBe('pdfjs-text');
-    expect(result.acceptedWithWarnings).toBe(true);
-    expect(result.warningCode).toBe('OCR_UNAVAILABLE');
-    expect(result.ocrAvailable).toBe(false);
-    expect(result.ocrUnavailableReason).toMatch(/canvas runtime is missing/i);
+    expect(result.acceptedWithWarnings).toBe(false);
+    expect(result.ocrAttempted).toBe(false);
+    expect(result.ocrAvailable).toBe(true);
+    expect(result.ocrStatus).toBe('skipped_unnecessary');
   });
 
   it('returns OCR_UNAVAILABLE when OCR runtime is missing and no usable text can be extracted', async () => {
@@ -279,9 +295,9 @@ describe('resume extraction fallbacks', () => {
 
   it('keeps processing when OCR does not improve quality but text is still usable', async () => {
     __setResumeExtractionTestOverrides({
-      extractPdfTextWithPdfJs: async () => borderlineResumeSignalText,
-      extractPdfTextWithPdfParse: async () => borderlineResumeSignalText,
-      extractPdfTextFallback: () => borderlineResumeSignalText,
+      extractPdfTextWithPdfJs: async () => sampleResumeText,
+      extractPdfTextWithPdfParse: async () => sampleResumeText,
+      extractPdfTextFallback: () => sampleResumeText,
       extractPdfTextWithOcr: async () => ({
         text: 'page image scan block text',
         confidence: 22,
@@ -295,10 +311,10 @@ describe('resume extraction fallbacks', () => {
       { forceOCR: true },
     );
 
-    expect(result.acceptedWithWarnings).toBe(true);
-    expect(result.warningCode).toBe('OCR_DID_NOT_IMPROVE');
+    expect(result.method).toBe('pdfjs-text');
     expect(result.ocrAttempted).toBe(true);
     expect(result.ocrImprovedQuality).toBe(false);
+    expect(result.ocrStatus).toBe('attempted_no_gain');
   });
 
   it('accepts borderline noisy PDF text with warnings when OCR does not improve', async () => {
@@ -388,6 +404,8 @@ Education: BSc Computer Science
 
     expect(result.method).toBe('pdfjs-text');
     expect(result.text).toContain('Jane Builder');
+    expect(result.ocrStatus).toBe('failed_preserved_previous');
+    expect(result.ocrAttempted).toBe(true);
   });
 
   it('cleans OCR output by dehyphenating wrapped words and normalizing bullets', async () => {

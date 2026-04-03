@@ -129,6 +129,14 @@ export interface ResumeExtractionResult {
   rawText: string;
   method: ResumeExtractionMethod;
   usedOcr: boolean;
+  ocrNeeded: boolean;
+  ocrStatus:
+    | 'skipped_unnecessary'
+    | 'attempted_no_gain'
+    | 'failed_preserved_previous'
+    | 'used_successfully'
+    | 'unavailable_preserved_previous'
+    | null;
   ocrAttempted: boolean;
   ocrImprovedQuality: boolean | null;
   ocrConfidence: number | null;
@@ -930,6 +938,14 @@ function createExtractionCandidate(args: {
   method: ResumeExtractionMethod;
   attemptedMethods: ResumeExtractionMethod[];
   usedOcr?: boolean;
+  ocrNeeded?: boolean;
+  ocrStatus?:
+    | 'skipped_unnecessary'
+    | 'attempted_no_gain'
+    | 'failed_preserved_previous'
+    | 'used_successfully'
+    | 'unavailable_preserved_previous'
+    | null;
   ocrAttempted?: boolean;
   ocrImprovedQuality?: boolean | null;
   ocrConfidence?: number | null;
@@ -946,6 +962,8 @@ function createExtractionCandidate(args: {
     rawText,
     method: args.method,
     usedOcr: args.usedOcr ?? false,
+    ocrNeeded: args.ocrNeeded ?? false,
+    ocrStatus: args.ocrStatus ?? null,
     ocrAttempted: args.ocrAttempted ?? false,
     ocrImprovedQuality: args.ocrImprovedQuality ?? null,
     ocrConfidence: args.ocrConfidence ?? null,
@@ -1014,7 +1032,15 @@ function classifyExtractionFailure(
 function buildDiagnostics(
   candidate: ResumeExtractionResult | null,
   attemptedMethods: ResumeExtractionMethod[],
+  ocrNeeded: boolean,
   ocrAttempted: boolean,
+  ocrStatus:
+    | 'skipped_unnecessary'
+    | 'attempted_no_gain'
+    | 'failed_preserved_previous'
+    | 'used_successfully'
+    | 'unavailable_preserved_previous'
+    | null,
   ocrImprovedQuality: boolean | null,
   ocrAvailable = true,
   ocrUnavailableReason: string | null = null,
@@ -1024,6 +1050,8 @@ function buildDiagnostics(
     attemptedMethods,
     method: candidate?.method ?? null,
     usedOcr: candidate?.usedOcr ?? false,
+    ocrNeeded,
+    ocrStatus,
     ocrAttempted,
     ocrImprovedQuality,
     ocrConfidence: candidate?.ocrConfidence ?? null,
@@ -1047,6 +1075,14 @@ function buildDiagnostics(
 function applyExtractionWarnings(
   candidate: ResumeExtractionResult,
   options: {
+    ocrNeeded: boolean;
+    ocrStatus:
+      | 'skipped_unnecessary'
+      | 'attempted_no_gain'
+      | 'failed_preserved_previous'
+      | 'used_successfully'
+      | 'unavailable_preserved_previous'
+      | null;
     ocrAttempted: boolean;
     ocrImprovedQuality: boolean | null;
     ocrAvailable: boolean;
@@ -1055,6 +1091,8 @@ function applyExtractionWarnings(
 ) {
   const next: ResumeExtractionResult = {
     ...candidate,
+    ocrNeeded: options.ocrNeeded,
+    ocrStatus: options.ocrStatus,
     ocrAttempted: options.ocrAttempted,
     ocrImprovedQuality: options.ocrImprovedQuality,
     ocrAvailable: options.ocrAvailable,
@@ -1145,6 +1183,21 @@ function shouldAttemptOcr(bestCandidate: ResumeExtractionResult | null) {
   );
 }
 
+function isStrongTextPdfCandidate(candidate: ResumeExtractionResult | null) {
+  if (!candidate) {
+    return false;
+  }
+
+  return (
+    candidate.quality.isAcceptable &&
+    candidate.quality.confidenceTier === 'high' &&
+    !candidate.quality.likelyScannedPdf &&
+    candidate.quality.humanReadableRatio >= 0.7 &&
+    candidate.quality.resumeHintCount >= 4 &&
+    candidate.textLength >= 500
+  );
+}
+
 export async function extractResumeText(
   fileBuffer: Buffer,
   mimeType: string,
@@ -1194,6 +1247,8 @@ export async function extractResumeText(
 
     if (candidate.quality.isAcceptable) {
       return applyExtractionWarnings(candidate, {
+        ocrNeeded: false,
+        ocrStatus: null,
         ocrAttempted: false,
         ocrImprovedQuality: null,
         ocrAvailable: true,
@@ -1208,7 +1263,7 @@ export async function extractResumeText(
       candidate.method,
       attemptedMethods,
       failureCode,
-      buildDiagnostics(candidate, attemptedMethods, false, null),
+      buildDiagnostics(candidate, attemptedMethods, false, false, null, null),
     );
   }
 
@@ -1229,6 +1284,8 @@ export async function extractResumeText(
 
     if (candidate.quality.isAcceptable) {
       return applyExtractionWarnings(candidate, {
+        ocrNeeded: true,
+        ocrStatus: 'used_successfully',
         ocrAttempted: true,
         ocrImprovedQuality: null,
         ocrAvailable: true,
@@ -1243,7 +1300,7 @@ export async function extractResumeText(
       candidate.method,
       attemptedMethods,
       failureCode,
-      buildDiagnostics(candidate, attemptedMethods, true, null),
+      buildDiagnostics(candidate, attemptedMethods, true, true, 'used_successfully', null),
     );
   }
 
@@ -1262,6 +1319,8 @@ export async function extractResumeText(
 
     if (candidate.quality.isAcceptable) {
       return applyExtractionWarnings(candidate, {
+        ocrNeeded: false,
+        ocrStatus: null,
         ocrAttempted: false,
         ocrImprovedQuality: null,
         ocrAvailable: true,
@@ -1276,7 +1335,7 @@ export async function extractResumeText(
       candidate.method,
       attemptedMethods,
       failureCode,
-      buildDiagnostics(candidate, attemptedMethods, false, null),
+      buildDiagnostics(candidate, attemptedMethods, false, false, null, null),
     );
   }
 
@@ -1344,6 +1403,8 @@ export async function extractResumeText(
         candidate.quality.confidenceTier !== 'low'
       ) {
         return applyExtractionWarnings(candidate, {
+          ocrNeeded: false,
+          ocrStatus: null,
           ocrAttempted: false,
           ocrImprovedQuality: null,
           ocrAvailable: true,
@@ -1355,7 +1416,22 @@ export async function extractResumeText(
     }
   }
 
-  if (forceOcrRequested || shouldAttemptOcr(bestCandidate)) {
+  const ocrNeeded = shouldAttemptOcr(bestCandidate);
+  const forceOcrBlocked = forceOcrRequested && isStrongTextPdfCandidate(bestNonOcrCandidate);
+  const shouldRunOcr = ocrNeeded || (forceOcrRequested && !forceOcrBlocked);
+
+  if (forceOcrBlocked && bestNonOcrCandidate) {
+    return applyExtractionWarnings(bestNonOcrCandidate, {
+      ocrNeeded: false,
+      ocrStatus: 'skipped_unnecessary',
+      ocrAttempted: false,
+      ocrImprovedQuality: null,
+      ocrAvailable: true,
+      ocrUnavailableReason: null,
+    });
+  }
+
+  if (shouldRunOcr) {
     ocrAttempted = true;
     attemptedMethods.push('pdf-ocr');
 
@@ -1387,6 +1463,8 @@ export async function extractResumeText(
 
       if (isExtractionCandidateUsable(candidate)) {
         return applyExtractionWarnings(candidate, {
+          ocrNeeded: true,
+          ocrStatus: 'used_successfully',
           ocrAttempted: true,
           ocrImprovedQuality,
           ocrAvailable: true,
@@ -1396,6 +1474,8 @@ export async function extractResumeText(
 
       if (bestCandidate && isExtractionCandidateUsable(bestCandidate)) {
         return applyExtractionWarnings(bestCandidate, {
+          ocrNeeded: shouldRunOcr,
+          ocrStatus: ocrImprovedQuality ? 'used_successfully' : 'attempted_no_gain',
           ocrAttempted: true,
           ocrImprovedQuality,
           ocrAvailable: true,
@@ -1415,6 +1495,8 @@ export async function extractResumeText(
 
       if (bestCandidate && isExtractionCandidateUsable(bestCandidate)) {
         return applyExtractionWarnings(bestCandidate, {
+          ocrNeeded: true,
+          ocrStatus: ocrAvailable ? 'failed_preserved_previous' : 'unavailable_preserved_previous',
           ocrAttempted: true,
           ocrImprovedQuality,
           ocrAvailable,
@@ -1425,7 +1507,9 @@ export async function extractResumeText(
       const diagnostics = buildDiagnostics(
         bestCandidate,
         attemptedMethods,
+        shouldRunOcr,
         true,
+        ocrAvailable ? 'failed_preserved_previous' : 'unavailable_preserved_previous',
         ocrImprovedQuality,
         ocrAvailable,
         ocrUnavailableReason,
@@ -1453,6 +1537,12 @@ export async function extractResumeText(
         : null;
 
     return applyExtractionWarnings(bestCandidate, {
+      ocrNeeded,
+      ocrStatus: ocrAttempted
+        ? bestCandidate.usedOcr && ocrImprovedQuality !== false
+          ? 'used_successfully'
+          : 'attempted_no_gain'
+        : null,
       ocrAttempted,
       ocrImprovedQuality,
       ocrAvailable,
@@ -1470,7 +1560,13 @@ export async function extractResumeText(
   const diagnostics = buildDiagnostics(
     bestCandidate,
     attemptedMethods,
+    ocrNeeded,
     ocrAttempted,
+    ocrAttempted && !ocrAvailable
+      ? 'unavailable_preserved_previous'
+      : ocrAttempted
+        ? 'failed_preserved_previous'
+        : null,
     ocrAttempted && bestCandidate
           ? bestNonOcrCandidate === null
             ? true

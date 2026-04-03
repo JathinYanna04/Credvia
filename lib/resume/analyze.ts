@@ -999,6 +999,8 @@ export async function prepareResumeFromExternalExtraction(
         rawText,
         method: 'render-extractor',
         usedOcr,
+        ocrNeeded: false,
+        ocrStatus: usedOcr ? 'used_successfully' : null,
         ocrAttempted: false,
         ocrImprovedQuality: null,
         ocrConfidence: null,

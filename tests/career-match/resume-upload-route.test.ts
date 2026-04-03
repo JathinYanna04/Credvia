@@ -114,6 +114,39 @@ describe('resume upload route', () => {
     expect(response.status).toBe(400);
   });
 
+  it('returns a structured 429 response with retry guidance when rate limited', async () => {
+    const { supabase } = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({
+      success: false,
+      reset: Date.now() + 4000,
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/route');
+    const formData = new FormData();
+    formData.set(
+      'resume',
+      new File(['Resume body'], 'resume.pdf', { type: 'application/pdf' }),
+    );
+
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes', {
+        method: 'POST',
+        body: formData,
+      }),
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(payload.error.code).toBe('RATE_LIMITED');
+    expect(payload.error.message).toContain('Too many upload attempts');
+    expect(payload.error.details.retryAfterSeconds).toBeGreaterThanOrEqual(1);
+    expect(payload.error.suggestedAction).toContain('Wait a few seconds');
+  });
+
   it('uploads a PDF resume and stores lifecycle status as UPLOADED', async () => {
     const { supabase, getInsertedResume } = createSupabaseMock();
 

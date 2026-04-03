@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
+import sys
 from typing import Any, Dict
 
 import pytest
+
+
+EXTRACTOR_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+if str(EXTRACTOR_SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(EXTRACTOR_SERVICE_ROOT))
 
 
 @pytest.fixture

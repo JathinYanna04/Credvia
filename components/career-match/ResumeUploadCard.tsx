@@ -14,6 +14,13 @@ export interface ResumeUploadCardProps {
   compact?: boolean;
 }
 
+function logUploadDebug(message: string, details: Record<string, unknown>) {
+  if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line no-console
+    console.info(message, details);
+  }
+}
+
 export function ResumeUploadCard({
   onUploaded,
   onUploadStateChange,
@@ -23,11 +30,31 @@ export function ResumeUploadCard({
   compact = false,
 }: ResumeUploadCardProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const uploadInFlightRef = useRef(false);
+  const lastSelectedFileRef = useRef<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   async function handleFile(file: File) {
+    const fingerprint = `${file.name}:${file.size}:${file.lastModified}`;
+
+    if (uploading || uploadInFlightRef.current) {
+      logUploadDebug('[resume-upload] blocked duplicate submit while upload is in flight', {
+        fingerprint,
+      });
+      return;
+    }
+
+    if (lastSelectedFileRef.current === fingerprint) {
+      logUploadDebug('[resume-upload] blocked duplicate file selection', {
+        fingerprint,
+      });
+      return;
+    }
+
+    uploadInFlightRef.current = true;
+    lastSelectedFileRef.current = fingerprint;
     setUploading(true);
     onUploadStateChange?.(true);
     setError(null);
@@ -47,26 +74,35 @@ export function ResumeUploadCard({
       });
 
       const payload = (await response.json()) as {
-        error?: { message?: string };
+        error?: { message?: string; code?: string; suggestedAction?: string };
       };
 
       if (!response.ok) {
         if (response.status === 401) {
           throw new Error('Your session expired. Sign in again before uploading a resume.');
         }
+        if (response.status === 429) {
+          logUploadDebug('[resume-upload] upload rate limited', {
+            fingerprint,
+            code: payload.error?.code ?? null,
+          });
+          throw new Error('Too many upload attempts. Please wait a few seconds and try again.');
+        }
         throw new Error(payload.error?.message ?? 'Could not upload your resume.');
       }
 
       await onUploaded();
       setSuccess('Resume uploaded. We started extraction automatically and will mark it Ready when parsing completes.');
-      if (inputRef.current) {
-        inputRef.current.value = '';
-      }
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Could not upload your resume.');
     } finally {
+      uploadInFlightRef.current = false;
+      lastSelectedFileRef.current = null;
       setUploading(false);
       onUploadStateChange?.(false);
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
     }
   }
 
@@ -87,6 +123,7 @@ export function ResumeUploadCard({
           type="file"
           accept=".pdf,.docx,.txt,.rtf,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/rtf,application/rtf,application/x-rtf,image/png,image/jpeg"
           className="hidden"
+          disabled={uploading}
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) {

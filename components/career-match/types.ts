@@ -22,6 +22,14 @@ export interface CareerResumeExtractionMeta {
     [key: string]: unknown;
   };
   usedOcr?: boolean;
+  ocrNeeded?: boolean;
+  ocrStatus?:
+    | 'skipped_unnecessary'
+    | 'attempted_no_gain'
+    | 'failed_preserved_previous'
+    | 'used_successfully'
+    | 'unavailable_preserved_previous'
+    | null;
   ocrAttempted?: boolean;
   ocrImprovedQuality?: boolean | null;
   ocrConfidence?: number | null;

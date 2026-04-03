@@ -64,6 +64,27 @@ async function parseExtractRequest(request: Request) {
   }
 }
 
+function hasExternalExtractorShape(payload: unknown): payload is ExternalExtractionPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  const record = payload as Record<string, unknown>;
+  const hasRawText =
+    typeof record.raw_text === 'string' ||
+    typeof record.cleaned_text === 'string' ||
+    (record.raw &&
+      typeof record.raw === 'object' &&
+      record.raw !== null &&
+      (typeof (record.raw as Record<string, unknown>).raw_text === 'string' ||
+        typeof (record.raw as Record<string, unknown>).cleaned_text === 'string'));
+  const hasSections =
+    record.sections === undefined ||
+    (typeof record.sections === 'object' && record.sections !== null);
+
+  return Boolean(hasRawText && hasSections);
+}
+
 function normalizeExtractionFailure(error: ResumeExtractionError): {
   code:
     | 'EXTRACTION_FAILED'
@@ -83,6 +104,8 @@ function normalizeExtractionFailure(error: ResumeExtractionError): {
     usedOcr: error.diagnostics?.usedOcr ?? false,
     ocrAttempted:
       error.diagnostics?.ocrAttempted ?? error.attemptedMethods.includes('pdf-ocr'),
+    ocrNeeded: error.diagnostics?.ocrNeeded ?? undefined,
+    ocrStatus: error.diagnostics?.ocrStatus ?? null,
     ocrImprovedQuality: error.diagnostics?.ocrImprovedQuality ?? null,
     ocrConfidence: error.diagnostics?.ocrConfidence ?? null,
     ocrAvailable: error.diagnostics?.ocrAvailable ?? true,
@@ -244,14 +267,42 @@ export async function POST(
           throw new Error(`Extractor service failed (${response.status}).`);
         }
 
-        const payload = (await response.json()) as ExternalExtractionPayload;
+        const payload = (await response.json()) as unknown;
+        if (!hasExternalExtractorShape(payload)) {
+          throw new Error('Extractor service returned a malformed payload');
+        }
         logInfo('resume-extract', 'Extractor diagnostics', {
           resumeId: resume.id,
+          rawTextLength: payload.raw?.raw_text?.length ?? payload.raw_text?.length ?? 0,
+          cleanedTextLength:
+            payload.raw?.cleaned_text?.length ?? payload.cleaned_text?.length ?? 0,
           llmStatus: payload.diagnostics?.llm_status ?? null,
           llmFinalSource: payload.diagnostics?.final_source ?? null,
           llmError: payload.diagnostics?.llm_error ?? null,
         });
         preparation = await prepareResumeFromExternalExtraction(orchestrationClient, resume, payload);
+        logInfo('resume-extract', 'External extraction persisted', {
+          resumeId: resume.id,
+          hasStructured: Boolean(preparation.parsed?.parsedSections?.__structured),
+          structuredExperience:
+            preparation.parsed?.parsedSections?.__structured?.experience?.length ?? 0,
+          structuredProjects:
+            preparation.parsed?.parsedSections?.__structured?.projects?.length ?? 0,
+          structuredEducation:
+            preparation.parsed?.parsedSections?.__structured?.education?.length ?? 0,
+        });
+      } catch (externalError) {
+        logError('resume-extract', 'External extractor failed, using deterministic fallback', {
+          resumeId: resume.id,
+          extractorUrl,
+          message:
+            externalError instanceof Error
+              ? externalError.message
+              : 'Unknown external extractor error',
+        });
+        preparation = await prepareResumeForAnalysis(orchestrationClient, resume, buffer, {
+          forceOCR: body.forceOCR ?? body.forceOcr,
+        });
       } finally {
         clearTimeout(timeout);
       }
@@ -290,6 +341,8 @@ export async function POST(
         method: preparation.extraction.method,
         attemptedMethods: preparation.extraction.attemptedMethods,
         usedOcr: preparation.extraction.usedOcr,
+        ocrNeeded: preparation.extraction.ocrNeeded,
+        ocrStatus: preparation.extraction.ocrStatus,
         ocrAttempted: preparation.extraction.ocrAttempted,
         ocrImprovedQuality: preparation.extraction.ocrImprovedQuality,
         ocrConfidence: preparation.extraction.ocrConfidence,

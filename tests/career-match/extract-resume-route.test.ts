@@ -374,6 +374,87 @@ describe('resume extract route', () => {
     expect(payload.data.extracted).toBe(true);
   });
 
+  it('falls back to deterministic preparation when external extractor payload is malformed', async () => {
+    const supabase = createSupabaseMock();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        diagnostics: {
+          llm_status: 'success',
+          final_source: 'llm',
+        },
+      }),
+    });
+
+    process.env.RESUME_EXTRACTOR_URL = 'http://extractor.test';
+    vi.stubGlobal('fetch', fetchMock);
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+    prepareResumeForAnalysis.mockResolvedValue({
+      extraction: {
+        method: 'pdfjs-text',
+        attemptedMethods: ['pdfjs-text'],
+        usedOcr: false,
+        ocrNeeded: false,
+        ocrStatus: null,
+        ocrAttempted: false,
+        ocrImprovedQuality: null,
+        ocrConfidence: null,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+        acceptedWithWarnings: false,
+        warningCode: null,
+        warningMessage: null,
+        textLength: 800,
+        cleanedTextLength: 800,
+        contaminationScore: 5,
+        salvageScore: 95,
+        cleaningActions: [],
+        readiness: 'good',
+        quality: {
+          textLength: 800,
+          wordCount: 160,
+          confidenceScore: 85,
+          confidenceTier: 'high',
+          detectedSectionCount: 4,
+          junkRatio: 0.05,
+          likelyScannedPdf: false,
+          humanReadableRatio: 0.9,
+          suspiciousTokenCount: 0,
+          resumeHintCount: 7,
+        },
+      },
+      parsed: { parsedSections: {} },
+      matchedSkillRows: [],
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retry: true }),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalled();
+    expect(prepareResumeFromExternalExtraction).not.toHaveBeenCalled();
+    expect(prepareResumeForAnalysis).toHaveBeenCalled();
+  });
+
   it('returns 422 with diagnostics when extraction is truly unreadable', async () => {
     const supabase = createSupabaseMock();
 

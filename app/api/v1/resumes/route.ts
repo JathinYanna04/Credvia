@@ -16,6 +16,20 @@ import { RESUME_LIFECYCLE_STATUSES } from '@/lib/resume/lifecycle';
 
 export const runtime = 'nodejs';
 
+function resolveRateLimitIdentifier(request: Request, userId?: string | null) {
+  if (userId && userId.trim().length > 0) {
+    return `user:${userId}`;
+  }
+
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  const ip = forwardedFor?.split(',')[0]?.trim() ?? request.headers.get('x-real-ip')?.trim();
+  if (ip) {
+    return `ip:${ip}`;
+  }
+
+  return 'anonymous';
+}
+
 function resolveResumeContentType(file: File, extension: string) {
   if (file.type) {
     return file.type;
@@ -124,10 +138,20 @@ export async function POST(request: Request) {
   try {
     const supabase = await createServerSupabaseClient();
     const user = await getRequiredUser(supabase);
-    const limit = await enforceRateLimit('resume_upload', user.id);
+    const rateLimitIdentifier = resolveRateLimitIdentifier(request, user.id);
+    const limit = await enforceRateLimit('resume_upload', rateLimitIdentifier);
 
     if (!limit.success) {
-      return fail('RATE_LIMITED', 'Too many resume uploads. Try again shortly.', 429);
+      const hasReset = 'reset' in limit && typeof limit.reset === 'number';
+      const retryAfterSeconds =
+        hasReset ? Math.max(1, Math.ceil((limit.reset - Date.now()) / 1000)) : null;
+      return fail(
+        'RATE_LIMITED',
+        'Too many upload attempts. Please wait and try again.',
+        429,
+        retryAfterSeconds !== null ? { retryAfterSeconds } : undefined,
+        'Wait a few seconds before uploading again.',
+      );
     }
 
     const formData = await request.formData();

@@ -82,6 +82,18 @@ export function ResumeAnalysisStatus({
       : typeof analyzeDetails?.ocrAvailable === 'boolean'
         ? Boolean(analyzeDetails.ocrAvailable)
         : true;
+  const ocrNeeded =
+    typeof extractionMeta?.ocrNeeded === 'boolean'
+      ? extractionMeta.ocrNeeded
+      : typeof analyzeDetails?.ocrNeeded === 'boolean'
+        ? Boolean(analyzeDetails.ocrNeeded)
+        : null;
+  const ocrStatus =
+    typeof extractionMeta?.ocrStatus === 'string'
+      ? extractionMeta.ocrStatus
+      : typeof analyzeDetails?.ocrStatus === 'string'
+        ? (analyzeDetails.ocrStatus as CareerResumeExtractionMeta['ocrStatus'])
+        : null;
   const ocrUnavailableReason =
     typeof extractionMeta?.ocrUnavailableReason === 'string'
       ? extractionMeta.ocrUnavailableReason
@@ -120,7 +132,9 @@ export function ResumeAnalysisStatus({
           ? 'failed'
           : 'waiting';
   const ocrStage =
-    usedOcr
+    ocrStatus === 'skipped_unnecessary'
+      ? 'not_needed'
+      : usedOcr
       ? 'completed'
       : ocrAttempted && !ocrAvailable
         ? 'failed'
@@ -228,7 +242,9 @@ export function ResumeAnalysisStatus({
                 ? 'OCR is running'
                 : ocrStage === 'failed'
                   ? 'OCR unavailable'
-                  : 'OCR skipped'}
+                  : ocrStatus === 'skipped_unnecessary'
+                    ? 'Skipped as unnecessary'
+                    : 'OCR skipped'}
           </div>
         </div>
         <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(analysisStage)}`}>
@@ -353,12 +369,26 @@ export function ResumeAnalysisStatus({
           {!ocrAvailable ? ' It was unavailable in this runtime.' : ''}
           {ocrImprovedQuality === true ? ' It improved extraction quality.' : ''}
           {ocrImprovedQuality === false ? ' It did not improve extraction quality enough.' : ''}
+          {ocrStatus === 'failed_preserved_previous'
+            ? ' The previous readable extraction was preserved.'
+            : ''}
+          {ocrStatus === 'unavailable_preserved_previous'
+            ? ' OCR was unavailable, so the previous readable extraction was preserved.'
+            : ''}
+        </div>
+      ) : null}
+
+      {ocrStatus === 'skipped_unnecessary' ? (
+        <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+          This file already contains readable text. OCR was skipped because it was unlikely to improve extraction.
         </div>
       ) : null}
 
       {!usedOcr && resume.mime_type === 'application/pdf' && !latestRun?.error_message ? (
         <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
-          This looks like a text PDF. OCR was not needed.
+          {ocrNeeded === false
+            ? 'This looks like a text PDF. OCR was not needed.'
+            : 'Native text extraction is being used for this PDF.'}
         </div>
       ) : null}
 

@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { ParsedResumeInsights } from '@/components/career-match/ParsedResumeInsights';
 import { ResumeAnalysisStatus } from '@/components/career-match/ResumeAnalysisStatus';
 import { ResumeUploadCard } from '@/components/career-match/ResumeUploadCard';
-import { ResumeExtractorPanel } from '@/components/resume/ResumeExtractorPanel';
 import {
   canAnalyzeFromStatus,
   formatDateTime,
@@ -141,6 +140,12 @@ export default function ResumePage() {
   const canAnalyzeSelected = selectedResume
     ? canAnalyzeFromStatus(selectedResume.parse_status)
     : false;
+  const selectedExtractionMeta = detail?.profile?.raw_sections?.__meta ?? null;
+  const discourageForceOcr =
+    selectedResume?.mime_type === 'application/pdf' &&
+    selectedExtractionMeta?.usedOcr !== true &&
+    selectedExtractionMeta?.ocrNeeded === false &&
+    selectedExtractionMeta?.extractionQuality?.confidenceTier === 'high';
 
   function isActionRunning(
     action: 'analyze' | 'retry' | 'force-ocr' | 'delete' | 'set-active',
@@ -400,7 +405,11 @@ export default function ResumePage() {
             type="button"
             variant="outline"
             onClick={() => void handleRetryExtraction(true)}
-            disabled={!selectedResumeId || isActionRunning('force-ocr', selectedResumeId)}
+            disabled={
+              !selectedResumeId ||
+              discourageForceOcr ||
+              isActionRunning('force-ocr', selectedResumeId)
+            }
           >
             {isActionRunning('force-ocr', selectedResumeId) ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -409,6 +418,11 @@ export default function ResumePage() {
             )}
             Force OCR
           </Button>
+          {discourageForceOcr ? (
+            <p className="w-full text-xs text-text-tertiary">
+              This file already contains readable text. OCR is unlikely to improve results.
+            </p>
+          ) : null}
         </div>
       </header>
 
@@ -568,10 +582,6 @@ export default function ResumePage() {
           </section>
         </aside>
       </section>
-
-      {process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_RESUME_DEBUG === 'true' ? (
-        <ResumeExtractorPanel />
-      ) : null}
 
       {authExpired ? (
         <div className="rounded-2xl bg-bg-surface/70 px-5 py-4 text-sm text-text-secondary shadow-sm">
