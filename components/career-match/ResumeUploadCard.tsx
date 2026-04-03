@@ -60,15 +60,18 @@ export function ResumeUploadCard({ onUploaded, onUploadStateChange }: ResumeUplo
   }
 
   return (
-    <section className="surface-panel space-y-4 p-5">
+    <section className="surface-panel space-y-5 p-6">
       <div className="space-y-2">
-        <h2 className="text-xl font-semibold">Upload your resume</h2>
+        <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-text-tertiary">
+          Resume intelligence
+        </div>
+        <h2 className="text-2xl font-semibold">Upload your resume</h2>
         <p className="text-sm text-text-secondary">
           Upload one private resume file. Credvia keeps the original file private and parses it into a structured fit profile.
         </p>
       </div>
 
-      <div className="rounded-2xl border border-dashed border-border-default bg-bg-surface/40 p-5">
+      <div className="group rounded-3xl border border-dashed border-border-default bg-bg-surface/40 p-6 transition-colors hover:border-border-strong">
         <input
           ref={inputRef}
           type="file"
@@ -82,10 +85,10 @@ export function ResumeUploadCard({ onUploaded, onUploadStateChange }: ResumeUplo
           }}
         />
 
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-4">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border-subtle bg-bg-surface">
-              <UploadCloud className="h-5 w-5 text-text-secondary" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border-subtle bg-bg-surface/80 shadow-sm">
+              <UploadCloud className="h-6 w-6 text-text-primary" />
             </div>
             <div className="space-y-1">
               <p className="text-sm text-text-primary">Supported formats: PDF, DOCX, TXT, RTF, PNG, JPG</p>

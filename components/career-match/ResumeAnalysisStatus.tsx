@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, RefreshCcw } from 'lucide-react';
+import { FileText, Loader2, RefreshCcw, Scan, Sparkles } from 'lucide-react';
 import type {
   CareerAnalysisRun,
   CareerResumeAnalysisReadiness,
@@ -15,6 +15,7 @@ import {
 } from '@/components/career-match/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { normalizeResumeLifecycleStatus } from '@/lib/resume/lifecycle';
 
 export interface ResumeAnalysisStatusProps {
   resume: CareerResumeSummary;
@@ -73,6 +74,7 @@ export function ResumeAnalysisStatus({
       latestRun?.parser_version?.includes('pdf-ocr') ||
       latestRun?.parser_version?.includes(':ocr'),
   );
+  const selectedStatus = normalizeResumeLifecycleStatus(resume.parse_status ?? null);
   const ocrAttempted =
     metaOcrAttempted === true || usedOcr || Boolean(analyzeDetails?.ocrAttempted);
   const ocrImprovedQuality =
@@ -107,9 +109,65 @@ export function ResumeAnalysisStatus({
       analyzeError?.code === 'OCR_UNAVAILABLE') &&
     resume.mime_type === 'application/pdf';
   const analyzeDisabled = analyzing || !analysisReadiness.ready;
+  const extractionStage =
+    selectedStatus === 'EXTRACTING'
+      ? 'processing'
+      : selectedStatus === 'EXTRACTED_WITH_WARNINGS'
+        ? 'warning'
+        : selectedStatus === 'EXTRACTION_FAILED'
+          ? 'failed'
+          : selectedStatus === 'EXTRACTED' || selectedStatus === 'PARSED' || selectedStatus === 'READY' || selectedStatus === 'ANALYZED'
+            ? 'completed'
+            : 'waiting';
+  const analysisStage =
+    selectedStatus === 'ANALYZING'
+      ? 'processing'
+      : selectedStatus === 'ANALYZED'
+        ? 'completed'
+        : selectedStatus === 'ANALYSIS_FAILED'
+          ? 'failed'
+          : 'waiting';
+  const ocrStage =
+    usedOcr
+      ? 'completed'
+      : ocrAttempted && !ocrAvailable
+        ? 'failed'
+        : ocrAttempted
+          ? 'processing'
+          : 'not_needed';
+  const stageToneClass = (tone: string) => {
+    switch (tone) {
+      case 'completed':
+        return 'border-success/30 bg-success/10 text-success';
+      case 'processing':
+        return 'border-info/30 bg-info/10 text-info';
+      case 'warning':
+        return 'border-warning/30 bg-warning/10 text-warning';
+      case 'failed':
+        return 'border-danger/30 bg-danger/10 text-danger';
+      default:
+        return 'border-border-subtle bg-bg-surface text-text-secondary';
+    }
+  };
+  const stageStateLabel = (state: string) => {
+    switch (state) {
+      case 'completed':
+        return 'Completed';
+      case 'processing':
+        return 'Processing';
+      case 'warning':
+        return 'Needs review';
+      case 'failed':
+        return 'Failed';
+      case 'not_needed':
+        return 'Not needed';
+      default:
+        return 'Waiting';
+    }
+  };
 
   return (
-    <section className="surface-panel space-y-4 p-5">
+    <section className="surface-panel space-y-5 p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -145,6 +203,59 @@ export function ResumeAnalysisStatus({
           )}
           Analyze resume
         </Button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(extractionStage)}`}>
+          <div className="flex items-center justify-between text-xs uppercase tracking-[0.18em]">
+            Extraction
+            <FileText className="h-4 w-4" />
+          </div>
+          <div className="mt-2 text-sm">{stageStateLabel(extractionStage)}</div>
+          <div className="mt-1 text-xs text-text-tertiary">
+            {extractionStage === 'processing'
+              ? 'Parsing the resume file'
+              : extractionStage === 'completed'
+                ? 'Structured data ready'
+                : extractionStage === 'warning'
+                  ? 'Parsed with warnings'
+                  : extractionStage === 'failed'
+                    ? 'Extraction failed'
+                    : 'Waiting for upload'}
+          </div>
+        </div>
+        <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(ocrStage)}`}>
+          <div className="flex items-center justify-between text-xs uppercase tracking-[0.18em]">
+            OCR
+            <Scan className="h-4 w-4" />
+          </div>
+          <div className="mt-2 text-sm">{stageStateLabel(ocrStage)}</div>
+          <div className="mt-1 text-xs text-text-tertiary">
+            {ocrStage === 'completed'
+              ? 'OCR used for this file'
+              : ocrStage === 'processing'
+                ? 'OCR is running'
+                : ocrStage === 'failed'
+                  ? 'OCR unavailable'
+                  : 'OCR skipped'}
+          </div>
+        </div>
+        <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(analysisStage)}`}>
+          <div className="flex items-center justify-between text-xs uppercase tracking-[0.18em]">
+            Analysis
+            <Sparkles className="h-4 w-4" />
+          </div>
+          <div className="mt-2 text-sm">{stageStateLabel(analysisStage)}</div>
+          <div className="mt-1 text-xs text-text-tertiary">
+            {analysisStage === 'processing'
+              ? 'Scoring against matches'
+              : analysisStage === 'completed'
+                ? 'Match scoring ready'
+                : analysisStage === 'failed'
+                  ? 'Analysis failed'
+                  : 'Ready when extraction completes'}
+          </div>
+        </div>
       </div>
 
       {!analysisReadiness.ready && analysisReadiness.message ? (

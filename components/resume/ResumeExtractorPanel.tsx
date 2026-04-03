@@ -52,10 +52,13 @@ export function ResumeExtractorPanel() {
   }
 
   return (
-    <section className="surface-panel space-y-4 p-5">
+    <section className="surface-panel space-y-5 p-6">
       <div className="flex items-center gap-3">
         <UploadCloud className="h-5 w-5 text-accent" />
-        <h2 className="text-lg font-semibold">Resume Extractor (Phase 1)</h2>
+        <div>
+          <h2 className="text-lg font-semibold">AI Resume Engine</h2>
+          <p className="text-xs text-text-tertiary">Preview the raw extractor output for QA and debugging.</p>
+        </div>
       </div>
 
       <input

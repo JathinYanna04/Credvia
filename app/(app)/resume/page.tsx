@@ -383,39 +383,89 @@ export default function ResumePage() {
         </div>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <article className="surface-panel p-4">
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Uploading</div>
-          <div className="mt-2 flex items-center gap-2 text-sm text-text-primary">
+          <div className="flex items-center justify-between">
+            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Uploading</div>
+            <Badge variant={uploading ? 'info' : 'secondary'}>{uploading ? 'Processing' : 'Idle'}</Badge>
+          </div>
+          <div className="mt-3 flex items-center gap-2 text-sm text-text-primary">
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {uploading ? 'Uploading now' : 'Idle'}
+            {uploading ? 'Uploading now' : 'Waiting for upload'}
           </div>
         </article>
         <article className="surface-panel p-4">
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Extraction</div>
-          <div className="mt-2 text-sm text-text-primary">
+          <div className="flex items-center justify-between">
+            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Extraction</div>
+            <Badge
+              variant={
+                selectedStatus === 'EXTRACTED_WITH_WARNINGS'
+                  ? 'warning'
+                  : selectedStatus === 'EXTRACTION_FAILED'
+                    ? 'danger'
+                    : selectedStatus === 'EXTRACTING'
+                      ? 'info'
+                      : 'secondary'
+              }
+            >
+              {selectedStatus === 'EXTRACTING'
+                ? 'Processing'
+                : selectedStatus === 'EXTRACTED_WITH_WARNINGS'
+                  ? 'Warning'
+                  : selectedStatus === 'EXTRACTION_FAILED'
+                    ? 'Failed'
+                    : selectedStatus === 'EXTRACTED' || selectedStatus === 'PARSED' || selectedStatus === 'READY' || selectedStatus === 'ANALYZED'
+                      ? 'Completed'
+                      : 'Idle'}
+            </Badge>
+          </div>
+          <div className="mt-3 text-sm text-text-primary">
             {selectedStatus === 'EXTRACTING'
-              ? 'Extracting'
+              ? 'Parsing the file'
               : selectedStatus === 'EXTRACTED_WITH_WARNINGS'
-                ? 'Extracted with warnings'
+                ? 'Parsed with warnings'
                 : selectedStatus === 'EXTRACTION_FAILED'
-                  ? 'Failed'
-                  : 'Idle'}
+                  ? 'Needs retry'
+                  : selectedStatus === 'EXTRACTED' || selectedStatus === 'PARSED' || selectedStatus === 'READY' || selectedStatus === 'ANALYZED'
+                    ? 'Structured data ready'
+                    : 'Waiting for resume'}
           </div>
         </article>
         <article className="surface-panel p-4">
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">OCR fallback</div>
-          <div className="mt-2 text-sm text-text-primary">
+          <div className="flex items-center justify-between">
+            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">OCR fallback</div>
+            <Badge
+              variant={
+                detail?.profile?.raw_sections?.__meta?.usedOcr
+                  ? 'warning'
+                  : selectedResumeId && isActionRunning('force-ocr', selectedResumeId)
+                    ? 'info'
+                    : 'secondary'
+              }
+            >
+              {selectedResumeId && isActionRunning('force-ocr', selectedResumeId)
+                ? 'Processing'
+                : detail?.profile?.raw_sections?.__meta?.usedOcr
+                  ? 'Used'
+                  : 'Not needed'}
+            </Badge>
+          </div>
+          <div className="mt-3 text-sm text-text-primary">
             {selectedResumeId && isActionRunning('force-ocr', selectedResumeId)
-              ? 'Running'
+              ? 'Running OCR'
               : detail?.profile?.raw_sections?.__meta?.usedOcr
-                ? 'Used in latest extraction'
-                : 'Not running'}
+                ? 'OCR assisted this extraction'
+                : 'Native text was sufficient'}
           </div>
         </article>
         <article className="surface-panel p-4">
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Analysis</div>
-          <div className="mt-2 flex items-center gap-2 text-sm text-text-primary">
+          <div className="flex items-center justify-between">
+            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Analysis</div>
+            <Badge variant={selectedStatus === 'ANALYZED' ? 'success' : analyzing || selectedStatus === 'ANALYZING' ? 'info' : 'secondary'}>
+              {selectedStatus === 'ANALYZED' ? 'Completed' : analyzing || selectedStatus === 'ANALYZING' ? 'Processing' : 'Waiting'}
+            </Badge>
+          </div>
+          <div className="mt-3 flex items-center gap-2 text-sm text-text-primary">
             {analyzing || selectedStatus === 'ANALYZING' ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -453,9 +503,9 @@ export default function ResumePage() {
               {resumes.map((resume) => (
                 <div
                   key={resume.id}
-                  className={`w-full rounded-2xl border p-4 text-left transition-colors ${
+                  className={`w-full rounded-2xl border p-4 text-left shadow-sm transition-colors ${
                     resume.id === selectedResumeId
-                      ? 'border-accent bg-accent/5'
+                      ? 'border-accent bg-accent/10'
                       : 'border-border-subtle bg-bg-surface hover:border-border-default'
                   }`}
                 >
@@ -464,21 +514,25 @@ export default function ResumePage() {
                     onClick={() => setSelectedResumeId(resume.id)}
                     className="w-full text-left"
                   >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="truncate text-sm font-medium text-text-primary">
-                        {resume.file_name}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-text-primary">
+                          {resume.file_name}
+                        </div>
+                        <div className="mt-1 text-xs text-text-tertiary">
+                          Uploaded {formatDateTime(resume.uploaded_at)}
+                        </div>
                       </div>
-                      {resume.is_active ? <Badge variant="accent">Active</Badge> : null}
-                      <Badge variant={parseStatusVariant(resume.parse_status)}>
-                        {humanizeParseStatus(resume.parse_status)}
-                      </Badge>
-                    </div>
-                    <div className="mt-2 text-xs text-text-tertiary">
-                      Uploaded {formatDateTime(resume.uploaded_at)}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {resume.is_active ? <Badge variant="accent">Active</Badge> : null}
+                        <Badge variant={parseStatusVariant(resume.parse_status)}>
+                          {humanizeParseStatus(resume.parse_status)}
+                        </Badge>
+                      </div>
                     </div>
                   </button>
 
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-4 flex flex-wrap gap-2">
                     {!resume.is_active ? (
                       <Button
                         type="button"
