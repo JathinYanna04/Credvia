@@ -6,6 +6,7 @@ import {
   assessResumeTextQuality,
   extractResumeText,
   ResumeExtractionError,
+  type ResumeExtractionMethod,
 } from '@/lib/resume/extract';
 import { RESUME_LIFECYCLE_STATUSES } from '@/lib/resume/lifecycle';
 import {
@@ -20,6 +21,18 @@ type TypedSupabaseClient = SupabaseClient<Database>;
 
 type ResumeRow = Database['public']['Tables']['resumes']['Row'];
 
+const RESUME_EXTRACTION_METHODS = new Set<ResumeExtractionMethod>([
+  'docx-mammoth',
+  'txt-direct',
+  'rtf-direct',
+  'image-ocr',
+  'pdfjs-text',
+  'pdf-parse-fallback',
+  'pdf-token-fallback',
+  'pdf-ocr',
+  'render-extractor',
+]);
+
 function normalizeExternalString(value: unknown) {
   if (typeof value !== 'string') {
     return null;
@@ -29,6 +42,13 @@ function normalizeExternalString(value: unknown) {
     return null;
   }
   return trimmed;
+}
+
+function toResumeExtractionMethod(value: unknown) {
+  if (typeof value !== 'string') return null;
+  return RESUME_EXTRACTION_METHODS.has(value as ResumeExtractionMethod)
+    ? (value as ResumeExtractionMethod)
+    : null;
 }
 
 function formatDateRangeV2(start: string | null | undefined, end: string | null | undefined) {
@@ -818,8 +838,12 @@ export async function prepareResumeFromExternalExtraction(
     });
 
     const attemptedMethods = (external.diagnostics?.page_methods ?? [])
-      .map((entry) => entry.method)
-      .filter(Boolean);
+      .map((entry) =>
+        entry && typeof entry === 'object'
+          ? toResumeExtractionMethod((entry as Record<string, unknown>).method)
+          : null,
+      )
+      .filter((method): method is ResumeExtractionMethod => Boolean(method));
     const usedOcr = methodUsed.toLowerCase().includes('ocr');
 
     return {
