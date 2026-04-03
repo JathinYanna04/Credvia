@@ -89,7 +89,11 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
   const metaBadges = [
     finalSourceLabel ? { label: finalSourceLabel, variant: 'secondary' as const } : null,
     extractionMeta?.llmStatus === 'success' ? { label: 'AI parsed', variant: 'accent' as const } : null,
-    extractionMeta?.usedOcr ? { label: 'OCR used', variant: 'warning' as const } : null,
+    extractionMeta
+      ? extractionMeta.usedOcr
+        ? { label: 'OCR used', variant: 'warning' as const }
+        : { label: 'OCR not needed', variant: 'secondary' as const }
+      : null,
     extractionMeta?.extractionQuality?.confidenceTier
       ? { label: `Confidence ${extractionMeta.extractionQuality.confidenceTier}`, variant: 'secondary' as const }
       : null,
@@ -270,6 +274,11 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
   ];
 
   const otherLines = profile ? sanitizeLines(profile.raw_sections?.other ?? []) : [];
+  const findLinkLine = (pattern: RegExp) =>
+    otherLines.find((line) => pattern.test(line));
+  const linkedInLine = findLinkLine(/linkedin/i);
+  const githubLine = findLinkLine(/github/i);
+  const portfolioLine = findLinkLine(/portfolio|website|site|http/i);
   const highlightBuckets = {
     certifications: [] as string[],
     achievements: [] as string[],
@@ -292,6 +301,16 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
     }
     highlightBuckets.achievements.push(line);
   });
+
+  const insightItems = [
+    sanitizedExperience.length > 0 ? 'Experience entries detected' : null,
+    sanitizedEducation.length > 0 ? 'Education history detected' : null,
+    skillBuckets.languages.length > 0 || skillBuckets.frameworks.length > 0
+      ? 'Technical stack identified'
+      : null,
+    highlightBuckets.leadership.length > 0 ? 'Leadership signals present' : null,
+    highlightBuckets.certifications.length > 0 ? 'Certifications detected' : null,
+  ].filter(Boolean) as string[];
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
@@ -360,6 +379,15 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
                 ) : (
                   <div className="mt-2 text-sm text-text-secondary">No contact details detected.</div>
                 )}
+                {linkedInLine || githubLine || portfolioLine ? (
+                  <div className="mt-3 space-y-1 text-xs text-text-tertiary">
+                    {linkedInLine ? <div>LinkedIn: {linkedInLine}</div> : null}
+                    {githubLine ? <div>GitHub: {githubLine}</div> : null}
+                    {portfolioLine ? <div>Portfolio: {portfolioLine}</div> : null}
+                  </div>
+                ) : (
+                  <div className="mt-3 text-xs text-text-tertiary">Links not detected.</div>
+                )}
               </div>
             </div>
           ) : null}
@@ -367,10 +395,17 @@ export function ParsedResumeInsights({ detail }: ParsedResumeInsightsProps) {
           {profile ? (
             <div className="space-y-4">
               <div>
-                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Professional summary</div>
+                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Profile summary</div>
                 <p className="mt-2 text-sm leading-6 text-text-secondary">
                   {sanitizedSummary ?? 'No summary was extracted from this resume yet.'}
                 </p>
+                {insightItems.length > 0 ? (
+                  <ul className="mt-3 space-y-1 text-xs text-text-tertiary">
+                    {insightItems.slice(0, 4).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
               {acceptedWithWarnings && !hasStructuredContent ? (
                 <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">

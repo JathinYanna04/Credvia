@@ -39,7 +39,7 @@ export default function ResumePage() {
   const [authExpired, setAuthExpired] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
-  const [forceOCR, setForceOCR] = useState(false);
+  const forceOCR = false;
   const [uploading, setUploading] = useState(false);
   const [actionInFlight, setActionInFlight] = useState<
     | {
@@ -352,18 +352,91 @@ export default function ResumePage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="space-y-2">
-        <h1 className="text-3xl font-semibold">Resume</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-3xl font-semibold">Resume Intelligence</h1>
+          {selectedResume ? (
+            <Badge variant={parseStatusVariant(selectedResume.parse_status)}>
+              {humanizeParseStatus(selectedResume.parse_status)}
+            </Badge>
+          ) : null}
+        </div>
         <p className="max-w-3xl text-sm text-text-secondary">
-          Upload a private resume, analyze it into a structured skill profile, and use it to power your Career Match results.
+          Review your ATS-ready candidate profile, including structured experience, skills, and parsing confidence.
         </p>
+        {selectedResume ? (
+          <div className="text-xs text-text-tertiary">
+            Last updated {formatDateTime(selectedResume.updated_at ?? selectedResume.uploaded_at)}
+          </div>
+        ) : null}
       </header>
 
-      <ResumeUploadCard
-        onUploaded={async () => setRefreshKey((current) => current + 1)}
-        onUploadStateChange={setUploading}
-      />
+      <section className="surface-panel space-y-4 p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-text-tertiary">Active resume</div>
+            <div className="mt-2 text-sm text-text-primary">
+              {selectedResume ? selectedResume.file_name : 'No resume uploaded yet'}
+            </div>
+            <div className="mt-1 text-xs text-text-tertiary">
+              {selectedResume ? `${selectedResume.mime_type} - Uploaded ${formatDateTime(selectedResume.uploaded_at)}` : 'Upload a resume to start parsing.'}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void handleAnalyze()}
+              disabled={!canAnalyzeSelected || !selectedResumeId || isActionRunning('analyze', selectedResumeId)}
+            >
+              {isActionRunning('analyze', selectedResumeId) ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              Re-analyze
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleRetryExtraction(false)}
+              disabled={!selectedResumeId || isActionRunning('retry', selectedResumeId)}
+            >
+              {isActionRunning('retry', selectedResumeId) ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+              Retry extraction
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleRetryExtraction(true)}
+              disabled={!selectedResumeId || isActionRunning('force-ocr', selectedResumeId)}
+            >
+              {isActionRunning('force-ocr', selectedResumeId) ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}
+              Force OCR
+            </Button>
+          </div>
+        </div>
 
-      <ResumeExtractorPanel />
+        <ResumeUploadCard
+          title={selectedResume ? 'Replace resume' : 'Upload your resume'}
+          description="Upload one private resume file. Credvia keeps the original file private and parses it into a structured ATS profile."
+          actionLabel={selectedResume ? 'Replace resume' : 'Upload resume'}
+          compact
+          onUploaded={async () => setRefreshKey((current) => current + 1)}
+          onUploadStateChange={setUploading}
+        />
+      </section>
+
+      {process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_RESUME_DEBUG === 'true' ? (
+        <ResumeExtractorPanel />
+      ) : null}
 
       {authExpired ? (
         <div className="surface-panel flex flex-col gap-3 p-5 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
@@ -382,103 +455,6 @@ export default function ResumePage() {
           </Button>
         </div>
       ) : null}
-
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <article className="surface-panel p-4">
-          <div className="flex items-center justify-between">
-            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Uploading</div>
-            <Badge variant={uploading ? 'info' : 'secondary'}>{uploading ? 'Processing' : 'Idle'}</Badge>
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-sm text-text-primary">
-            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {uploading ? 'Uploading now' : 'Waiting for upload'}
-          </div>
-        </article>
-        <article className="surface-panel p-4">
-          <div className="flex items-center justify-between">
-            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Extraction</div>
-            <Badge
-              variant={
-                selectedStatus === 'EXTRACTED_WITH_WARNINGS'
-                  ? 'warning'
-                  : selectedStatus === 'EXTRACTION_FAILED'
-                    ? 'danger'
-                    : selectedStatus === 'EXTRACTING'
-                      ? 'info'
-                      : 'secondary'
-              }
-            >
-              {selectedStatus === 'EXTRACTING'
-                ? 'Processing'
-                : selectedStatus === 'EXTRACTED_WITH_WARNINGS'
-                  ? 'Warning'
-                  : selectedStatus === 'EXTRACTION_FAILED'
-                    ? 'Failed'
-                    : selectedStatus === 'EXTRACTED' || selectedStatus === 'PARSED' || selectedStatus === 'READY' || selectedStatus === 'ANALYZED'
-                      ? 'Completed'
-                      : 'Idle'}
-            </Badge>
-          </div>
-          <div className="mt-3 text-sm text-text-primary">
-            {selectedStatus === 'EXTRACTING'
-              ? 'Parsing the file'
-              : selectedStatus === 'EXTRACTED_WITH_WARNINGS'
-                ? 'Parsed with warnings'
-                : selectedStatus === 'EXTRACTION_FAILED'
-                  ? 'Needs retry'
-                  : selectedStatus === 'EXTRACTED' || selectedStatus === 'PARSED' || selectedStatus === 'READY' || selectedStatus === 'ANALYZED'
-                    ? 'Structured data ready'
-                    : 'Waiting for resume'}
-          </div>
-        </article>
-        <article className="surface-panel p-4">
-          <div className="flex items-center justify-between">
-            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">OCR fallback</div>
-            <Badge
-              variant={
-                detail?.profile?.raw_sections?.__meta?.usedOcr
-                  ? 'warning'
-                  : selectedResumeId && isActionRunning('force-ocr', selectedResumeId)
-                    ? 'info'
-                    : 'secondary'
-              }
-            >
-              {selectedResumeId && isActionRunning('force-ocr', selectedResumeId)
-                ? 'Processing'
-                : detail?.profile?.raw_sections?.__meta?.usedOcr
-                  ? 'Used'
-                  : 'Not needed'}
-            </Badge>
-          </div>
-          <div className="mt-3 text-sm text-text-primary">
-            {selectedResumeId && isActionRunning('force-ocr', selectedResumeId)
-              ? 'Running OCR'
-              : detail?.profile?.raw_sections?.__meta?.usedOcr
-                ? 'OCR assisted this extraction'
-                : 'Native text was sufficient'}
-          </div>
-        </article>
-        <article className="surface-panel p-4">
-          <div className="flex items-center justify-between">
-            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Analysis</div>
-            <Badge variant={selectedStatus === 'ANALYZED' ? 'success' : analyzing || selectedStatus === 'ANALYZING' ? 'info' : 'secondary'}>
-              {selectedStatus === 'ANALYZED' ? 'Completed' : analyzing || selectedStatus === 'ANALYZING' ? 'Processing' : 'Waiting'}
-            </Badge>
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-sm text-text-primary">
-            {analyzing || selectedStatus === 'ANALYZING' ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ShieldCheck className="h-4 w-4" />
-            )}
-            {selectedStatus === 'ANALYZED'
-              ? 'Analysis complete'
-              : analyzing || selectedStatus === 'ANALYZING'
-                ? 'Analysis in progress'
-                : 'Awaiting run'}
-          </div>
-        </article>
-      </section>
 
       <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="surface-panel space-y-4 p-5">
@@ -573,86 +549,13 @@ export default function ResumePage() {
         <div className="space-y-6">
           {selectedResume ? (
             <>
-              <section className="surface-panel flex flex-wrap items-center gap-2 p-4">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => void handleAnalyze()}
-                  disabled={!canAnalyzeSelected || isActionRunning('analyze', selectedResume.id)}
-                >
-                  {isActionRunning('analyze', selectedResume.id) ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  Analyze
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void handleRetryExtraction(false)}
-                  disabled={isActionRunning('retry', selectedResume.id)}
-                >
-                  {isActionRunning('retry', selectedResume.id) ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCcw className="h-4 w-4" />
-                  )}
-                  Retry extraction
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void handleRetryExtraction(true)}
-                  disabled={isActionRunning('force-ocr', selectedResume.id)}
-                >
-                  {isActionRunning('force-ocr', selectedResume.id) ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Wand2 className="h-4 w-4" />
-                  )}
-                  Force OCR
-                </Button>
-                {!selectedResume.is_active ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void handleSetActive(selectedResume.id)}
-                    disabled={isActionRunning('set-active', selectedResume.id)}
-                  >
-                    {isActionRunning('set-active', selectedResume.id) ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ShieldCheck className="h-4 w-4" />
-                    )}
-                    Set active
-                  </Button>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => void handleDeleteResume(selectedResume.id)}
-                  disabled={isActionRunning('delete', selectedResume.id)}
-                >
-                  {isActionRunning('delete', selectedResume.id) ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                  Delete
-                </Button>
-              </section>
-
               <ResumeAnalysisStatus
                 resume={selectedResume}
                 latestRun={detail?.analysisRuns?.[0] ?? null}
                 extractionMeta={detail?.profile?.raw_sections?.__meta ?? null}
                 analysisReadiness={analysisReadiness}
                 analyzing={analyzing}
-                forceOCR={forceOCR}
-                onForceOCRChange={setForceOCR}
                 analyzeError={analyzeError}
-                onAnalyze={handleAnalyze}
               />
             </>
           ) : (

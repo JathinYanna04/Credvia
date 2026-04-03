@@ -8,9 +8,20 @@ import posthog from '@/lib/analytics/posthog-client';
 export interface ResumeUploadCardProps {
   onUploaded: () => Promise<void> | void;
   onUploadStateChange?: (uploading: boolean) => void;
+  title?: string;
+  description?: string;
+  actionLabel?: string;
+  compact?: boolean;
 }
 
-export function ResumeUploadCard({ onUploaded, onUploadStateChange }: ResumeUploadCardProps) {
+export function ResumeUploadCard({
+  onUploaded,
+  onUploadStateChange,
+  title,
+  description,
+  actionLabel,
+  compact = false,
+}: ResumeUploadCardProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,17 +70,16 @@ export function ResumeUploadCard({ onUploaded, onUploadStateChange }: ResumeUplo
     }
   }
 
+  const showHeader = Boolean(title || description);
+
   return (
-    <section className="surface-panel space-y-5 p-6">
-      <div className="space-y-2">
-        <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-text-tertiary">
-          Resume intelligence
+    <section className={compact ? 'space-y-4' : 'space-y-5'}>
+      {showHeader ? (
+        <div className="space-y-1">
+          {title ? <h2 className="text-lg font-semibold">{title}</h2> : null}
+          {description ? <p className="text-sm text-text-secondary">{description}</p> : null}
         </div>
-        <h2 className="text-2xl font-semibold">Upload your resume</h2>
-        <p className="text-sm text-text-secondary">
-          Upload one private resume file. Credvia keeps the original file private and parses it into a structured fit profile.
-        </p>
-      </div>
+      ) : null}
 
       <div className="group rounded-3xl border border-dashed border-border-default bg-bg-surface/40 p-6 transition-colors hover:border-border-strong">
         <input
@@ -98,7 +108,7 @@ export function ResumeUploadCard({ onUploaded, onUploadStateChange }: ResumeUplo
           </div>
           <Button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-            {uploading ? 'Uploading...' : 'Choose resume'}
+            {uploading ? 'Uploading...' : actionLabel ?? 'Choose resume'}
           </Button>
         </div>
       </div>

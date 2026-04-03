@@ -1,6 +1,6 @@
 'use client';
 
-import { FileText, Loader2, RefreshCcw, Scan, Sparkles } from 'lucide-react';
+import { FileText, Scan, Sparkles, Target, UploadCloud } from 'lucide-react';
 import type {
   CareerAnalysisRun,
   CareerResumeAnalysisReadiness,
@@ -14,7 +14,6 @@ import {
   parseStatusVariant,
 } from '@/components/career-match/utils';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { normalizeResumeLifecycleStatus } from '@/lib/resume/lifecycle';
 
 export interface ResumeAnalysisStatusProps {
@@ -23,15 +22,12 @@ export interface ResumeAnalysisStatusProps {
   analysisReadiness: CareerResumeAnalysisReadiness;
   extractionMeta?: CareerResumeExtractionMeta | null;
   analyzing: boolean;
-  forceOCR: boolean;
-  onForceOCRChange: (value: boolean) => void;
   analyzeError?: {
     code: string;
     message: string;
     details?: unknown;
     suggestedAction?: string;
   } | null;
-  onAnalyze: () => Promise<void> | void;
 }
 
 export function ResumeAnalysisStatus({
@@ -40,10 +36,7 @@ export function ResumeAnalysisStatus({
   analysisReadiness,
   extractionMeta,
   analyzing,
-  forceOCR,
-  onForceOCRChange,
   analyzeError,
-  onAnalyze,
 }: ResumeAnalysisStatusProps) {
   const showDeveloperDetails =
     process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_RESUME_DEBUG === 'true';
@@ -108,7 +101,6 @@ export function ResumeAnalysisStatus({
       analyzeError?.code === 'LOW_TEXT_CONFIDENCE' ||
       analyzeError?.code === 'OCR_UNAVAILABLE') &&
     resume.mime_type === 'application/pdf';
-  const analyzeDisabled = analyzing || !analysisReadiness.ready;
   const extractionStage =
     selectedStatus === 'EXTRACTING'
       ? 'processing'
@@ -120,7 +112,7 @@ export function ResumeAnalysisStatus({
             ? 'completed'
             : 'waiting';
   const analysisStage =
-    selectedStatus === 'ANALYZING'
+    analyzing || selectedStatus === 'ANALYZING'
       ? 'processing'
       : selectedStatus === 'ANALYZED'
         ? 'completed'
@@ -165,13 +157,25 @@ export function ResumeAnalysisStatus({
         return 'Waiting';
     }
   };
+  const uploadStage =
+    resume.file_name && resume.file_name.length > 0
+      ? selectedStatus === 'UPLOADED' || selectedStatus === 'EXTRACTING'
+        ? 'processing'
+        : 'completed'
+      : 'waiting';
+  const matchStage =
+    selectedStatus === 'ANALYZED'
+      ? 'completed'
+      : analysisReadiness.ready
+        ? 'waiting'
+        : 'warning';
 
   return (
     <section className="surface-panel space-y-5 p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-semibold">Analysis status</h2>
+            <h2 className="text-xl font-semibold">Parsing pipeline</h2>
             <Badge variant={parseStatusVariant(resume.parse_status)}>
               {humanizeParseStatus(resume.parse_status)}
             </Badge>
@@ -179,33 +183,20 @@ export function ResumeAnalysisStatus({
           <p className="text-sm text-text-secondary">
             Last upload: {formatDateTime(resume.uploaded_at)}
           </p>
-          <label className="mt-2 inline-flex items-center gap-2 text-xs text-text-secondary">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-border-default"
-              checked={forceOCR}
-              onChange={(event) => onForceOCRChange(event.target.checked)}
-            />
-            Force OCR on the next extraction retry (slower, useful for scanned files)
-          </label>
         </div>
-
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => void onAnalyze()}
-          disabled={analyzeDisabled}
-        >
-          {analyzing ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCcw className="h-4 w-4" />
-          )}
-          Analyze resume
-        </Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(uploadStage)}`}>
+          <div className="flex items-center justify-between text-xs uppercase tracking-[0.18em]">
+            Upload
+            <UploadCloud className="h-4 w-4" />
+          </div>
+          <div className="mt-2 text-sm">{stageStateLabel(uploadStage)}</div>
+          <div className="mt-1 text-xs text-text-tertiary">
+            {uploadStage === 'processing' ? 'Upload received' : uploadStage === 'completed' ? 'Resume on file' : 'Waiting for resume'}
+          </div>
+        </div>
         <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(extractionStage)}`}>
           <div className="flex items-center justify-between text-xs uppercase tracking-[0.18em]">
             Extraction
@@ -254,6 +245,20 @@ export function ResumeAnalysisStatus({
                 : analysisStage === 'failed'
                   ? 'Analysis failed'
                   : 'Ready when extraction completes'}
+          </div>
+        </div>
+        <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(matchStage)}`}>
+          <div className="flex items-center justify-between text-xs uppercase tracking-[0.18em]">
+            Match readiness
+            <Target className="h-4 w-4" />
+          </div>
+          <div className="mt-2 text-sm">{stageStateLabel(matchStage)}</div>
+          <div className="mt-1 text-xs text-text-tertiary">
+            {matchStage === 'completed'
+              ? 'Ready for matching'
+              : analysisReadiness.ready
+                ? 'Awaiting analysis'
+                : 'Action required'}
           </div>
         </div>
       </div>
