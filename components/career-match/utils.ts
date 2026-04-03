@@ -91,6 +91,14 @@ export function describeAnalysisMethod(parserVersion: string | null | undefined)
     return null;
   }
 
+  if (parserVersion.startsWith('render-extractor:')) {
+    const [, source] = parserVersion.split(':');
+    if (source === 'llm') return 'Render extractor (LLM)';
+    if (source === 'merged') return 'Render extractor (Merged)';
+    if (source === 'heuristic_fallback') return 'Render extractor (Fallback)';
+    return 'Render extractor';
+  }
+
   if (parserVersion.includes('pdfjs-text')) {
     return 'Native PDF text extraction';
   }

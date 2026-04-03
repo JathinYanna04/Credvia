@@ -21,6 +21,68 @@ type TypedSupabaseClient = SupabaseClient<Database>;
 
 type ResumeRow = Database['public']['Tables']['resumes']['Row'];
 
+function normalizeExternalString(value: unknown) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'null') {
+    return null;
+  }
+  return trimmed;
+}
+
+function formatExperienceLines(experience: ExternalExtractionPayload['sections'] extends { experience?: infer T }
+  ? T
+  : Array<Record<string, unknown>> = []) {
+  return (experience ?? []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const title = normalizeExternalString((entry as Record<string, unknown>).title);
+    const company = normalizeExternalString((entry as Record<string, unknown>).company);
+    const start = normalizeExternalString((entry as Record<string, unknown>).start_date);
+    const end = normalizeExternalString((entry as Record<string, unknown>).end_date);
+    const bullets = Array.isArray((entry as Record<string, unknown>).bullets)
+      ? ((entry as Record<string, unknown>).bullets as string[]).filter(Boolean)
+      : [];
+    const header = [title, company].filter(Boolean).join(' — ');
+    const dates = [start, end].filter(Boolean).join(' - ');
+    const lines = [header, dates].filter(Boolean);
+    return [...lines, ...bullets];
+  });
+}
+
+function formatProjectLines(projects: ExternalExtractionPayload['sections'] extends { projects?: infer T }
+  ? T
+  : Array<Record<string, unknown>> = []) {
+  return (projects ?? []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const name = normalizeExternalString((entry as Record<string, unknown>).name);
+    const description = normalizeExternalString((entry as Record<string, unknown>).description);
+    const bullets = Array.isArray((entry as Record<string, unknown>).bullets)
+      ? ((entry as Record<string, unknown>).bullets as string[]).filter(Boolean)
+      : [];
+    const lines = [name, description].filter(Boolean);
+    return [...lines, ...bullets];
+  });
+}
+
+function formatEducationLines(education: ExternalExtractionPayload['sections'] extends { education?: infer T }
+  ? T
+  : Array<Record<string, unknown>> = []) {
+  return (education ?? []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const degree = normalizeExternalString((entry as Record<string, unknown>).degree);
+    const institution = normalizeExternalString((entry as Record<string, unknown>).institution);
+    const start = normalizeExternalString((entry as Record<string, unknown>).start_date);
+    const end = normalizeExternalString((entry as Record<string, unknown>).end_date);
+    const description = normalizeExternalString((entry as Record<string, unknown>).description);
+    const header = [degree, institution].filter(Boolean).join(' — ');
+    const dates = [start, end].filter(Boolean).join(' - ');
+    const lines = [header, dates, description].filter(Boolean);
+    return lines;
+  });
+}
+
 interface ResumePreparationResult {
   extraction: Awaited<ReturnType<typeof extractResumeText>>;
   parsed: ReturnType<typeof parseResumeText>;
@@ -573,6 +635,7 @@ export async function prepareResumeFromExternalExtraction(
     const llmStatus = external.diagnostics?.llm_status ?? null;
     const llmFinalSource = external.diagnostics?.final_source ?? null;
     const llmError = external.diagnostics?.llm_error ?? null;
+    const llmRawPresent = external.diagnostics?.llm_raw_present ?? null;
     const quality = assessResumeTextQuality(cleanedText);
     const parsed = parseResumeText(reconstructedText, {
       extractionMethod: methodUsed,
@@ -590,7 +653,51 @@ export async function prepareResumeFromExternalExtraction(
       warningMessage: warnings[0] ?? null,
       rawText,
       cleanedText,
+      finalSource: llmFinalSource ?? undefined,
+      llmStatus: llmStatus ?? undefined,
+      llmError,
+      llmRawPresent,
     });
+
+    if (external.sections) {
+      const externalExperience = formatExperienceLines(external.sections.experience);
+      const externalProjects = formatProjectLines(external.sections.projects);
+      const externalEducation = formatEducationLines(external.sections.education);
+
+      if (externalExperience.length > 0) {
+        parsed.experience = externalExperience;
+      }
+      if (externalProjects.length > 0) {
+        parsed.projects = externalProjects;
+      }
+      if (externalEducation.length > 0) {
+        parsed.education = externalEducation;
+      }
+    }
+
+    if (external.candidate) {
+      parsed.fullName = normalizeExternalString(external.candidate.full_name) ?? parsed.fullName;
+      parsed.email = normalizeExternalString(external.candidate.email) ?? parsed.email;
+      parsed.phone = normalizeExternalString(external.candidate.phone) ?? parsed.phone;
+      parsed.summary = normalizeExternalString(external.candidate.summary) ?? parsed.summary;
+      parsed.locationText =
+        normalizeExternalString(external.candidate.location) ?? parsed.locationText;
+    }
+
+    if (external.sections?.experience && external.sections.experience.length > 0) {
+      const firstExp = external.sections.experience[0] as Record<string, unknown>;
+      const title = normalizeExternalString(firstExp.title);
+      if (title) {
+        parsed.currentTitle = title;
+      }
+    }
+
+    if (external.normalized_resume?.sections) {
+      parsed.parsedSections = {
+        ...parsed.parsedSections,
+        ...external.normalized_resume.sections,
+      };
+    }
 
     const cleanedTextLength = cleanedText.length;
     logInfo('resume-preparation', 'External extraction completed', {
@@ -616,9 +723,10 @@ export async function prepareResumeFromExternalExtraction(
     const matchedSkillRows = await persistParsedResume(supabase, resume, cleanedText, parsed);
     await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.READY);
 
+    const parserVersion = `render-extractor:${llmFinalSource ?? 'heuristic_fallback'}`;
     await completeRun(supabase, runId, {
       status: 'completed',
-      parserVersion: `fastapi-v1:${external.method_used ?? 'extractor'}`,
+      parserVersion,
       errorMessage: null,
     });
 

@@ -23,6 +23,10 @@ export interface ParsedResumeMeta {
   ocrAvailable?: boolean;
   ocrUnavailableReason?: string | null;
   acceptedWithWarnings?: boolean;
+  finalSource?: 'llm' | 'heuristic_fallback' | 'merged';
+  llmStatus?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
+  llmError?: string | null;
+  llmRawPresent?: boolean | null;
   warningCode?:
     | 'LOW_TEXT_CONFIDENCE'
     | 'OCR_UNAVAILABLE'

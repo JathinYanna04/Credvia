@@ -44,6 +44,10 @@ export interface CareerResumeExtractionMeta {
   readiness?: 'good' | 'partial' | 'poor' | 'failed';
   rawText?: string;
   cleanedText?: string;
+  finalSource?: 'llm' | 'heuristic_fallback' | 'merged';
+  llmStatus?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
+  llmError?: string | null;
+  llmRawPresent?: boolean | null;
 }
 
 export interface CareerResumeAnalysisReadiness {
