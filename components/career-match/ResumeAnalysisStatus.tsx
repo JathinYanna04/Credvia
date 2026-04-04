@@ -184,13 +184,15 @@ export function ResumeAnalysisStatus({
         ? 'waiting'
         : 'warning';
   const llmStatus = extractionMeta?.llmStatus ?? null;
+  const llmRequested = extractionMeta?.llmRequested ?? false;
+  const llmAttempted = extractionMeta?.llmAttempted ?? false;
   const llmStage =
     llmStatus === 'success'
       ? 'completed'
-      : llmStatus === 'timeout' || llmStatus === 'error' || llmStatus === 'invalid_json'
+      : llmStatus === 'error' || llmStatus === 'not_configured'
         ? 'warning'
-        : llmStatus === 'skipped'
-          ? 'waiting'
+      : llmStatus === 'skipped'
+          ? 'not_needed'
           : 'waiting';
   const finalSource = extractionMeta?.finalSource ?? null;
 
@@ -265,14 +267,16 @@ export function ResumeAnalysisStatus({
           <div className="mt-2 text-sm">{stageStateLabel(llmStage)}</div>
           <div className="mt-1 text-xs text-text-tertiary">
             {llmStatus === 'success'
-              ? finalSource === 'merged'
-                ? 'Merged profile ready'
-                : 'LLM profile ready'
+              ? 'Merged profile ready'
               : llmStatus === 'skipped'
-                ? 'Skipped by request/config'
-                : llmStatus
-                  ? 'Using deterministic fallback'
-                  : 'Awaiting extraction'}
+                ? 'Intentionally skipped'
+                : llmStatus === 'not_configured'
+                  ? 'Provider not configured'
+                  : llmStatus === 'error'
+                    ? 'Using deterministic fallback'
+                    : llmRequested || llmAttempted
+                      ? 'Awaiting extractor result'
+                      : 'Waiting for extraction'}
           </div>
         </div>
         <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(analysisStage)}`}>
@@ -419,7 +423,20 @@ export function ResumeAnalysisStatus({
         </div>
       ) : null}
 
-      {llmStatus && llmStatus !== 'success' && llmStatus !== 'skipped' ? (
+      {llmStatus === 'skipped' ? (
+        <div className="rounded-2xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-info">
+          LLM refinement was intentionally skipped for this extraction request.
+        </div>
+      ) : null}
+
+      {llmStatus === 'not_configured' ? (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          LLM refinement could not run because no provider is configured. Using deterministic fallback.
+          {extractionMeta?.llmError ? ` Reason: ${extractionMeta.llmError}.` : ''}
+        </div>
+      ) : null}
+
+      {llmStatus === 'error' ? (
         <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
           LLM refinement unavailable, using deterministic fallback.
           {extractionMeta?.llmError ? ` Reason: ${extractionMeta.llmError}.` : ''}

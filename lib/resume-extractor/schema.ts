@@ -149,8 +149,15 @@ export const extractorResponseSchema = z.object({
     ocr_attempted: z.boolean().optional(),
     ocr_improved_quality: z.boolean().nullable().optional(),
     layout_reconstruction_used: z.boolean().optional(),
-    final_source: z.enum(['llm', 'heuristic_fallback', 'merged']).optional(),
-    llm_status: z.enum(['success', 'invalid_json', 'timeout', 'error', 'skipped']).optional(),
+    final_source: z
+      .enum(['merged', 'deterministic_only', 'ocr_fallback'])
+      .optional(),
+    llm_requested: z.boolean().optional(),
+    llm_skipped: z.boolean().optional(),
+    llm_attempted: z.boolean().optional(),
+    llm_status: z
+      .enum(['success', 'error', 'skipped', 'not_configured'])
+      .optional(),
     llm_error: z.string().nullable().optional(),
     llm_raw_present: z.boolean().nullable().optional(),
     warnings: stringListSchema.optional().default([]),

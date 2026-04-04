@@ -93,9 +93,9 @@ export function describeAnalysisMethod(parserVersion: string | null | undefined)
 
   if (parserVersion.startsWith('render-extractor:')) {
     const [, source] = parserVersion.split(':');
-    if (source === 'llm') return 'Render extractor (LLM)';
     if (source === 'merged') return 'Render extractor (Merged)';
-    if (source === 'heuristic_fallback') return 'Render extractor (Fallback)';
+    if (source === 'ocr_fallback') return 'Render extractor (OCR fallback)';
+    if (source === 'deterministic_only') return 'Render extractor (Deterministic fallback)';
     return 'Render extractor';
   }
 

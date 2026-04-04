@@ -255,6 +255,8 @@ export async function POST(
     const env = getAppResumeEnv();
     const extractorUrl = env.RESUME_EXTRACTOR_URL ?? null;
     const requestId = createRequestId(resume.id);
+    const requestedForceLlm = body.forceLLM ?? true;
+    const requestedSkipLlm = body.skipLLM ?? false;
     let preparation;
 
     if (extractorUrl) {
@@ -263,8 +265,8 @@ export async function POST(
           fileBuffer: buffer,
           filename: resume.file_name,
           mimeType: resume.mime_type,
-          forceLlm: body.forceLLM ?? true,
-          skipLlm: body.skipLLM ?? false,
+          forceLlm: requestedForceLlm,
+          skipLlm: requestedSkipLlm,
           requestId,
         });
         if (!hasExternalExtractorShape(payload)) {
@@ -273,8 +275,13 @@ export async function POST(
         logInfo('resume-extract', 'Extractor diagnostics', {
           resumeId: resume.id,
           requestId,
+          requestedForceLlm,
+          requestedSkipLlm,
           rawTextLength: payload.raw.raw_text.length,
           cleanedTextLength: payload.raw.cleaned_text.length,
+          llmRequested: payload.diagnostics?.llm_requested ?? null,
+          llmSkipped: payload.diagnostics?.llm_skipped ?? null,
+          llmAttempted: payload.diagnostics?.llm_attempted ?? null,
           llmStatus: payload.diagnostics?.llm_status ?? null,
           llmFinalSource: payload.diagnostics?.final_source ?? null,
           llmError: payload.diagnostics?.llm_error ?? null,
@@ -298,6 +305,8 @@ export async function POST(
           resumeId: resume.id,
           extractorUrl,
           requestId,
+          requestedForceLlm,
+          requestedSkipLlm,
           errorCode,
           message:
             externalError instanceof Error

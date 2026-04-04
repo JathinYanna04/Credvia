@@ -229,6 +229,10 @@ describe('career match read routes', () => {
     expect(payload.data.skills[0].skill.slug).toBe('react');
     expect(payload.data.effectiveProfile.candidate.full_name).toBe('Jane Builder');
     expect(payload.data.atsAnalysis.overallScore).toBeGreaterThan(0);
+    expect(payload.data.atsAnalysis.overallScoreDetail).toMatchObject({
+      value: payload.data.atsAnalysis.overallScore,
+      max: 100,
+    });
     expect(payload.data.versions).toHaveLength(1);
   });
 });

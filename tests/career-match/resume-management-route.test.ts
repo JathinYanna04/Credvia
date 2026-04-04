@@ -255,6 +255,19 @@ describe('resume management route', () => {
               full_name: 'Jane Builder',
               email: 'jane@example.com',
             },
+            skills: {
+              languages: ['Python', 'Go'],
+              frameworks: ['FastAPI'],
+            },
+            projects: [
+              {
+                name: 'Credvia ATS',
+                description: 'Resume intelligence workspace',
+                bullets: ['Built explainable ATS scoring'],
+                technologies: ['TypeScript', 'FastAPI'],
+                links: [],
+              },
+            ],
           },
         }),
       }),

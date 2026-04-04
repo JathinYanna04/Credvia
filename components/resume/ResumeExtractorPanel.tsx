@@ -125,11 +125,11 @@ export function ResumeExtractorPanel() {
               </div>
               {result.diagnostics.final_source ? (
                 <div className="mt-2 inline-flex items-center rounded-full border border-border-subtle px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-text-tertiary">
-                  {result.diagnostics.final_source === 'llm'
-                    ? 'LLM'
-                    : result.diagnostics.final_source === 'merged'
+                  {result.diagnostics.final_source === 'merged'
                     ? 'Merged'
-                    : 'Fallback'}
+                    : result.diagnostics.final_source === 'ocr_fallback'
+                      ? 'OCR fallback'
+                      : 'Deterministic'}
                 </div>
               ) : null}
               <div className="mt-2 text-xs text-text-tertiary">

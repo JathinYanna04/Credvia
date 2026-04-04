@@ -18,9 +18,13 @@ const SkillsManualOverrideSchema = z
   .object({
     languages: z.array(z.string().trim().min(1).max(80)).optional(),
     frameworks: z.array(z.string().trim().min(1).max(80)).optional(),
+    libraries: z.array(z.string().trim().min(1).max(80)).optional(),
     tools: z.array(z.string().trim().min(1).max(80)).optional(),
     databases: z.array(z.string().trim().min(1).max(80)).optional(),
     cloud: z.array(z.string().trim().min(1).max(80)).optional(),
+    ai_ml: z.array(z.string().trim().min(1).max(80)).optional(),
+    devops: z.array(z.string().trim().min(1).max(80)).optional(),
+    platforms: z.array(z.string().trim().min(1).max(80)).optional(),
     others: z.array(z.string().trim().min(1).max(80)).optional(),
     spoken_languages: z.array(z.string().trim().min(1).max(80)).optional(),
   })

@@ -8,6 +8,7 @@ import {
   buildResumeAtsAnalysis,
   buildResumeVersionSummaries,
   getEffectiveStructuredProfile,
+  normalizeResumeAtsAnalysis,
 } from '@/lib/resume/intelligence';
 import { ResumeUpdateSchema } from '@/lib/schemas/career-match';
 import { getRequiredUser } from '@/lib/supabase/helpers';
@@ -82,11 +83,11 @@ export async function GET(
       job: (jobLookup.get(match.job_id) ?? null) as CareerMatch['job'],
     })) as CareerMatch[];
     const effectiveProfile = getEffectiveStructuredProfile(profile);
-    const atsAnalysis = buildResumeAtsAnalysis({
+    const atsAnalysis = normalizeResumeAtsAnalysis(buildResumeAtsAnalysis({
       profile,
       effectiveProfile,
       topMatches,
-    });
+    }));
 
     return ok({
       resume,

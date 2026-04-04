@@ -427,6 +427,9 @@ class DiagnosticsBlock(BaseModel):
     ocr_improved_quality: Optional[bool] = None
     layout_reconstruction_used: bool = False
     final_source: Optional[str] = None
+    llm_requested: bool = False
+    llm_skipped: bool = False
+    llm_attempted: bool = False
     llm_status: Optional[str] = None
     llm_error: Optional[str] = None
     llm_raw_present: Optional[bool] = None
@@ -802,13 +805,18 @@ def infer_candidate_basics(text: str) -> CandidateBasics:
 
     summary = None
     for line in lines:
-        if len(line.split()) >= 8 and not re.search(r"\bskills?\b", line, re.I):
+        if (
+            len(line.split()) >= 8
+            and not re.search(r"\bskills?\b", line, re.I)
+            and not looks_like_contact_line(line)
+            and not looks_like_location_noise(line)
+        ):
             summary = line
             break
 
     location = None
     for line in lines[:8]:
-        if re.search(r"\b[A-Z][a-z]+,\s?[A-Z]{2}\b", line):
+        if looks_like_location_line(line):
             location = line
             break
 
@@ -1468,7 +1476,96 @@ def is_noisy_summary(text: Optional[str]) -> bool:
         return True
     if PDF_INTERNAL_HINT.search(text) or PDF_METADATA_HINT.search(text):
         return True
+    if looks_like_contact_line(text):
+        return True
     return len(text.split()) < 4
+
+
+def looks_like_contact_line(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    return bool(
+        "@" in text
+        or re.search(r"\+?\d[\d\s()+-]{7,}", text)
+        or any(token in lowered for token in ["linkedin", "github", "portfolio", "phone:", "email:", "contact"])
+    )
+
+
+def looks_like_location_noise(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    location_keywords = [
+        "india",
+        "hyderabad",
+        "bangalore",
+        "bengaluru",
+        "mumbai",
+        "delhi",
+        "pune",
+        "chennai",
+        "telangana",
+        "karnataka",
+        "remote",
+    ]
+    skill_noise = {
+        "python",
+        "java",
+        "javascript",
+        "typescript",
+        "react",
+        "node",
+        "fastapi",
+        "postgresql",
+        "mongodb",
+        "docker",
+        "aws",
+    }
+    words = [word.strip(" ,.-").lower() for word in text.split() if word.strip(" ,.-")]
+    if not words:
+        return True
+    if any(token in lowered for token in ["skills", "languages:", "frameworks:", "tools:", "databases:"]):
+        return True
+    if all(word in skill_noise for word in words[: min(len(words), 4)]):
+        return True
+    return not any(keyword in lowered for keyword in location_keywords) and not bool(
+        re.search(r"\b[A-Z][a-z]+,\s*(?:[A-Z][a-z]+|[A-Z]{2,})\b", text)
+    )
+
+
+def looks_like_location_line(text: Optional[str]) -> bool:
+    if not text or looks_like_contact_line(text) or looks_like_location_noise(text):
+        return False
+    return bool(
+        re.search(r"\b[A-Z][a-z]+,\s*(?:[A-Z][a-z]+|[A-Z]{2,})\b", text)
+        or re.search(r"\b(?:Hyderabad|Bangalore|Bengaluru|Mumbai|Delhi|Pune|Chennai|Telangana|India|Remote)\b", text, re.I)
+    )
+
+
+def outward_llm_status(raw_status: Optional[str], raw_error: Optional[str]) -> str:
+    if raw_status == "success":
+        return "success"
+    if raw_status == "skipped":
+        return "skipped"
+    if raw_error in {"missing_api_key", "provider_not_configured"}:
+        return "not_configured"
+    return "error"
+
+
+def outward_final_source(
+    llm_status: str,
+    llm_final_source: Optional[str],
+    method_used: str,
+    ocr_attempted: bool,
+    ocr_status: Optional[str],
+) -> str:
+    if llm_status == "success":
+        return "merged" if llm_final_source == "merged" else "merged"
+    used_ocr = "ocr" in (method_used or "").lower() or ocr_status == "used_successfully"
+    if used_ocr or (ocr_attempted and ocr_status in {"attempted_no_gain", "failed_preserved_previous", "unavailable_preserved_previous"}):
+        return "ocr_fallback"
+    return "deterministic_only"
 
 
 def join_compact_parts(parts: List[str], primary_separator: str = " — ") -> Optional[str]:
@@ -1931,7 +2028,9 @@ def normalize_nullable(value: Optional[str]) -> Optional[str]:
 
 def infer_location_from_text(text: str) -> Optional[str]:
     for line in text.splitlines():
-        match = re.search(r"\b([A-Z][a-z]+,\s*[A-Z][a-z]+)\b", line)
+        if not looks_like_location_line(line):
+            continue
+        match = re.search(r"\b([A-Z][a-z]+,\s*(?:[A-Z][a-z]+|[A-Z]{2,}))\b", line)
         if match:
             return match.group(1)
     return None
@@ -1970,6 +2069,9 @@ def infer_role_from_sections(sections: SectionsBlock) -> Optional[str]:
 
 def post_process_candidate(candidate: CandidateBasics, text: str, actions: List[str]) -> CandidateBasics:
     candidate.location = normalize_nullable(candidate.location)
+    if candidate.location and not looks_like_location_line(candidate.location):
+        candidate.location = None
+        actions.append("location_rejected_as_noise")
     if not candidate.location:
         inferred = infer_location_from_text(text)
         if inferred:
@@ -1982,6 +2084,9 @@ def post_process_candidate(candidate: CandidateBasics, text: str, actions: List[
     candidate.github = normalize_nullable(candidate.github)
     candidate.portfolio = normalize_nullable(candidate.portfolio)
     candidate.summary = normalize_nullable(candidate.summary)
+    if candidate.summary and is_noisy_summary(candidate.summary):
+        candidate.summary = None
+        actions.append("summary_rejected_as_noise")
     return candidate
 
 
@@ -2119,7 +2224,11 @@ async def extract(
     resolved_filename = filename or file.filename or "resume"
     resolved_mime = mime_type or file.content_type or "application/octet-stream"
     resolved_request_id = request_id or str(uuid.uuid4())
-    llm_enabled_for_request = False if skip_llm else bool(force_llm) or LLM_ALWAYS_ON
+    requested_force_llm = bool(force_llm) if force_llm is not None else True
+    requested_skip_llm = bool(skip_llm) if skip_llm is not None else False
+    llm_requested = not requested_skip_llm and (requested_force_llm or LLM_ALWAYS_ON)
+    llm_skipped = requested_skip_llm
+    llm_enabled_for_request = llm_requested and not llm_skipped
 
     cache_key = get_cache_key(data + f":llm={llm_enabled_for_request}:skip={bool(skip_llm)}".encode("utf-8"))
     cached = get_cached_parse(cache_key)
@@ -2138,6 +2247,15 @@ async def extract(
         confidence = ConfidenceBlock(**cached["confidence"])
         ats_cached = cached["ats"]
         llm_action = cached.get("llm_action", "llm_cached")
+        llm_status = cached.get("llm_status")
+        outward_status = outward_llm_status(llm_status, cached.get("llm_error"))
+        outward_source = cached.get("final_source") or outward_final_source(
+            outward_status,
+            None,
+            method_used,
+            cached.get("ocr_attempted", False),
+            cached.get("ocr_status"),
+        )
         actions_post: List[str] = ["cache_hit"]
         status = StatusBlock(
             success=True,
@@ -2187,8 +2305,11 @@ async def extract(
                 ocr_attempted=cached.get("ocr_attempted", False),
                 ocr_improved_quality=cached.get("ocr_improved_quality"),
                 layout_reconstruction_used=cached.get("layout_reconstruction_used", False),
-                final_source=cached.get("final_source"),
-                llm_status=cached.get("llm_status"),
+                final_source=outward_source,
+                llm_requested=cached.get("llm_requested", llm_requested),
+                llm_skipped=cached.get("llm_skipped", llm_skipped),
+                llm_attempted=cached.get("llm_attempted", llm_requested and outward_status != "skipped"),
+                llm_status=outward_status,
                 llm_error=cached.get("llm_error"),
                 llm_raw_present=cached.get("llm_raw_present"),
                 warnings=cached.get("warnings", []),
@@ -2276,7 +2397,9 @@ async def extract(
     llm_error: Optional[str] = None
     llm_raw_present: Optional[bool] = None
     llm_final_source: Optional[str] = None
+    llm_attempted = False
     if cleaned_text.strip() and llm_enabled_for_request:
+        llm_attempted = True
         trimmed_text = cleaned_text[:MAX_LLM_TEXT_CHARS]
         refined = call_llm_refiner(
             trimmed_text,
@@ -2362,12 +2485,17 @@ async def extract(
         candidate, sections, confidence, has_cert_section
     )
 
-    final_source = "heuristic_fallback"
-    if llm_status == "success":
-        final_source = llm_final_source or "merged"
+    outward_status = outward_llm_status(llm_status, llm_error)
+    final_source = outward_final_source(
+        outward_status,
+        llm_final_source,
+        method_used,
+        bool(extraction_diagnostics.get("ocr_attempted", False)),
+        extraction_diagnostics.get("ocr_status"),
+    )
 
     parser_version = PARSER_VERSION
-    if final_source in {"merged", "llm"}:
+    if outward_status == "success":
         parser_version = f"{PARSER_VERSION}+llm"
 
     parsed_at = datetime.now(timezone.utc).isoformat()
@@ -2417,7 +2545,10 @@ async def extract(
             ocr_improved_quality=extraction_diagnostics.get("ocr_improved_quality"),
             layout_reconstruction_used=bool(extraction_diagnostics.get("layout_reconstruction_used", False)),
             final_source=final_source,
-            llm_status=llm_status,
+            llm_requested=llm_requested,
+            llm_skipped=llm_skipped,
+            llm_attempted=llm_attempted,
+            llm_status=outward_status,
             llm_error=llm_error,
             llm_raw_present=llm_raw_present,
             warnings=warnings,
@@ -2453,6 +2584,9 @@ async def extract(
                 "extraction_quality_score": round(extraction_quality_score, 2),
             },
             "llm_action": llm_action,
+            "llm_requested": llm_requested,
+            "llm_skipped": llm_skipped,
+            "llm_attempted": llm_attempted,
             "llm_status": llm_status,
             "llm_error": llm_error,
             "llm_raw_present": llm_raw_present,
@@ -2476,7 +2610,9 @@ async def extract(
     log_event(
         " ".join(
             [
-                f"llm_status={llm_status}",
+                f"llm_requested={llm_requested}",
+                f"llm_attempted={llm_attempted}",
+                f"llm_status={outward_status}",
                 f"final_source={final_source}",
                 f"ocr_status={extraction_diagnostics.get('ocr_status') or 'none'}",
                 f"page_sources={json.dumps(extraction_diagnostics.get('page_source_summary', {}), sort_keys=True)}",

@@ -112,8 +112,11 @@ export type ExtractResponse = {
     ocr_attempted?: boolean;
     ocr_improved_quality?: boolean | null;
     layout_reconstruction_used?: boolean;
-    final_source?: 'llm' | 'heuristic_fallback' | 'merged';
-    llm_status?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
+    final_source?: 'merged' | 'deterministic_only' | 'ocr_fallback';
+    llm_requested?: boolean;
+    llm_skipped?: boolean;
+    llm_attempted?: boolean;
+    llm_status?: 'success' | 'error' | 'skipped' | 'not_configured';
     llm_error?: string | null;
     llm_raw_present?: boolean | null;
     warnings?: string[];

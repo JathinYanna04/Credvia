@@ -16,6 +16,10 @@ function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function toNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function toStringOrNull(value: unknown) {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
@@ -48,6 +52,11 @@ function buildFallbackStructuredProfile(profile: CareerResumeProfile | null): Ca
     schemaVersion: toStringOrNull(profile.raw_sections?.__meta?.schemaVersion),
     requestId: toStringOrNull(profile.raw_sections?.__meta?.requestId),
     finalSource: profile.raw_sections?.__meta?.finalSource ?? null,
+    requestedForceLlm: profile.raw_sections?.__meta?.requestedForceLlm ?? null,
+    requestedSkipLlm: profile.raw_sections?.__meta?.requestedSkipLlm ?? null,
+    llmRequested: profile.raw_sections?.__meta?.llmRequested ?? null,
+    llmSkipped: profile.raw_sections?.__meta?.llmSkipped ?? null,
+    llmAttempted: profile.raw_sections?.__meta?.llmAttempted ?? null,
     llmStatus: profile.raw_sections?.__meta?.llmStatus ?? null,
     llmError: profile.raw_sections?.__meta?.llmError ?? null,
     llmRawPresent: profile.raw_sections?.__meta?.llmRawPresent ?? null,
@@ -279,6 +288,14 @@ export function getEffectiveStructuredProfile(
           Object.keys(manual.candidate).map((key) => [
             `candidate.${key}`,
             { source: 'user_override', confidence: 1, path: `candidate.${key}` },
+          ]),
+        )
+      : {}),
+    ...(manual.skills
+      ? Object.fromEntries(
+          Object.keys(manual.skills).map((key) => [
+            `skills.${key}`,
+            { source: 'user_override', confidence: 1, path: `skills.${key}` },
           ]),
         )
       : {}),
@@ -657,6 +674,20 @@ export function buildResumeAtsAnalysis(args: {
 
   return {
     overallScore,
+    overallScoreDetail: {
+      value: overallScore,
+      max: 100,
+      label: overallScore >= 80 ? 'Strong' : overallScore >= 60 ? 'Needs work' : 'Weak',
+      confidence: Math.max(
+        0,
+        Math.min(
+          1,
+          (typeof effectiveProfile.diagnostics?.confidence === 'number'
+            ? effectiveProfile.diagnostics.confidence
+            : extractionReliability) / 100,
+        ),
+      ),
+    },
     mode: hasTarget ? 'targeted' : 'general',
     parseConfidence: extractionReliability,
     sectionCompleteness,
@@ -683,6 +714,92 @@ export function buildResumeAtsAnalysis(args: {
   };
 }
 
+export function normalizeResumeAtsAnalysis(
+  analysis: CareerResumeAtsAnalysis | (Omit<CareerResumeAtsAnalysis, 'overallScore'> & { overallScore: unknown }) | null,
+): CareerResumeAtsAnalysis | null {
+  if (!analysis || typeof analysis !== 'object') {
+    return null;
+  }
+
+  const rawOverallScore = (analysis as { overallScore?: unknown }).overallScore;
+  const existingDetail =
+    (analysis as { overallScoreDetail?: CareerResumeAtsAnalysis['overallScoreDetail'] }).overallScoreDetail ??
+    null;
+
+  const objectDetail =
+    rawOverallScore && typeof rawOverallScore === 'object'
+      ? (rawOverallScore as Record<string, unknown>)
+      : null;
+
+  const subScores = Array.isArray((analysis as { subScores?: unknown }).subScores)
+    ? ((analysis as { subScores?: CareerWeightedScoreBreakdown[] }).subScores ?? [])
+    : [];
+  const derivedFromSubScores =
+    subScores.length > 0
+      ? clampScore(
+          subScores.reduce((sum, item) => {
+            const score = toNumber(item?.score) ?? 0;
+            const weight = toNumber(item?.weight) ?? 0;
+            return sum + score * weight;
+          }, 0),
+        )
+      : null;
+  const derivedFromMetrics = clampScore(
+    [
+      toNumber((analysis as { parseConfidence?: unknown }).parseConfidence),
+      toNumber((analysis as { sectionCompleteness?: unknown }).sectionCompleteness),
+      toNumber((analysis as { contactCompleteness?: unknown }).contactCompleteness),
+      toNumber((analysis as { skillsCoverage?: unknown }).skillsCoverage),
+      toNumber((analysis as { educationQuality?: unknown }).educationQuality),
+      toNumber((analysis as { experienceDepth?: unknown }).experienceDepth),
+      toNumber((analysis as { projectsQuality?: unknown }).projectsQuality),
+    ].filter((value): value is number => value !== null).reduce((sum, value, _, arr) => sum + value / arr.length, 0),
+  );
+
+  const numericOverallScore =
+    toNumber(rawOverallScore) ??
+    toNumber(objectDetail?.value) ??
+    toNumber(existingDetail?.value) ??
+    derivedFromSubScores ??
+    derivedFromMetrics;
+
+  const normalizedDetail =
+    existingDetail || objectDetail
+      ? {
+          value: numericOverallScore,
+          max: toNumber(existingDetail?.max) ?? toNumber(objectDetail?.max) ?? 100,
+          label:
+            toStringOrNull(existingDetail?.label) ??
+            toStringOrNull(objectDetail?.label) ??
+            (numericOverallScore >= 80
+              ? 'Strong'
+              : numericOverallScore >= 60
+                ? 'Needs work'
+                : 'Weak'),
+          confidence:
+            toNumber(existingDetail?.confidence) ??
+            toNumber(objectDetail?.confidence) ??
+            0,
+        }
+      : {
+          value: numericOverallScore,
+          max: 100,
+          label:
+            numericOverallScore >= 80
+              ? 'Strong'
+              : numericOverallScore >= 60
+                ? 'Needs work'
+                : 'Weak',
+          confidence: 0,
+        };
+
+  return {
+    ...(analysis as CareerResumeAtsAnalysis),
+    overallScore: numericOverallScore,
+    overallScoreDetail: normalizedDetail,
+  };
+}
+
 export function buildResumeVersionSummaries(args: {
   resumes: Array<{
     id: string;
@@ -696,6 +813,7 @@ export function buildResumeVersionSummaries(args: {
   activeDetailAnalysis: CareerResumeAtsAnalysis | null;
 }): CareerResumeVersionSummary[] {
   const { resumes, activeDetailAnalysis } = args;
+  const normalizedActiveDetailAnalysis = normalizeResumeAtsAnalysis(activeDetailAnalysis);
   return resumes.map((resume) => ({
     id: resume.id,
     file_name: resume.file_name,
@@ -703,7 +821,7 @@ export function buildResumeVersionSummaries(args: {
     parse_status: resume.parse_status as CareerResumeVersionSummary['parse_status'],
     uploaded_at: resume.uploaded_at,
     updated_at: resume.updated_at,
-    score: resume.is_active ? activeDetailAnalysis?.overallScore ?? null : null,
+    score: resume.is_active ? normalizedActiveDetailAnalysis?.overallScore ?? null : null,
     confidenceTier: resume.profile?.raw_sections?.__meta?.extractionQuality?.confidenceTier ?? null,
   }));
 }

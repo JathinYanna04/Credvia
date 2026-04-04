@@ -59,8 +59,13 @@ export interface CareerResumeExtractionMeta {
   readiness?: 'good' | 'partial' | 'poor' | 'failed';
   rawText?: string;
   cleanedText?: string;
-  finalSource?: 'llm' | 'heuristic_fallback' | 'merged';
-  llmStatus?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
+  finalSource?: 'merged' | 'deterministic_only' | 'ocr_fallback';
+  requestedForceLlm?: boolean;
+  requestedSkipLlm?: boolean;
+  llmRequested?: boolean;
+  llmSkipped?: boolean;
+  llmAttempted?: boolean;
+  llmStatus?: 'success' | 'error' | 'skipped' | 'not_configured';
   llmError?: string | null;
   llmRawPresent?: boolean | null;
   nativeTextQuality?: Record<string, unknown>;
@@ -147,8 +152,13 @@ export interface CareerStructuredAdditional {
 
 export interface CareerStructuredDiagnostics {
   parserVersion?: string | null;
-  finalSource?: 'llm' | 'heuristic_fallback' | 'merged' | null;
-  llmStatus?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped' | null;
+  finalSource?: 'merged' | 'deterministic_only' | 'ocr_fallback' | null;
+  requestedForceLlm?: boolean | null;
+  requestedSkipLlm?: boolean | null;
+  llmRequested?: boolean | null;
+  llmSkipped?: boolean | null;
+  llmAttempted?: boolean | null;
+  llmStatus?: 'success' | 'error' | 'skipped' | 'not_configured' | null;
   llmError?: string | null;
   llmRawPresent?: boolean | null;
   confidence?: number | null;
@@ -194,6 +204,12 @@ export interface CareerWeightedScoreBreakdown {
 
 export interface CareerResumeAtsAnalysis {
   overallScore: number;
+  overallScoreDetail?: {
+    value: number;
+    max: number;
+    label: string;
+    confidence: number;
+  };
   mode?: 'general' | 'targeted';
   parseConfidence: number;
   sectionCompleteness: number;

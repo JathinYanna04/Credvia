@@ -58,8 +58,13 @@ export interface ParsedResumeMeta {
   ocrAvailable?: boolean;
   ocrUnavailableReason?: string | null;
   acceptedWithWarnings?: boolean;
-  finalSource?: 'llm' | 'heuristic_fallback' | 'merged';
-  llmStatus?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
+  finalSource?: 'merged' | 'deterministic_only' | 'ocr_fallback';
+  requestedForceLlm?: boolean;
+  requestedSkipLlm?: boolean;
+  llmRequested?: boolean;
+  llmSkipped?: boolean;
+  llmAttempted?: boolean;
+  llmStatus?: 'success' | 'error' | 'skipped' | 'not_configured';
   llmError?: string | null;
   llmRawPresent?: boolean | null;
   warningCode?:

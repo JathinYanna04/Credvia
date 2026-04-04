@@ -283,6 +283,11 @@ function buildStructuredProfile(
       parserVersion: external.parser_version ?? null,
       schemaVersion: external.schema_version ?? null,
       finalSource: external.diagnostics?.final_source ?? null,
+      requestedForceLlm: external.diagnostics?.llm_requested ?? null,
+      requestedSkipLlm: external.diagnostics?.llm_skipped ?? null,
+      llmRequested: external.diagnostics?.llm_requested ?? null,
+      llmSkipped: external.diagnostics?.llm_skipped ?? null,
+      llmAttempted: external.diagnostics?.llm_attempted ?? null,
       llmStatus: external.diagnostics?.llm_status ?? null,
       llmError: external.diagnostics?.llm_error ?? null,
       llmRawPresent: external.diagnostics?.llm_raw_present ?? null,
@@ -385,7 +390,12 @@ function buildStructuredProfileFromParsed(args: {
       requestId: parsed.parsedSections.__meta?.requestId ?? null,
       parserVersion: 'deterministic-v3',
       schemaVersion: 'career-structured-v1',
-      finalSource: 'heuristic_fallback',
+      finalSource: extraction.usedOcr ? 'ocr_fallback' : 'deterministic_only',
+      requestedForceLlm: false,
+      requestedSkipLlm: true,
+      llmRequested: false,
+      llmSkipped: true,
+      llmAttempted: false,
       llmStatus: 'skipped',
       llmError: null,
       llmRawPresent: false,
@@ -522,8 +532,11 @@ export interface ExternalExtractionPayload {
     ocr_attempted?: boolean;
     ocr_improved_quality?: boolean | null;
     layout_reconstruction_used?: boolean;
-    final_source?: 'llm' | 'heuristic_fallback' | 'merged';
-    llm_status?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
+    final_source?: 'merged' | 'deterministic_only' | 'ocr_fallback';
+    llm_requested?: boolean;
+    llm_skipped?: boolean;
+    llm_attempted?: boolean;
+    llm_status?: 'success' | 'error' | 'skipped' | 'not_configured';
     llm_error?: string | null;
     llm_raw_present?: boolean | null;
     warnings?: string[];
@@ -1180,7 +1193,7 @@ export async function prepareResumeFromExternalExtraction(
     const matchedSkillRows = await persistParsedResume(supabase, resume, cleanedText, parsed);
     await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.READY);
 
-    const parserVersion = `render-extractor:${llmFinalSource ?? 'heuristic_fallback'}`;
+    const parserVersion = `render-extractor:${llmFinalSource ?? 'deterministic_only'}`;
     await completeRun(supabase, runId, {
       status: 'completed',
       parserVersion,

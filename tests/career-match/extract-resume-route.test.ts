@@ -294,6 +294,9 @@ describe('resume extract route', () => {
           ocr_improved_quality: null,
           layout_reconstruction_used: true,
           final_source: 'merged',
+          llm_requested: true,
+          llm_skipped: false,
+          llm_attempted: true,
           llm_status: 'success',
           llm_error: null,
           llm_raw_present: true,
@@ -399,7 +402,7 @@ describe('resume extract route', () => {
       json: async () => ({
         diagnostics: {
           llm_status: 'success',
-          final_source: 'llm',
+          final_source: 'merged',
         },
       }),
     });
@@ -661,6 +664,144 @@ describe('resume extract route', () => {
       expect.any(Buffer),
       expect.objectContaining({ forceOCR: true }),
     );
+  });
+
+  it('defaults to forceLLM=true and skipLLM=false for remote extraction', async () => {
+    const supabase = createSupabaseMock();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        schema_version: '2.0.0',
+        parser_version: 'phase2-heuristic+llm',
+        request: {
+          request_id: 'req-1',
+          filename: 'resume.pdf',
+          mime_type: 'application/pdf',
+          file_size_bytes: 12,
+          parsed_at: new Date().toISOString(),
+        },
+        status: {
+          success: true,
+          processing_mode: 'pdf-native',
+          warnings: [],
+          errors: [],
+          confidence_overall: 0.86,
+        },
+        raw: { raw_text: 'raw text', cleaned_text: 'cleaned text', page_count: 1 },
+        candidate: {},
+        sections: {
+          skills: {
+            languages: [],
+            frameworks: [],
+            libraries: [],
+            tools: [],
+            databases: [],
+            cloud: [],
+            ai_ml: [],
+            devops: [],
+            platforms: [],
+            others: [],
+            spoken_languages: [],
+          },
+          education: [],
+          experience: [],
+          projects: [],
+          certifications: [],
+          achievements: [],
+          positions_of_responsibility: [],
+          hackathons: [],
+          publications: [],
+          volunteering: [],
+          extracurricular: [],
+        },
+        diagnostics: {
+          method_used: 'pdf-native',
+          page_methods: [],
+          page_decisions: [],
+          page_source_summary: {},
+          contamination_score: 0,
+          salvage_score: 90,
+          cleaning_actions: [],
+          final_source: 'merged',
+          llm_requested: true,
+          llm_skipped: false,
+          llm_attempted: true,
+          llm_status: 'success',
+          llm_error: null,
+          llm_raw_present: true,
+        },
+        normalized_resume: { text: 'cleaned text', sections: {} },
+      }),
+    });
+
+    process.env.RESUME_EXTRACTOR_URL = 'http://extractor.test';
+    vi.stubGlobal('fetch', fetchMock);
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'UPLOADED',
+    });
+    prepareResumeFromExternalExtraction.mockResolvedValue({
+      extraction: {
+        method: 'render-extractor',
+        attemptedMethods: [],
+        usedOcr: false,
+        ocrAttempted: false,
+        ocrImprovedQuality: null,
+        ocrConfidence: null,
+        ocrAvailable: true,
+        ocrUnavailableReason: null,
+        acceptedWithWarnings: false,
+        warningCode: null,
+        warningMessage: null,
+        pageCount: 1,
+        pageSourceSummary: { native: 1 },
+        pageDecisions: [],
+        layoutReconstructionUsed: false,
+        textLength: 1200,
+        cleanedTextLength: 1200,
+        contaminationScore: 0,
+        salvageScore: 90,
+        cleaningActions: [],
+        readiness: 'good',
+        quality: {
+          textLength: 1200,
+          wordCount: 220,
+          confidenceScore: 90,
+          confidenceTier: 'high',
+          detectedSectionCount: 4,
+          junkRatio: 0.02,
+          likelyScannedPdf: false,
+          humanReadableRatio: 0.92,
+          suspiciousTokenCount: 0,
+          resumeHintCount: 8,
+        },
+      },
+      parsed: { parsedSections: {} },
+      matchedSkillRows: [],
+    });
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/extract/route');
+    await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const [url, options] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toContain('http://extractor.test');
+    expect(options.body.get('force_llm')).toBe('true');
+    expect(options.body.get('skip_llm')).toBe('false');
   });
 
   it('uses service-role client for orchestration writes after ownership check', async () => {

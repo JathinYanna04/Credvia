@@ -362,8 +362,10 @@ class TestFallback:
         monkeypatch.setattr(main, "call_llm_refiner", fake_llm)
         payload = _upload(client)
 
-        assert payload["diagnostics"]["llm_status"] == "timeout"
-        assert payload["diagnostics"]["final_source"] == "heuristic_fallback"
+        assert payload["diagnostics"]["llm_requested"] is True
+        assert payload["diagnostics"]["llm_attempted"] is True
+        assert payload["diagnostics"]["llm_status"] == "error"
+        assert payload["diagnostics"]["final_source"] == "deterministic_only"
         _assert_structured_contract(payload)
 
     def test_extract_route_preserves_page_intelligence_diagnostics(
@@ -417,8 +419,8 @@ class TestFallback:
         monkeypatch.setattr(main, "call_llm_refiner", fake_llm)
         payload = _upload(client)
 
-        assert payload["diagnostics"]["llm_status"] == "invalid_json"
-        assert payload["diagnostics"]["final_source"] == "heuristic_fallback"
+        assert payload["diagnostics"]["llm_status"] == "error"
+        assert payload["diagnostics"]["final_source"] == "deterministic_only"
         _assert_structured_contract(payload)
 
     def test_schema_mismatch_fallback_sets_diagnostics(
@@ -433,9 +435,9 @@ class TestFallback:
         monkeypatch.setattr(main, "call_llm_refiner", fake_llm)
         payload = _upload(client)
 
-        assert payload["diagnostics"]["llm_status"] == "invalid_json"
+        assert payload["diagnostics"]["llm_status"] == "error"
         assert payload["diagnostics"]["llm_error"] == "invalid_schema"
-        assert payload["diagnostics"]["final_source"] == "heuristic_fallback"
+        assert payload["diagnostics"]["final_source"] == "deterministic_only"
         _assert_structured_contract(payload)
 
     def test_missing_api_key_fallback_non_crashing(
@@ -451,9 +453,9 @@ class TestFallback:
         payload = _upload(client)
 
         assert payload["status"]["success"] is True
-        assert payload["diagnostics"]["llm_status"] == "error"
+        assert payload["diagnostics"]["llm_status"] == "not_configured"
         assert payload["diagnostics"]["llm_error"] == "missing_api_key"
-        assert payload["diagnostics"]["final_source"] == "heuristic_fallback"
+        assert payload["diagnostics"]["final_source"] == "deterministic_only"
         _assert_structured_contract(payload)
 
     def test_vaishali_style_llm_additional_dicts_do_not_crash_extract(
@@ -512,7 +514,8 @@ class TestFallback:
 
         assert payload["status"]["success"] is True
         assert payload["diagnostics"]["llm_status"] == "success"
-        assert payload["diagnostics"]["final_source"] in {"merged", "llm"}
+        assert payload["diagnostics"]["llm_attempted"] is True
+        assert payload["diagnostics"]["final_source"] == "merged"
         assert payload["sections"]["certifications"] == [
             "Agentic AI — P. Sai Teja, VNRVJIET, Hyderabad (2025)"
         ]
@@ -553,8 +556,11 @@ class TestEdgeCases:
         monkeypatch.setattr(main, "extract_text_by_type", fake_extract)
         payload = _upload(client, b"%PDF-empty")
 
+        assert payload["diagnostics"]["llm_requested"] is True
+        assert payload["diagnostics"]["llm_skipped"] is False
+        assert payload["diagnostics"]["llm_attempted"] is False
         assert payload["diagnostics"]["llm_status"] == "skipped"
-        assert payload["diagnostics"]["final_source"] == "heuristic_fallback"
+        assert payload["diagnostics"]["final_source"] == "deterministic_only"
         _assert_structured_contract(payload)
 
 
@@ -617,7 +623,7 @@ class TestPageIntelligence:
         payload = _upload(client, b"%PDF-garbage")
 
         assert "status" in payload
-        assert payload["diagnostics"]["final_source"] == "heuristic_fallback"
+        assert payload["diagnostics"]["final_source"] == "ocr_fallback"
         _assert_structured_contract(payload)
 
     def test_resume_with_only_skills_is_supported(
@@ -699,6 +705,40 @@ class TestPageIntelligence:
         assert payload["status"]["success"] is True
         assert payload["diagnostics"]["llm_status"] == "success"
         _assert_structured_contract(payload)
+
+    def test_explicit_skip_llm_is_truthful(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(main, "call_llm_refiner", lambda *_args, **_kwargs: None)
+        response = client.post(
+            "/extract",
+            files={"file": ("resume.pdf", b"%PDF-skip", "application/pdf")},
+            data={"skip_llm": "true", "force_llm": "false"},
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+
+        assert payload["diagnostics"]["llm_requested"] is False
+        assert payload["diagnostics"]["llm_skipped"] is True
+        assert payload["diagnostics"]["llm_attempted"] is False
+        assert payload["diagnostics"]["llm_status"] == "skipped"
+
+    def test_candidate_cleanup_rejects_skill_noise_location_and_contact_summary(self) -> None:
+        candidate = main.CandidateBasics(
+            full_name="Vaishali Ragi",
+            email="vaishali@example.com",
+            location="Python, Java",
+            summary="Phone: +91-9000987956 - vaishali@example.com - LinkedIn - GitHub",
+        )
+
+        cleaned = main.post_process_candidate(
+            candidate,
+            "Vaishali Ragi\nHyderabad, India\nSkills\nPython\nJava",
+            [],
+        )
+
+        assert cleaned.location == "Hyderabad, India"
+        assert cleaned.summary is None
 
     def test_very_long_summary_is_non_failing(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch

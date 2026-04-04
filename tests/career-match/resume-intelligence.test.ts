@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { CareerStructuredProfile } from '@/components/career-match/types';
-import { buildResumeAtsAnalysis } from '@/lib/resume/intelligence';
+import {
+  buildResumeAtsAnalysis,
+  getEffectiveStructuredProfile,
+  normalizeResumeAtsAnalysis,
+} from '@/lib/resume/intelligence';
 
 function buildProfile(overrides: Partial<CareerStructuredProfile> = {}): CareerStructuredProfile {
   return {
@@ -92,7 +96,7 @@ describe('resume ATS intelligence', () => {
         education: [],
         experience: [],
         projects: [],
-        raw_sections: { summary: [], skills: [], projects: [], experience: [], education: [], other: [], __meta: { finalSource: 'merged', llmStatus: 'success', extractionQuality: { confidenceScore: 86, confidenceTier: 'high' } } },
+        raw_sections: { summary: [], skills: [], projects: [], experience: [], education: [], other: [], __meta: { finalSource: 'merged', llmStatus: 'success', llmRequested: true, llmSkipped: false, llmAttempted: true, extractionQuality: { confidenceScore: 86, confidenceTier: 'high' } } },
         parsed_text: 'parsed',
         parsed_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
@@ -104,6 +108,10 @@ describe('resume ATS intelligence', () => {
 
     expect(analysis).not.toBeNull();
     expect(analysis!.overallScore).toBeGreaterThanOrEqual(65);
+    expect(analysis!.overallScoreDetail).toMatchObject({
+      value: analysis!.overallScore,
+      max: 100,
+    });
     expect(analysis!.experienceDepth).toBeGreaterThanOrEqual(60);
   });
 
@@ -123,7 +131,7 @@ describe('resume ATS intelligence', () => {
         education: [],
         experience: [],
         projects: [],
-        raw_sections: { summary: [], skills: [], projects: [], experience: [], education: [], other: [], __meta: { finalSource: 'heuristic_fallback', llmStatus: 'error', llmError: 'timeout', extractionQuality: { confidenceScore: 28, confidenceTier: 'low' } } },
+        raw_sections: { summary: [], skills: [], projects: [], experience: [], education: [], other: [], __meta: { finalSource: 'deterministic_only', llmStatus: 'error', llmRequested: true, llmSkipped: false, llmAttempted: true, llmError: 'timeout', extractionQuality: { confidenceScore: 28, confidenceTier: 'low' } } },
         parsed_text: 'parsed',
         parsed_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
@@ -157,7 +165,7 @@ describe('resume ATS intelligence', () => {
         projects: [],
         education: [],
         diagnostics: {
-          finalSource: 'heuristic_fallback',
+          finalSource: 'deterministic_only',
           llmStatus: 'error',
           confidence: 28,
           ocrStatus: 'attempted_no_gain',
@@ -170,5 +178,87 @@ describe('resume ATS intelligence', () => {
     expect(analysis!.overallScore).toBeLessThan(50);
     expect(analysis!.confidenceLabel).toBe('low');
     expect(analysis!.warnings.some((warning) => warning.includes('deterministic fallback'))).toBe(true);
+  });
+
+  it('manual overrides immediately affect the effective profile and ATS analysis', () => {
+    const profile = {
+      id: 'profile-3',
+      resume_id: 'resume-3',
+      user_id: 'user-1',
+      full_name: 'Vaishali Ragi',
+      email: 'vaishali@example.com',
+      phone: '+91 9999999999',
+      location: 'Hyderabad, India',
+      summary: 'Engineering student',
+      current_title: 'Student',
+      years_experience: null,
+      education: [],
+      experience: [],
+      projects: [],
+      raw_sections: {
+        summary: [],
+        skills: [],
+        projects: [],
+        experience: [],
+        education: [],
+        other: [],
+        __structured: buildProfile(),
+        __manual: {
+          candidate: { current_title: 'Backend Developer' },
+          skills: { languages: ['Python', 'TypeScript', 'Go'] },
+        },
+      },
+      parsed_text: 'parsed',
+      parsed_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const effectiveProfile = getEffectiveStructuredProfile(profile);
+    const analysis = buildResumeAtsAnalysis({
+      profile,
+      effectiveProfile,
+      topMatches: [],
+    });
+
+    expect(effectiveProfile?.candidate.current_title).toBe('Backend Developer');
+    expect(effectiveProfile?.skills.languages).toContain('Go');
+    expect(analysis).not.toBeNull();
+    expect(analysis!.skillsCoverage).toBeGreaterThan(50);
+  });
+
+  it('normalizes object-shaped overall score back to the numeric contract', () => {
+    const normalized = normalizeResumeAtsAnalysis({
+      overallScore: {
+        value: 78,
+        max: 100,
+        label: 'Strong',
+        confidence: 0.84,
+      },
+      mode: 'general',
+      parseConfidence: 80,
+      sectionCompleteness: 70,
+      contactCompleteness: 70,
+      skillsCoverage: 70,
+      educationQuality: 70,
+      experienceDepth: 70,
+      projectsQuality: 70,
+      strengths: [],
+      warnings: [],
+      missingEssentials: [],
+      missingKeywords: [],
+      confidenceLabel: 'medium',
+      summary: 'Test summary',
+      subScores: [],
+      suggestedActions: [],
+    } as never);
+
+    expect(normalized?.overallScore).toBe(78);
+    expect(normalized?.overallScoreDetail).toMatchObject({
+      value: 78,
+      max: 100,
+      label: 'Strong',
+      confidence: 0.84,
+    });
   });
 });

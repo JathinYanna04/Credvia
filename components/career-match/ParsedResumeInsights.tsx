@@ -11,7 +11,7 @@ export interface ParsedResumeInsightsProps {
 export function ParsedResumeInsights({ detail, variant = 'main' }: ParsedResumeInsightsProps) {
   const profile = detail.profile;
   const skills = detail.skills;
-  const structured = detail.effectiveProfile ?? profile?.raw_sections?.__structured;
+  const structured = detail.effectiveProfile;
   const structuredCandidate = structured?.candidate;
   const structuredSkills = structured?.skills;
   const structuredExperience = structured?.experience ?? [];
@@ -105,12 +105,12 @@ export function ParsedResumeInsights({ detail, variant = 'main' }: ParsedResumeI
     sanitizedProjects.length > 0 ||
     sanitizedEducation.length > 0;
   const finalSourceLabel =
-    finalSource === 'llm'
-      ? 'LLM'
-      : finalSource === 'merged'
-        ? 'Merged'
-        : finalSource === 'heuristic_fallback'
-          ? 'Fallback'
+    finalSource === 'merged'
+      ? 'Merged'
+      : finalSource === 'ocr_fallback'
+        ? 'OCR fallback'
+        : finalSource === 'deterministic_only'
+          ? 'Deterministic only'
           : null;
 
   const parserMethodLabel = describeAnalysisMethod(latestRun?.parser_version);
@@ -541,7 +541,7 @@ export function ParsedResumeInsights({ detail, variant = 'main' }: ParsedResumeI
             {parserMethodLabel ? <div>Method: {parserMethodLabel}</div> : null}
             {parsedAtLabel ? <div>Updated: {parsedAtLabel}</div> : null}
             {finalSourceLabel ? <div>Source: {finalSourceLabel}</div> : null}
-            {extractionMeta?.llmStatus ? <div>LLM status: {extractionMeta.llmStatus}</div> : null}
+            {structuredDiagnostics?.llmStatus ? <div>LLM status: {structuredDiagnostics.llmStatus}</div> : null}
             {confidenceTier ? <div>Confidence tier: {confidenceTier}</div> : null}
             {structuredDiagnostics?.requestId ? <div>Request ID: {structuredDiagnostics.requestId}</div> : null}
           </div>
