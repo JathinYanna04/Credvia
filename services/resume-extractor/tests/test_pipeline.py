@@ -199,6 +199,140 @@ class TestMerge:
         merged_candidate, _, _ = main.merge_refined_output(candidate, sections, refined)
         assert merged_candidate.summary == "Backend engineer focused on reliable systems."
 
+    def test_dict_based_additional_fields_are_normalized_without_crash(
+        self,
+        deterministic_payload: Dict[str, Any],
+    ) -> None:
+        refined = deepcopy(deterministic_payload)
+        refined["additional"] = {
+            "certifications": [
+                {
+                    "name": "Agentic AI",
+                    "issuer": "P. Sai Teja, VNRVJIET, Hyderabad",
+                    "date": "2025",
+                }
+            ],
+            "achievements": [
+                {
+                    "name": "1st Place - Webathon 4.0",
+                    "description": "24-hour hackathon for building Civix civic micro-task platform",
+                }
+            ],
+            "hackathons": [
+                {
+                    "name": "Webathon 4.0",
+                    "award": "1st Place",
+                    "project": "Civix civic micro-task platform",
+                }
+            ],
+            "leadership": [
+                {
+                    "role": "Chairperson",
+                    "organization": "ISTE",
+                }
+            ],
+            "volunteering": [
+                {
+                    "organization": "Indian Society for Technical Education (ISTE)",
+                    "role": "Member",
+                }
+            ],
+            "publications": [
+                {
+                    "title": "Resume Intelligence in Practice",
+                    "publisher": "Credvia Labs",
+                    "date": "2025",
+                }
+            ],
+            "extracurricular": [
+                {
+                    "name": "Coding Club",
+                    "description": "Community problem-solving sessions",
+                }
+            ],
+        }
+
+        candidate = main.CandidateBasics(**deterministic_payload["candidate"])
+        sections = main.SectionsBlock(
+            skills=main.SkillsBlock(**deterministic_payload["skills"]),
+            education=[main.EducationEntry(**entry) for entry in deterministic_payload["education"]],
+            experience=[main.ExperienceEntry(**entry) for entry in deterministic_payload["experience"]],
+            projects=[main.ProjectEntry(**entry) for entry in deterministic_payload["projects"]],
+            certifications=deterministic_payload["additional"]["certifications"],
+            achievements=deterministic_payload["additional"]["achievements"],
+            positions_of_responsibility=deterministic_payload["additional"]["leadership"],
+            hackathons=deterministic_payload["additional"]["hackathons"],
+            volunteering=deterministic_payload["additional"]["volunteering"],
+            publications=deterministic_payload["additional"]["publications"],
+        )
+
+        _, merged_sections, source = main.merge_refined_output(
+            candidate,
+            sections,
+            refined,
+            request_id="req-merge-1",
+        )
+
+        assert source in {"llm", "merged"}
+        assert merged_sections.certifications == [
+            "Agentic AI — P. Sai Teja, VNRVJIET, Hyderabad (2025)"
+        ]
+        assert merged_sections.achievements == [
+            "1st Place - Webathon 4.0 — 24-hour hackathon for building Civix civic micro-task platform"
+        ]
+        assert merged_sections.hackathons == [
+            "Webathon 4.0 — 1st Place — Civix civic micro-task platform"
+        ]
+        assert merged_sections.volunteering == [
+            "Member — Indian Society for Technical Education (ISTE)"
+        ]
+        assert merged_sections.positions_of_responsibility == ["Chairperson — ISTE"]
+        assert merged_sections.publications == ["Resume Intelligence in Practice — Credvia Labs — 2025"]
+        assert merged_sections.extracurricular == ["Coding Club — Community problem-solving sessions"]
+
+    def test_mixed_string_and_dict_additional_entries_are_deduped_and_safe(
+        self,
+        deterministic_payload: Dict[str, Any],
+    ) -> None:
+        refined = deepcopy(deterministic_payload)
+        refined["additional"] = {
+            "certifications": [
+                "AWS Certified Cloud Practitioner",
+                {"name": "AWS Certified Cloud Practitioner"},
+                None,
+                "",
+            ],
+            "achievements": [
+                "Hack finalist",
+                {"name": "Hack finalist"},
+                2025,
+            ],
+        }
+
+        candidate = main.CandidateBasics(**deterministic_payload["candidate"])
+        sections = main.SectionsBlock(
+            skills=main.SkillsBlock(**deterministic_payload["skills"]),
+            education=[main.EducationEntry(**entry) for entry in deterministic_payload["education"]],
+            experience=[main.ExperienceEntry(**entry) for entry in deterministic_payload["experience"]],
+            projects=[main.ProjectEntry(**entry) for entry in deterministic_payload["projects"]],
+            certifications=[],
+            achievements=[],
+            positions_of_responsibility=[],
+            hackathons=[],
+            volunteering=[],
+            publications=[],
+        )
+
+        _, merged_sections, _ = main.merge_refined_output(
+            candidate,
+            sections,
+            refined,
+            request_id="req-merge-2",
+        )
+
+        assert merged_sections.certifications == ["AWS Certified Cloud Practitioner"]
+        assert merged_sections.achievements == ["Hack finalist", "2025"]
+
 
 class TestFallback:
     @pytest.fixture(autouse=True)
@@ -320,6 +454,77 @@ class TestFallback:
         assert payload["diagnostics"]["llm_status"] == "error"
         assert payload["diagnostics"]["llm_error"] == "missing_api_key"
         assert payload["diagnostics"]["final_source"] == "heuristic_fallback"
+        _assert_structured_contract(payload)
+
+    def test_vaishali_style_llm_additional_dicts_do_not_crash_extract(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fake_llm(_cleaned: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+            result = {
+                "candidate": payload["candidate"],
+                "skills": payload["sections"]["skills"],
+                "education": payload["sections"]["education"],
+                "experience": payload["sections"]["experience"],
+                "projects": payload["sections"]["projects"],
+                "additional": {
+                    "certifications": [
+                        {
+                            "name": "Agentic AI",
+                            "issuer": "P. Sai Teja, VNRVJIET, Hyderabad",
+                            "date": "2025",
+                        }
+                    ],
+                    "achievements": [
+                        {
+                            "name": "1st Place - Webathon 4.0",
+                            "description": "24-hour hackathon for building Civix civic micro-task platform",
+                        }
+                    ],
+                    "hackathons": [
+                        {
+                            "name": "Webathon 4.0",
+                            "award": "1st Place",
+                            "project": "Civix civic micro-task platform",
+                        }
+                    ],
+                    "leadership": [
+                        {
+                            "role": "Chairperson",
+                            "organization": "ISTE",
+                        }
+                    ],
+                    "volunteering": [
+                        {
+                            "organization": "Indian Society for Technical Education (ISTE)",
+                            "role": "Member",
+                        }
+                    ],
+                    "publications": [],
+                },
+            }
+            fake_llm.last_error = None
+            fake_llm.last_status = "success"
+            fake_llm.last_raw_present = True
+            return result
+
+        monkeypatch.setattr(main, "call_llm_refiner", fake_llm)
+        payload = _upload(client, b"%PDF-vaishali")
+
+        assert payload["status"]["success"] is True
+        assert payload["diagnostics"]["llm_status"] == "success"
+        assert payload["diagnostics"]["final_source"] in {"merged", "llm"}
+        assert payload["sections"]["certifications"] == [
+            "Agentic AI — P. Sai Teja, VNRVJIET, Hyderabad (2025)"
+        ]
+        assert payload["sections"]["achievements"] == [
+            "1st Place - Webathon 4.0 — 24-hour hackathon for building Civix civic micro-task platform"
+        ]
+        assert payload["sections"]["hackathons"] == [
+            "Webathon 4.0 — 1st Place — Civix civic micro-task platform"
+        ]
+        assert payload["sections"]["volunteering"] == [
+            "Member — Indian Society for Technical Education (ISTE)"
+        ]
         _assert_structured_contract(payload)
 
 

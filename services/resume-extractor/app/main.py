@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 import httpx
 from app.page_intelligence import (
     build_layout_blocks,
@@ -1471,10 +1471,107 @@ def is_noisy_summary(text: Optional[str]) -> bool:
     return len(text.split()) < 4
 
 
+def join_compact_parts(parts: List[str], primary_separator: str = " — ") -> Optional[str]:
+    normalized_parts = [part.strip() for part in parts if part and part.strip()]
+    if not normalized_parts:
+        return None
+    return primary_separator.join(normalized_parts)
+
+
+def stringify_stringish_item(
+    item: Any,
+    preferred_keys: Optional[List[str]] = None,
+    section_name: str = "section",
+) -> Optional[str]:
+    if item is None:
+        return None
+    if isinstance(item, str):
+        normalized = normalize_nullable(item.strip())
+        return normalized if normalized else None
+    if isinstance(item, (int, float, bool)):
+        normalized = normalize_nullable(str(item).strip())
+        return normalized if normalized else None
+    if isinstance(item, dict):
+        keys = preferred_keys or []
+        values: Dict[str, str] = {}
+        for key, value in item.items():
+            normalized_value = normalize_refined_value(value)
+            if normalized_value:
+                values[str(key)] = normalized_value
+
+        if not values:
+            return None
+
+        if section_name == "certifications":
+            name = values.get("name") or values.get("title") or values.get("certification")
+            issuer = values.get("issuer") or values.get("organization") or values.get("authority")
+            date = values.get("date") or values.get("year")
+            base = join_compact_parts([name or "", issuer or ""])
+            if base and date:
+                return f"{base} ({date})"
+            return base or date
+
+        if section_name == "volunteering":
+            role = values.get("role") or values.get("title") or values.get("position")
+            org = values.get("organization") or values.get("name")
+            description = values.get("description")
+            primary = join_compact_parts([role or "", org or ""])
+            return join_compact_parts([primary or "", description or ""])
+
+        ordered_values = [values[key] for key in keys if key in values]
+        if ordered_values:
+            return join_compact_parts(ordered_values)
+        return join_compact_parts(list(values.values()))
+    return None
+
+
+def normalize_stringish_list(
+    items: Any,
+    preferred_keys: Optional[List[str]] = None,
+    section_name: str = "section",
+    request_id: Optional[str] = None,
+) -> List[str]:
+    if items is None:
+        return []
+
+    normalized_items: List[str] = []
+    seen: set[str] = set()
+    raw_items = items if isinstance(items, list) else [items]
+    coerced_count = 0
+
+    for item in raw_items:
+        was_coerced = not isinstance(item, str)
+        normalized = stringify_stringish_item(item, preferred_keys=preferred_keys, section_name=section_name)
+        if not normalized:
+            continue
+        if normalized in seen:
+            continue
+        if was_coerced:
+            coerced_count += 1
+        seen.add(normalized)
+        normalized_items.append(normalized)
+
+    if coerced_count > 0:
+        log_event(
+            " ".join(
+                [
+                    "llm_section_normalized",
+                    f"request_id={request_id or 'unknown'}",
+                    f"section={section_name}",
+                    f"entries={len(normalized_items)}",
+                    f"coerced={coerced_count}",
+                ]
+            )
+        )
+
+    return normalized_items
+
+
 def merge_refined_output(
     candidate: CandidateBasics,
     sections: SectionsBlock,
     refined: Dict[str, Any],
+    request_id: Optional[str] = None,
 ) -> Tuple[CandidateBasics, SectionsBlock, str]:
     base_sections = sections.model_dump()
     refined_candidate = refined.get("candidate", {})
@@ -1524,17 +1621,79 @@ def merge_refined_output(
 
     additional = refined.get("additional", {})
     used_additional = True
-    base_sections["certifications"] = additional.get("certifications", base_sections.get("certifications", []))
-    base_sections["achievements"] = additional.get("achievements", base_sections.get("achievements", []))
-    base_sections["hackathons"] = additional.get("hackathons", base_sections.get("hackathons", []))
-    base_sections["positions_of_responsibility"] = additional.get(
-        "leadership", base_sections.get("positions_of_responsibility", [])
+    base_sections["certifications"] = normalize_stringish_list(
+        additional.get("certifications", base_sections.get("certifications", [])),
+        preferred_keys=["name", "issuer", "date", "description"],
+        section_name="certifications",
+        request_id=request_id,
     )
-    base_sections["volunteering"] = additional.get("volunteering", base_sections.get("volunteering", []))
-    base_sections["publications"] = additional.get("publications", base_sections.get("publications", []))
+    base_sections["achievements"] = normalize_stringish_list(
+        additional.get("achievements", base_sections.get("achievements", [])),
+        preferred_keys=["name", "title", "award", "description", "project"],
+        section_name="achievements",
+        request_id=request_id,
+    )
+    base_sections["hackathons"] = normalize_stringish_list(
+        additional.get("hackathons", base_sections.get("hackathons", [])),
+        preferred_keys=["name", "award", "project", "description"],
+        section_name="hackathons",
+        request_id=request_id,
+    )
+    base_sections["positions_of_responsibility"] = normalize_stringish_list(
+        additional.get("leadership", base_sections.get("positions_of_responsibility", [])),
+        preferred_keys=["role", "title", "organization", "description"],
+        section_name="positions_of_responsibility",
+        request_id=request_id,
+    )
+    base_sections["volunteering"] = normalize_stringish_list(
+        additional.get("volunteering", base_sections.get("volunteering", [])),
+        preferred_keys=["role", "organization", "description"],
+        section_name="volunteering",
+        request_id=request_id,
+    )
+    base_sections["publications"] = normalize_stringish_list(
+        additional.get("publications", base_sections.get("publications", [])),
+        preferred_keys=["title", "name", "publisher", "date", "description"],
+        section_name="publications",
+        request_id=request_id,
+    )
+    base_sections["extracurricular"] = normalize_stringish_list(
+        additional.get("extracurricular", base_sections.get("extracurricular", [])),
+        preferred_keys=["name", "title", "organization", "description"],
+        section_name="extracurricular",
+        request_id=request_id,
+    )
     refined_applied = all([used_candidate, used_skills, used_education, used_experience, used_projects])
     final_source = "llm" if refined_applied and used_additional else "merged"
-    return CandidateBasics(**candidate_dict), SectionsBlock(**base_sections), final_source
+    try:
+        return CandidateBasics(**candidate_dict), SectionsBlock(**base_sections), final_source
+    except ValidationError as error:
+        log_event(
+            " ".join(
+                [
+                    "llm_merge_validation_fallback",
+                    f"request_id={request_id or 'unknown'}",
+                    f"error={str(error).splitlines()[0]}",
+                ]
+            )
+        )
+        safe_sections = sections.model_dump()
+        for field_name, preferred_keys in [
+            ("certifications", ["name", "issuer", "date", "description"]),
+            ("achievements", ["name", "title", "award", "description", "project"]),
+            ("positions_of_responsibility", ["role", "title", "organization", "description"]),
+            ("hackathons", ["name", "award", "project", "description"]),
+            ("publications", ["title", "name", "publisher", "date", "description"]),
+            ("volunteering", ["role", "organization", "description"]),
+            ("extracurricular", ["name", "title", "organization", "description"]),
+        ]:
+            safe_sections[field_name] = normalize_stringish_list(
+                base_sections.get(field_name, safe_sections.get(field_name, [])),
+                preferred_keys=preferred_keys,
+                section_name=field_name,
+                request_id=request_id,
+            )
+        return CandidateBasics(**candidate_dict), SectionsBlock(**safe_sections), "merged"
 
 
 def call_llm_refiner(cleaned_text: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -2127,10 +2286,21 @@ async def extract(
             },
         )
         if refined:
-            candidate, sections, llm_final_source = merge_refined_output(candidate, sections, refined)
-            llm_action = "llm_enhanced"
-            llm_status = "success"
-            llm_raw_present = getattr(call_llm_refiner, "last_raw_present", None)
+            try:
+                candidate, sections, llm_final_source = merge_refined_output(
+                    candidate,
+                    sections,
+                    refined,
+                    request_id=resolved_request_id,
+                )
+                llm_action = "llm_enhanced"
+                llm_status = "success"
+                llm_raw_present = getattr(call_llm_refiner, "last_raw_present", None)
+            except ValidationError as merge_error:
+                llm_status = "error"
+                llm_error = f"merge_validation_error:{merge_error.errors()[0].get('loc')}"
+                llm_raw_present = getattr(call_llm_refiner, "last_raw_present", None)
+                llm_action = "llm_merge_validation_fallback"
         else:
             last_error = getattr(call_llm_refiner, "last_error", None)
             llm_status = getattr(call_llm_refiner, "last_status", "error")
