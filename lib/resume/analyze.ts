@@ -3,6 +3,10 @@ import type { Database, Json } from '@/lib/supabase/types';
 import type { AnalyzeResumeRequest } from '@/lib/types';
 import { recomputeMatchesForResume } from '@/lib/matching/service';
 import {
+  ResumeAnalysisExecutionError,
+  resumeAnalysisExecutionErrorDetails,
+} from '@/lib/resume/analysis-error';
+import {
   assessResumeTextQuality,
   extractResumeText,
   ResumeExtractionError,
@@ -1067,11 +1071,23 @@ export async function runResumeAnalysis(
   const runId = await createAnalysisRun(supabase, resume, 'analyzing', 'analysis-v1');
 
   try {
+    logInfo('resume-analysis', 'Analysis started', {
+      resumeId: resume.id,
+      userId: resume.user_id,
+      runId,
+    });
+
     await updateResumeLifecycleStatus(
       supabase,
       resume.id,
       RESUME_LIFECYCLE_STATUSES.ANALYZING,
     );
+
+    logInfo('resume-analysis', 'Lifecycle status updated', {
+      resumeId: resume.id,
+      runId,
+      status: RESUME_LIFECYCLE_STATUSES.ANALYZING,
+    });
 
     const profileResult = await supabase
       .from('resume_profiles')
@@ -1080,16 +1096,56 @@ export async function runResumeAnalysis(
       .maybeSingle();
 
     if (profileResult.error) {
-      throw new Error(profileResult.error.message);
+      throw new ResumeAnalysisExecutionError({
+        code: 'PROFILE_FETCH_FAILED',
+        operation: 'load-resume-profile',
+        table: 'resume_profiles',
+        resumeId: resume.id,
+        userId: resume.user_id,
+        message: profileResult.error.message,
+        details: profileResult.error.details ?? null,
+        hint: profileResult.error.hint ?? null,
+      });
     }
 
     if (!profileResult.data) {
-      throw new Error('Resume is not prepared for analysis yet.');
+      throw new ResumeAnalysisExecutionError({
+        code: 'PROFILE_MISSING',
+        operation: 'load-resume-profile',
+        table: 'resume_profiles',
+        resumeId: resume.id,
+        userId: resume.user_id,
+        message: 'Resume is not prepared for analysis yet.',
+        details: 'resume_profiles row was not found after readiness passed.',
+        hint: 'Retry extraction to rebuild the structured profile before analysis.',
+      });
     }
 
+    logInfo('resume-analysis', 'Profile lookup succeeded', {
+      resumeId: resume.id,
+      runId,
+      hasProfile: true,
+    });
+
+    logInfo('resume-analysis', 'Match recomputation started', {
+      resumeId: resume.id,
+      userId: resume.user_id,
+      runId,
+    });
     const matchCount = await recomputeMatchesForResume(supabase, resume.user_id, resume.id);
+    logInfo('resume-analysis', 'Match recomputation completed', {
+      resumeId: resume.id,
+      userId: resume.user_id,
+      runId,
+      matchCount,
+    });
 
     await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.ANALYZED);
+    logInfo('resume-analysis', 'Lifecycle status updated', {
+      resumeId: resume.id,
+      runId,
+      status: RESUME_LIFECYCLE_STATUSES.ANALYZED,
+    });
     await completeRun(supabase, runId, {
       status: 'completed',
       parserVersion: 'analysis-v1',
@@ -1132,9 +1188,23 @@ export async function runResumeAnalysis(
       throw error;
     }
 
+    if (error instanceof ResumeAnalysisExecutionError) {
+      logError('resume-analysis', 'Analysis execution failed', {
+        ...resumeAnalysisExecutionErrorDetails(error),
+        runId,
+      });
+    } else {
+      logError('resume-analysis', 'Analysis failed', {
+        resumeId: resume.id,
+        runId,
+        message: toErrorMessage(error),
+      });
+    }
+
     if (finalizePersistenceError) {
       logError('resume-analysis', 'Finalize persistence failed', {
         resumeId: resume.id,
+        runId,
         operation: finalizePersistenceError.context.operation,
         dbCode: finalizePersistenceError.sourceError.code ?? null,
       });

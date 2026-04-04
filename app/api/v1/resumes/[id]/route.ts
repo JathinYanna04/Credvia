@@ -1,11 +1,18 @@
 import { fail, handleApiError, ok } from '@/lib/api';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { getJobCardsByIds, getOwnedResume } from '@/lib/career-match/queries';
+import type { CareerMatch, CareerResumeProfile } from '@/components/career-match/types';
 import { getResumeAnalysisReadiness } from '@/lib/resume/analysis-readiness';
 import { assessResumeTextQuality } from '@/lib/resume/extract';
+import {
+  buildResumeAtsAnalysis,
+  buildResumeVersionSummaries,
+  getEffectiveStructuredProfile,
+} from '@/lib/resume/intelligence';
 import { ResumeUpdateSchema } from '@/lib/schemas/career-match';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import type { Json } from '@/lib/supabase/types';
 import { logError } from '@/lib/utils/logger';
 import { ZodError } from 'zod';
 
@@ -47,6 +54,14 @@ export async function GET(
     if (skillsResult.error) throw new Error(skillsResult.error.message);
     if (analysesResult.error) throw new Error(analysesResult.error.message);
     if (matchesResult.error) throw new Error(matchesResult.error.message);
+    const versionsResult = await supabase
+      .from('resumes')
+      .select('id, file_name, is_active, parse_status, uploaded_at, updated_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(12);
+
+    if (versionsResult.error) throw new Error(versionsResult.error.message);
 
     const profileLooksValid = Boolean(
       profileResult.data?.parsed_text &&
@@ -59,21 +74,41 @@ export async function GET(
     );
     const jobLookup = new Map(jobs.map((job) => [job.id, job]));
     const latestRun = analysesResult.data?.[0] ?? null;
+    const profile = (profileLooksValid
+      ? ((profileResult.data ?? null) as CareerResumeProfile | null)
+      : null);
+    const topMatches = ((profileLooksValid ? matchesResult.data ?? [] : []) as CareerMatch[]).map((match) => ({
+      ...match,
+      job: (jobLookup.get(match.job_id) ?? null) as CareerMatch['job'],
+    })) as CareerMatch[];
+    const effectiveProfile = getEffectiveStructuredProfile(profile);
+    const atsAnalysis = buildResumeAtsAnalysis({
+      profile,
+      effectiveProfile,
+      topMatches,
+    });
 
     return ok({
       resume,
       analysisReadiness: getResumeAnalysisReadiness(resume, latestRun),
-      profile: profileLooksValid ? profileResult.data ?? null : null,
+      profile,
+      effectiveProfile,
+      manualOverrides: profile?.raw_sections?.__manual ?? null,
+      atsAnalysis,
+      versions: buildResumeVersionSummaries({
+        resumes: (versionsResult.data ?? []).map((entry) => ({
+          ...entry,
+          profile: entry.id === resume.id ? profile : null,
+        })),
+        activeDetailAnalysis: atsAnalysis,
+      }),
       skills: (profileLooksValid ? skillsResult.data ?? [] : []).map((row) => ({
         source: row.source_type,
         confidence: row.confidence,
         skill: { id: row.skill_slug, slug: row.skill_slug, name: row.skill_name },
       })),
       analysisRuns: analysesResult.data ?? [],
-      topMatches: (profileLooksValid ? matchesResult.data ?? [] : []).map((match) => ({
-        ...match,
-        job: jobLookup.get(match.job_id) ?? null,
-      })),
+      topMatches,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
@@ -109,10 +144,71 @@ export async function PATCH(
       );
     }
 
+    if (body.manualOverrides) {
+      const profileResult = await supabase
+        .from('resume_profiles')
+        .select('raw_sections')
+        .eq('resume_id', resume.id)
+        .maybeSingle();
+
+      if (profileResult.error) {
+        throw new Error(profileResult.error.message);
+      }
+
+      if (!profileResult.data) {
+        return fail(
+          'RESUME_NOT_READY',
+          'Resume profile is not available for manual review yet.',
+          422,
+          { resumeId: resume.id },
+          'Run extraction first so Credvia can build the structured profile.',
+        );
+      }
+
+      const currentSections =
+        profileResult.data.raw_sections && typeof profileResult.data.raw_sections === 'object'
+          ? (profileResult.data.raw_sections as Record<string, unknown>)
+          : {};
+      const updatedSections = {
+        ...currentSections,
+        __manual: {
+          ...(currentSections.__manual && typeof currentSections.__manual === 'object'
+            ? (currentSections.__manual as Record<string, unknown>)
+            : {}),
+          ...body.manualOverrides,
+          updated_at: new Date().toISOString(),
+        },
+      } as Json;
+
+      const updateProfile = await supabase
+        .from('resume_profiles')
+        .update({ raw_sections: updatedSections })
+        .eq('resume_id', resume.id);
+
+      if (updateProfile.error) {
+        throw new Error(updateProfile.error.message);
+      }
+
+      await captureServerEvent({
+        event: 'resume_manual_overrides_saved',
+        distinctId: user.id,
+        properties: {
+          resumeId: resume.id,
+          sections: Object.keys(body.manualOverrides),
+        },
+      });
+
+      return ok({
+        updated: true,
+        resumeId: resume.id,
+        manualOverridesSaved: true,
+      });
+    }
+
     if (body.isActive !== true) {
       return fail(
         'VALIDATION_ERROR',
-        'Only setting a resume as active is currently supported.',
+        'Only setting a resume as active or saving manual overrides is currently supported.',
         400,
         { received: body },
       );

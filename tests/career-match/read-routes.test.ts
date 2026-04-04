@@ -48,16 +48,63 @@ describe('career match read routes', () => {
   it('returns resume detail only for the owner', async () => {
     const supabase = {
       from: vi.fn((table: string) => {
-        if (table === 'resume_profiles') {
-          return {
-            select() {
-              return {
-                eq() {
-                  return {
-                    maybeSingle: async () => ({
-                      data: {
-                        resume_id: 'resume-1',
-                        parsed_text:
+      if (table === 'resume_profiles') {
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  maybeSingle: async () => ({
+                    data: {
+                      resume_id: 'resume-1',
+                      raw_sections: {
+                        __structured: {
+                          candidate: {
+                            full_name: 'Jane Builder',
+                            current_title: 'Product Engineer',
+                            email: 'jane@example.com',
+                            phone: '+91 99999 99999',
+                            location: 'Bangalore, India',
+                            linkedin: null,
+                            github: null,
+                            portfolio: null,
+                            summary:
+                              'Product-minded engineer focused on React applications, backend systems, and developer tooling.',
+                          },
+                          skills: {
+                            languages: ['TypeScript'],
+                            frameworks: ['React'],
+                            tools: ['Git'],
+                            databases: ['PostgreSQL'],
+                            cloud: [],
+                            others: ['Supabase'],
+                            spoken_languages: ['English'],
+                          },
+                          experience: [],
+                          projects: [{ name: 'Developer platform', description: 'Built onboarding analytics', technologies: [], links: [], bullets: [] }],
+                          education: [{ institution: 'BSc Computer Science', degree: 'BSc', field_of_study: 'Computer Science', start_date: null, end_date: null, grade: null, location: null, description: null }],
+                          additional: {
+                            certifications: [],
+                            achievements: [],
+                            hackathons: [],
+                            leadership: [],
+                            volunteering: [],
+                            publications: [],
+                          },
+                          diagnostics: {
+                            finalSource: 'merged',
+                            llmStatus: 'success',
+                            usedOcr: false,
+                            extractionMethod: 'pdfjs-text',
+                            attemptedMethods: ['pdfjs-text'],
+                          },
+                        },
+                        __meta: {
+                          extractionQuality: { confidenceScore: 84, confidenceTier: 'high' },
+                          extractionMethod: 'pdfjs-text',
+                        },
+                      },
+                      parsed_text:
                           [
                             'Jane Builder',
                             'Product Engineer building startup tools for technical teams.',
@@ -132,6 +179,36 @@ describe('career match read routes', () => {
           };
         }
 
+        if (table === 'resumes') {
+          return {
+            select() {
+              return {
+                eq() {
+                  return {
+                    order() {
+                      return {
+                        limit: async () => ({
+                          data: [
+                            {
+                              id: 'resume-1',
+                              file_name: 'resume.pdf',
+                              is_active: true,
+                              parse_status: 'ANALYZED',
+                              uploaded_at: '2026-04-01T10:00:00.000Z',
+                              updated_at: '2026-04-01T12:00:00.000Z',
+                            },
+                          ],
+                          error: null,
+                        }),
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        }
+
         throw new Error(`Unexpected table: ${table}`);
       }),
     };
@@ -150,5 +227,8 @@ describe('career match read routes', () => {
     expect(response.status).toBe(200);
     expect(payload.data.resume.id).toBe('resume-1');
     expect(payload.data.skills[0].skill.slug).toBe('react');
+    expect(payload.data.effectiveProfile.candidate.full_name).toBe('Jane Builder');
+    expect(payload.data.atsAnalysis.overallScore).toBeGreaterThan(0);
+    expect(payload.data.versions).toHaveLength(1);
   });
 });

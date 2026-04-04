@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/supabase/types';
 import { computeJobMatch } from '@/lib/matching/score';
+import { ResumeAnalysisExecutionError } from '@/lib/resume/analysis-error';
+import { logError, logInfo } from '@/lib/utils/logger';
 
 type TypedSupabaseClient = SupabaseClient<Database>;
 
@@ -9,6 +11,11 @@ export async function recomputeMatchesForResume(
   userId: string,
   resumeId: string,
 ) {
+  logInfo('resume-matching', 'Recompute matches started', {
+    userId,
+    resumeId,
+  });
+
   const [resumeProfileResult, resumeSkillsResult, jobsResult, jobSkillsResult, companiesResult] = await Promise.all([
     supabase.from('resume_profiles').select('*').eq('resume_id', resumeId).maybeSingle(),
     supabase.from('resume_skills').select('skill_slug').eq('resume_id', resumeId),
@@ -17,11 +24,101 @@ export async function recomputeMatchesForResume(
     supabase.from('startup_companies').select('id, company_name').eq('is_hiring', true),
   ]);
 
-  if (resumeProfileResult.error) throw new Error(resumeProfileResult.error.message);
-  if (resumeSkillsResult.error) throw new Error(resumeSkillsResult.error.message);
-  if (jobsResult.error) throw new Error(jobsResult.error.message);
-  if (jobSkillsResult.error) throw new Error(jobSkillsResult.error.message);
-  if (companiesResult.error) throw new Error(companiesResult.error.message);
+  if (resumeProfileResult.error) {
+    logError('resume-matching', 'Resume profile query failed', {
+      userId,
+      resumeId,
+      table: 'resume_profiles',
+      message: resumeProfileResult.error.message,
+      code: resumeProfileResult.error.code ?? null,
+    });
+    throw new ResumeAnalysisExecutionError({
+      code: 'PROFILE_FETCH_FAILED',
+      operation: 'load-resume-profile',
+      table: 'resume_profiles',
+      resumeId,
+      userId,
+      message: resumeProfileResult.error.message,
+      details: resumeProfileResult.error.details ?? null,
+      hint: resumeProfileResult.error.hint ?? null,
+    });
+  }
+  if (resumeSkillsResult.error) {
+    logError('resume-matching', 'Resume skills query failed', {
+      userId,
+      resumeId,
+      table: 'resume_skills',
+      message: resumeSkillsResult.error.message,
+      code: resumeSkillsResult.error.code ?? null,
+    });
+    throw new ResumeAnalysisExecutionError({
+      code: 'SKILLS_FETCH_FAILED',
+      operation: 'load-resume-skills',
+      table: 'resume_skills',
+      resumeId,
+      userId,
+      message: resumeSkillsResult.error.message,
+      details: resumeSkillsResult.error.details ?? null,
+      hint: resumeSkillsResult.error.hint ?? null,
+    });
+  }
+  if (jobsResult.error) {
+    logError('resume-matching', 'Job source query failed', {
+      userId,
+      resumeId,
+      table: 'startup_jobs',
+      message: jobsResult.error.message,
+      code: jobsResult.error.code ?? null,
+    });
+    throw new ResumeAnalysisExecutionError({
+      code: 'JOBS_FETCH_FAILED',
+      operation: 'load-startup-jobs',
+      table: 'startup_jobs',
+      resumeId,
+      userId,
+      message: jobsResult.error.message,
+      details: jobsResult.error.details ?? null,
+      hint: jobsResult.error.hint ?? null,
+    });
+  }
+  if (jobSkillsResult.error) {
+    logError('resume-matching', 'Job skills query failed', {
+      userId,
+      resumeId,
+      table: 'job_skills',
+      message: jobSkillsResult.error.message,
+      code: jobSkillsResult.error.code ?? null,
+    });
+    throw new ResumeAnalysisExecutionError({
+      code: 'JOB_SKILLS_FETCH_FAILED',
+      operation: 'load-job-skills',
+      table: 'job_skills',
+      resumeId,
+      userId,
+      message: jobSkillsResult.error.message,
+      details: jobSkillsResult.error.details ?? null,
+      hint: jobSkillsResult.error.hint ?? null,
+    });
+  }
+  if (companiesResult.error) {
+    logError('resume-matching', 'Startup companies query failed', {
+      userId,
+      resumeId,
+      table: 'startup_companies',
+      message: companiesResult.error.message,
+      code: companiesResult.error.code ?? null,
+    });
+    throw new ResumeAnalysisExecutionError({
+      code: 'COMPANIES_FETCH_FAILED',
+      operation: 'load-startup-companies',
+      table: 'startup_companies',
+      resumeId,
+      userId,
+      message: companiesResult.error.message,
+      details: companiesResult.error.details ?? null,
+      hint: companiesResult.error.hint ?? null,
+    });
+  }
 
   const resumeSkillSlugs = (resumeSkillsResult.data ?? [])
     .map((row) => row.skill_slug ?? null)
@@ -78,9 +175,31 @@ export async function recomputeMatchesForResume(
     });
 
     if (upsert.error) {
-      throw new Error(upsert.error.message);
+      logError('resume-matching', 'Job match upsert failed', {
+        userId,
+        resumeId,
+        table: 'job_matches',
+        message: upsert.error.message,
+        code: upsert.error.code ?? null,
+      });
+      throw new ResumeAnalysisExecutionError({
+        code: 'MATCH_UPSERT_FAILED',
+        operation: 'upsert-job-matches',
+        table: 'job_matches',
+        resumeId,
+        userId,
+        message: upsert.error.message,
+        details: upsert.error.details ?? null,
+        hint: upsert.error.hint ?? null,
+      });
     }
   }
+
+  logInfo('resume-matching', 'Recompute matches completed', {
+    userId,
+    resumeId,
+    matchCount: rows.length,
+  });
 
   return rows.length;
 }

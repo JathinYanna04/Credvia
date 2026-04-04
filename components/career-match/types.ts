@@ -143,6 +143,27 @@ export interface CareerStructuredDiagnostics {
   attemptedMethods?: string[];
 }
 
+export interface CareerResumeAtsSuggestion {
+  title: string;
+  reason: string;
+  impact: 'must_fix' | 'high' | 'nice_to_have';
+}
+
+export interface CareerResumeAtsAnalysis {
+  overallScore: number;
+  parseConfidence: number;
+  sectionCompleteness: number;
+  contactCompleteness: number;
+  skillsCoverage: number;
+  educationQuality: number;
+  experienceDepth: number;
+  projectsQuality: number;
+  strengths: string[];
+  warnings: string[];
+  missingEssentials: string[];
+  suggestedActions: CareerResumeAtsSuggestion[];
+}
+
 export interface CareerStructuredProfile {
   candidate: CareerStructuredCandidate;
   skills: CareerStructuredSkills;
@@ -151,6 +172,28 @@ export interface CareerStructuredProfile {
   education: CareerStructuredEducation[];
   additional: CareerStructuredAdditional;
   diagnostics?: CareerStructuredDiagnostics;
+  analysis?: CareerResumeAtsAnalysis | null;
+}
+
+export interface CareerResumeManualOverrides {
+  candidate?: Partial<CareerStructuredCandidate>;
+  skills?: Partial<CareerStructuredSkills>;
+  experience?: CareerStructuredExperience[];
+  projects?: CareerStructuredProject[];
+  education?: CareerStructuredEducation[];
+  additional?: Partial<CareerStructuredAdditional>;
+  updated_at?: string | null;
+}
+
+export interface CareerResumeVersionSummary {
+  id: string;
+  file_name: string;
+  is_active: boolean;
+  parse_status: AnyResumeStatus;
+  uploaded_at: string;
+  updated_at: string;
+  score: number | null;
+  confidenceTier: 'high' | 'medium' | 'low' | null;
 }
 
 export interface CareerResumeSections {
@@ -162,6 +205,7 @@ export interface CareerResumeSections {
   other: string[];
   __meta?: CareerResumeExtractionMeta;
   __structured?: CareerStructuredProfile;
+  __manual?: CareerResumeManualOverrides;
 }
 
 export interface CareerResumeProfile {
@@ -313,6 +357,10 @@ export interface CareerResumeDetail {
   resume: CareerResumeSummary;
   analysisReadiness: CareerResumeAnalysisReadiness;
   profile: CareerResumeProfile | null;
+  effectiveProfile: CareerStructuredProfile | null;
+  manualOverrides: CareerResumeManualOverrides | null;
+  atsAnalysis: CareerResumeAtsAnalysis | null;
+  versions: CareerResumeVersionSummary[];
   skills: Array<{
     source: string;
     confidence: number;

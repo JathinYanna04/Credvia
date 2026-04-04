@@ -8,8 +8,10 @@ const captureServerEvent = vi.fn();
 
 function createSupabaseMock(options?: {
   nextResumeId?: string | null;
+  profileExists?: boolean;
 }) {
   const nextResumeId = options?.nextResumeId ?? null;
+  const profileExists = options?.profileExists ?? true;
 
   return {
     from: vi.fn((table: string) => {
@@ -71,6 +73,46 @@ function createSupabaseMock(options?: {
                   },
                 };
               },
+            };
+          },
+        };
+      }
+
+      if (table === 'resume_profiles') {
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  maybeSingle: async () => ({
+                    data: profileExists
+                      ? {
+                          raw_sections: {
+                            __structured: {
+                              candidate: {
+                                full_name: 'Jane Builder',
+                                current_title: 'Engineer',
+                                email: 'jane@example.com',
+                                phone: null,
+                                location: null,
+                                linkedin: null,
+                                github: null,
+                                portfolio: null,
+                                summary: null,
+                              },
+                            },
+                          },
+                        }
+                      : null,
+                    error: null,
+                  }),
+                };
+              },
+            };
+          },
+          update() {
+            return {
+              eq: async () => ({ error: null }),
             };
           },
         };
@@ -188,6 +230,45 @@ describe('resume management route', () => {
     );
 
     expect(response.status).toBe(404);
+  });
+
+  it('saves manual overrides via PATCH', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    getOwnedResume.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      is_active: true,
+    });
+
+    const { PATCH } = await import('@/app/api/v1/resumes/[id]/route');
+    const response = await PATCH(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          manualOverrides: {
+            candidate: {
+              full_name: 'Jane Builder',
+              email: 'jane@example.com',
+            },
+          },
+        }),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data).toMatchObject({
+      updated: true,
+      resumeId: 'resume-1',
+      manualOverridesSaved: true,
+    });
   });
 
   it('returns 401 for DELETE when user is unauthenticated', async () => {

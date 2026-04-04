@@ -3,6 +3,10 @@ import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { getActiveResume, getResumeById } from '@/lib/career-match/queries';
 import { sendResumeAnalysisEmail } from '@/lib/email/send-resume-analysis-email';
 import { enforceRateLimit } from '@/lib/rate-limit';
+import {
+  ResumeAnalysisExecutionError,
+  resumeAnalysisExecutionErrorDetails,
+} from '@/lib/resume/analysis-error';
 import { getResumeAnalysisReadiness } from '@/lib/resume/analysis-readiness';
 import { runResumeAnalysis } from '@/lib/resume/analyze';
 import {
@@ -152,6 +156,15 @@ export async function POST(
     }
 
     const readiness = getResumeAnalysisReadiness(resume, latestRunResult.data ?? null);
+    logInfo('resume-analyze', 'Readiness evaluated', {
+      userId: user.id,
+      resumeId: resume.id,
+      ready: readiness.ready,
+      code: readiness.code,
+      message: readiness.message,
+      parseStatus: resume.parse_status,
+      latestRunStatus: latestRunResult.data?.status ?? null,
+    });
     if (!readiness.ready) {
       const status = readiness.code === 'ANALYSIS_IN_PROGRESS' ? 409 : 422;
       const readinessDetails = {
@@ -188,7 +201,20 @@ export async function POST(
     const orchestrationClient = resolveResumeOrchestrationClient({
       resumeId: resume.id,
     });
+    logInfo('resume-analyze', 'Orchestration client resolved', {
+      userId: user.id,
+      resumeId: resume.id,
+    });
+    logInfo('resume-analyze', 'Run resume analysis started', {
+      userId: user.id,
+      resumeId: resume.id,
+    });
     const analysis = await runResumeAnalysis(orchestrationClient, resume);
+    logInfo('resume-analyze', 'Run resume analysis completed', {
+      userId: user.id,
+      resumeId: resume.id,
+      matchCount: analysis.matchCount,
+    });
     const activeResume = await getActiveResume(supabase, user.id);
 
     await captureServerEvent({
@@ -296,6 +322,29 @@ export async function POST(
       );
     }
 
+    if (error instanceof ResumeAnalysisExecutionError) {
+      const details = resumeAnalysisExecutionErrorDetails(error);
+      logError('resume-analyze', 'Analysis execution failed', details);
+
+      if (error.context.code === 'PROFILE_MISSING') {
+        return fail(
+          'RESUME_NOT_READY',
+          'Resume parsing finished, but the structured profile is not ready for analysis yet.',
+          422,
+          details,
+          'Retry extraction to rebuild the structured profile, then analyze again.',
+        );
+      }
+
+      return fail(
+        'ANALYSIS_SERVICE_UNAVAILABLE',
+        'Resume analysis dependencies are temporarily unavailable.',
+        503,
+        details,
+        'Retry analysis shortly. If this persists, inspect the analysis dependency logs.',
+      );
+    }
+
     if (error instanceof ZodError) {
       return fail(
         'VALIDATION_ERROR',
@@ -306,6 +355,7 @@ export async function POST(
 
     if (error instanceof Error) {
       logError('resume-analyze', 'Analysis failed', {
+        resumeId: params.id,
         message: error.message,
       });
     }

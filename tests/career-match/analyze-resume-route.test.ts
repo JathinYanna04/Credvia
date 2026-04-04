@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnalyzeResumeResponse } from '@/lib/types';
+import { ResumeAnalysisExecutionError } from '@/lib/resume/analysis-error';
 import { ResumePersistenceError } from '@/lib/resume/persistence-error';
 
 const createServerSupabaseClient = vi.fn();
@@ -483,6 +484,105 @@ describe('resume analyze route', () => {
       operation: 'update-parse-status',
       dbCode: '23514',
       targetStatus: 'ANALYZING',
+    });
+  });
+
+  it('returns RESUME_NOT_READY when the structured profile is missing after readiness passed', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'READY',
+    });
+    runResumeAnalysis.mockRejectedValue(
+      new ResumeAnalysisExecutionError({
+        code: 'PROFILE_MISSING',
+        operation: 'load-resume-profile',
+        table: 'resume_profiles',
+        resumeId: 'resume-1',
+        userId: 'user-1',
+        message: 'Resume is not prepared for analysis yet.',
+        details: 'resume_profiles row was not found after readiness passed.',
+        hint: 'Retry extraction to rebuild the structured profile before analysis.',
+      }),
+    );
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error.code).toBe('RESUME_NOT_READY');
+    expect(payload.error.suggestedAction).toContain('Retry extraction');
+    expect(payload.error.details).toMatchObject({
+      code: 'PROFILE_MISSING',
+      operation: 'load-resume-profile',
+      table: 'resume_profiles',
+      resumeId: 'resume-1',
+    });
+  });
+
+  it('returns ANALYSIS_SERVICE_UNAVAILABLE when downstream match recomputation fails', async () => {
+    const supabase = createSupabaseMock();
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    enforceRateLimit.mockResolvedValue({ success: true });
+    getResumeById.mockResolvedValue({
+      id: 'resume-1',
+      user_id: 'user-1',
+      file_path: 'user-1/resume-1/original.pdf',
+      mime_type: 'application/pdf',
+      file_name: 'resume.pdf',
+      parse_status: 'READY',
+    });
+    runResumeAnalysis.mockRejectedValue(
+      new ResumeAnalysisExecutionError({
+        code: 'JOBS_FETCH_FAILED',
+        operation: 'load-startup-jobs',
+        table: 'startup_jobs',
+        resumeId: 'resume-1',
+        userId: 'user-1',
+        message: 'temporary jobs query failure',
+        details: 'connection timeout',
+        hint: 'Retry after startup_jobs becomes available.',
+      }),
+    );
+
+    const { POST } = await import('@/app/api/v1/resumes/[id]/analyze/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/resumes/resume-1/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      { params: { id: 'resume-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe('ANALYSIS_SERVICE_UNAVAILABLE');
+    expect(payload.error.details).toMatchObject({
+      code: 'JOBS_FETCH_FAILED',
+      operation: 'load-startup-jobs',
+      table: 'startup_jobs',
+      resumeId: 'resume-1',
     });
   });
 

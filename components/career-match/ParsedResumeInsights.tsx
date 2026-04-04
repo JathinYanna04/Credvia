@@ -11,7 +11,7 @@ export interface ParsedResumeInsightsProps {
 export function ParsedResumeInsights({ detail, variant = 'main' }: ParsedResumeInsightsProps) {
   const profile = detail.profile;
   const skills = detail.skills;
-  const structured = profile?.raw_sections?.__structured;
+  const structured = detail.effectiveProfile ?? profile?.raw_sections?.__structured;
   const structuredCandidate = structured?.candidate;
   const structuredSkills = structured?.skills;
   const structuredExperience = structured?.experience ?? [];
