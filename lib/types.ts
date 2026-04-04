@@ -181,6 +181,10 @@ export interface ResumeExtractionQualitySummary {
 export interface ResumeExtractionSummary {
   method: string;
   attemptedMethods: string[];
+  pageCount?: number;
+  pageSourceSummary?: Record<string, number>;
+  pageDecisions?: Array<Record<string, unknown>>;
+  layoutReconstructionUsed?: boolean;
   usedOcr: boolean;
   ocrNeeded?: boolean;
   ocrStatus?:
@@ -217,6 +221,10 @@ export interface ResumeExtractionErrorDetails {
   reason?: string | null;
   attemptedMethods: string[];
   method: string | null;
+  pageCount?: number;
+  pageSourceSummary?: Record<string, number>;
+  pageDecisions?: Array<Record<string, unknown>>;
+  layoutReconstructionUsed?: boolean;
   usedOcr: boolean;
   ocrNeeded?: boolean;
   ocrStatus?:

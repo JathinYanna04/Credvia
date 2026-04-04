@@ -282,9 +282,17 @@ describe('resume extract route', () => {
         diagnostics: {
           method_used: 'pdf-native',
           page_methods: [{ page: '1', method: 'pdf-native' }],
+          page_decisions: [{ page: 1, selected_method: 'native' }],
+          page_source_summary: { native: 1 },
+          page_count: 1,
           contamination_score: 20,
           salvage_score: 55,
           cleaning_actions: ['normalized_whitespace'],
+          ocr_needed: false,
+          ocr_status: 'skipped_unnecessary',
+          ocr_attempted: false,
+          ocr_improved_quality: null,
+          layout_reconstruction_used: true,
           final_source: 'merged',
           llm_status: 'success',
           llm_error: null,
@@ -324,6 +332,10 @@ describe('resume extract route', () => {
         acceptedWithWarnings: true,
         warningCode: 'SALVAGED_FROM_NOISE',
         warningMessage: 'Recovered from noisy PDF',
+        pageCount: 1,
+        pageSourceSummary: { native: 1 },
+        pageDecisions: [{ page: 1, selected_method: 'native' }],
+        layoutReconstructionUsed: true,
         textLength: 1200,
         cleanedTextLength: 1200,
         contaminationScore: 20,
@@ -372,6 +384,11 @@ describe('resume extract route', () => {
       }),
     );
     expect(payload.data.extracted).toBe(true);
+    expect(payload.data.extraction).toMatchObject({
+      pageCount: 1,
+      pageSourceSummary: { native: 1 },
+      layoutReconstructionUsed: true,
+    });
   });
 
   it('falls back to deterministic preparation when external extractor payload is malformed', async () => {

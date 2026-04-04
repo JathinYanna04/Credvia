@@ -128,6 +128,10 @@ export interface ResumeExtractionResult {
   text: string;
   rawText: string;
   method: ResumeExtractionMethod;
+  pageCount?: number;
+  pageSourceSummary?: Record<string, number>;
+  pageDecisions?: Array<Record<string, unknown>>;
+  layoutReconstructionUsed?: boolean;
   usedOcr: boolean;
   ocrNeeded: boolean;
   ocrStatus:
@@ -950,6 +954,10 @@ function createExtractionCandidate(args: {
   ocrImprovedQuality?: boolean | null;
   ocrConfidence?: number | null;
   source?: 'pdf' | 'docx' | 'txt' | 'rtf' | 'image';
+  pageCount?: number;
+  pageSourceSummary?: Record<string, number>;
+  pageDecisions?: Array<Record<string, unknown>>;
+  layoutReconstructionUsed?: boolean;
 }): ResumeExtractionResult {
   const rawText = args.rawText ?? args.text;
   const cleaned = cleanExtractedText(rawText, args.source ?? 'pdf');
@@ -961,6 +969,10 @@ function createExtractionCandidate(args: {
     text: cleanedText,
     rawText,
     method: args.method,
+    pageCount: args.pageCount,
+    pageSourceSummary: args.pageSourceSummary,
+    pageDecisions: args.pageDecisions,
+    layoutReconstructionUsed: args.layoutReconstructionUsed,
     usedOcr: args.usedOcr ?? false,
     ocrNeeded: args.ocrNeeded ?? false,
     ocrStatus: args.ocrStatus ?? null,
@@ -1049,6 +1061,10 @@ function buildDiagnostics(
     reason: candidate?.quality.reason ?? null,
     attemptedMethods,
     method: candidate?.method ?? null,
+    pageCount: candidate?.pageCount,
+    pageSourceSummary: candidate?.pageSourceSummary,
+    pageDecisions: candidate?.pageDecisions,
+    layoutReconstructionUsed: candidate?.layoutReconstructionUsed,
     usedOcr: candidate?.usedOcr ?? false,
     ocrNeeded,
     ocrStatus,

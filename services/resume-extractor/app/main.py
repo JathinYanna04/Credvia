@@ -8,11 +8,19 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 import httpx
+from app.page_intelligence import (
+    build_layout_blocks,
+    choose_best_page_representation,
+    compute_text_quality,
+    ingest_document,
+    normalize_extracted_text,
+    summarize_page_sources,
+)
 
 app = FastAPI(title="Credvia Resume Extractor", version="0.2.0")
 
@@ -359,9 +367,17 @@ class ConfidenceBlock(BaseModel):
 class DiagnosticsBlock(BaseModel):
     method_used: str
     page_methods: List[Dict[str, str]] = Field(default_factory=list)
+    page_decisions: List[Dict[str, Any]] = Field(default_factory=list)
+    page_source_summary: Dict[str, int] = Field(default_factory=dict)
+    page_count: int = 0
     contamination_score: float = 0.0
     salvage_score: float = 0.0
     cleaning_actions: List[str] = Field(default_factory=list)
+    ocr_needed: bool = False
+    ocr_status: Optional[str] = None
+    ocr_attempted: bool = False
+    ocr_improved_quality: Optional[bool] = None
+    layout_reconstruction_used: bool = False
     final_source: Optional[str] = None
     llm_status: Optional[str] = None
     llm_error: Optional[str] = None
@@ -422,7 +438,8 @@ def is_probable_pdf_bytes(file_bytes: bytes) -> bool:
 
 
 def clean_resume_text(raw: str) -> Tuple[str, List[str]]:
-    lines = raw.splitlines()
+    normalized_raw = normalize_extracted_text(raw)
+    lines = normalized_raw.splitlines()
     cleaned_lines = []
     actions: List[str] = []
     removed_lines = 0
@@ -479,12 +496,67 @@ def reconstruct_resume_text(cleaned: str) -> str:
     return "\n".join(reconstructed)
 
 
+def try_ocr_image(image: Any) -> Tuple[str, Optional[str]]:
+    try:
+        from paddleocr import PaddleOCR
+
+        ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+        result = ocr.ocr(image, cls=True) or []
+        lines: List[str] = []
+        for page_result in result:
+            for item in page_result or []:
+                if len(item) >= 2 and item[1]:
+                    text = str(item[1][0]).strip()
+                    if text:
+                        lines.append(text)
+        if lines:
+            return "\n".join(lines), "paddleocr"
+    except Exception:
+        pass
+
+    try:
+        import pytesseract
+
+        return pytesseract.image_to_string(image), "tesseract"
+    except Exception:
+        return "", None
+
+
 def extract_pdf_text(file_bytes: bytes) -> Tuple[str, int, List[Dict[str, str]]]:
     try:
         import fitz
     except Exception:
         return "", 0, []
-    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+    except Exception:
+        fallback_text = file_bytes.decode("utf-8", errors="ignore")
+        fallback_quality = compute_text_quality(fallback_text)
+        diagnostics = {
+            "page_decisions": [
+                {
+                    "page": 1,
+                    "selected_method": "native",
+                    "selected_score": fallback_quality["score"],
+                    "selected_quality": fallback_quality,
+                    "candidates": [],
+                    "selected_text": fallback_text,
+                    "ocr_needed": False,
+                    "ocr_attempted": False,
+                    "ocr_improved_quality": None,
+                    "layout_reconstruction_used": False,
+                }
+            ],
+            "page_source_summary": {"native": 1},
+            "ocr_needed": False,
+            "ocr_status": "skipped_unnecessary",
+            "ocr_attempted": False,
+            "ocr_improved_quality": None,
+            "layout_reconstruction_used": False,
+        }
+        return fallback_text, 1, [{"page": "1", "method": "pdf-native"}], "pdf-native", [
+            "pdf_open_failed_text_fallback"
+        ], diagnostics
     chunks: List[str] = []
     page_methods: List[Dict[str, str]] = []
     for index, page in enumerate(doc):
@@ -493,30 +565,104 @@ def extract_pdf_text(file_bytes: bytes) -> Tuple[str, int, List[Dict[str, str]]]
     return "\n".join(chunks), doc.page_count, page_methods
 
 
-def ocr_pdf_text(file_bytes: bytes) -> Tuple[str, int, List[Dict[str, str]], Optional[str]]:
+def extract_pdf_with_page_intelligence(
+    file_bytes: bytes,
+) -> Tuple[str, int, List[Dict[str, str]], str, List[str], Dict[str, Any]]:
     try:
         import fitz
     except Exception:
-        return "", 0, [], "PyMuPDF unavailable for OCR."
+        return "", 0, [], "pdf-native", ["pymupdf_unavailable"], {
+            "page_decisions": [],
+            "page_source_summary": {},
+            "ocr_needed": False,
+            "ocr_status": "unavailable_preserved_previous",
+            "ocr_attempted": False,
+            "ocr_improved_quality": None,
+            "layout_reconstruction_used": False,
+        }
     try:
-        import pytesseract
         from PIL import Image
     except Exception:
-        return "", 0, [], "pytesseract or Pillow unavailable."
-    try:
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-    except Exception:
-        return "", 0, [], "Failed to open PDF for OCR."
-    chunks: List[str] = []
+        Image = None  # type: ignore[assignment]
+
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    selected_pages: List[str] = []
     page_methods: List[Dict[str, str]] = []
-    for index, page in enumerate(doc):
-        pix = page.get_pixmap(dpi=200)
-        mode = "RGB" if pix.alpha == 0 else "RGBA"
-        image = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
-        text = pytesseract.image_to_string(image)
-        chunks.append(text)
-        page_methods.append({"page": str(index + 1), "method": "pdf-ocr"})
-    return "\n".join(chunks), doc.page_count, page_methods, None
+    page_decisions: List[Dict[str, Any]] = []
+    actions: List[str] = []
+
+    for index, page in enumerate(doc, start=1):
+        native_text = page.get_text("text") or ""
+        block_items = page.get_text("blocks") or []
+        sorted_blocks = sorted(block_items, key=lambda item: (item[1], item[0])) if block_items else []
+        block_text = "\n".join(
+            str(item[4]).strip() for item in sorted_blocks if len(item) > 4 and str(item[4]).strip()
+        )
+        merged_text = "\n".join(filter(None, [block_text, native_text]))
+        candidates: List[Dict[str, Any]] = [
+            {"method": "native", "text": native_text, "blocks": []},
+        ]
+        if block_text.strip():
+            candidates.append({"method": "merged", "text": merged_text, "blocks": build_layout_blocks(block_text)})
+
+        native_quality = compute_text_quality(native_text)
+        should_try_ocr = (
+            native_quality["likely_scanned"]
+            or native_quality["human_readable_ratio"] < 0.72
+            or native_quality["section_heading_count"] == 0
+            or native_quality["pdf_noise_hits"] >= 2
+        )
+
+        ocr_provider: Optional[str] = None
+        if should_try_ocr and Image is not None:
+            pix = page.get_pixmap(dpi=220)
+            mode = "RGB" if pix.alpha == 0 else "RGBA"
+            image = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+            ocr_text, ocr_provider = try_ocr_image(image)
+            if ocr_text.strip():
+                candidates.append({"method": "ocr", "text": ocr_text, "blocks": build_layout_blocks(ocr_text)})
+                actions.append(f"page_{index}_ocr_candidate")
+            else:
+                actions.append(f"page_{index}_ocr_unavailable")
+
+        decision = choose_best_page_representation(index, candidates)
+        selected_pages.append(decision["selected_text"])
+        selected_method = decision.get("selected_method") or "native"
+        page_methods.append({"page": str(index), "method": f"pdf-{selected_method}"})
+        decision["ocr_provider"] = ocr_provider
+        page_decisions.append(decision)
+
+    page_source_summary = summarize_page_sources(page_decisions)
+    ocr_needed = any(bool(item.get("ocr_needed")) for item in page_decisions)
+    ocr_attempted = any(bool(item.get("ocr_attempted")) for item in page_decisions)
+    ocr_improved_quality = (
+        any(bool(item.get("ocr_improved_quality")) for item in page_decisions) if ocr_attempted else None
+    )
+    layout_reconstruction_used = any(
+        bool(item.get("layout_reconstruction_used")) for item in page_decisions
+    )
+
+    if ocr_attempted and any(item.get("selected_method") == "ocr" for item in page_decisions):
+        ocr_status = "used_successfully"
+    elif ocr_attempted:
+        ocr_status = "attempted_no_gain"
+    elif ocr_needed:
+        ocr_status = "unavailable_preserved_previous"
+    else:
+        ocr_status = "skipped_unnecessary"
+
+    dominant_method = max(page_source_summary.items(), key=lambda item: item[1])[0] if page_source_summary else "native"
+    document_text = "\n\n".join(page for page in selected_pages if page.strip())
+    diagnostics = {
+        "page_decisions": page_decisions,
+        "page_source_summary": page_source_summary,
+        "ocr_needed": ocr_needed,
+        "ocr_status": ocr_status,
+        "ocr_attempted": ocr_attempted,
+        "ocr_improved_quality": ocr_improved_quality,
+        "layout_reconstruction_used": layout_reconstruction_used,
+    }
+    return document_text, doc.page_count, page_methods, f"pdf-{dominant_method}", actions, diagnostics
 
 
 def extract_docx_text(file_bytes: bytes) -> str:
@@ -538,27 +684,51 @@ def extract_rtf_text(file_bytes: bytes) -> str:
 
 def extract_text_by_type(
     file_bytes: bytes, mime_type: str, filename: str
-) -> Tuple[str, int, List[Dict[str, str]], str, List[str]]:
+) -> Tuple[str, int, List[Dict[str, str]], str, List[str], Dict[str, Any]]:
     lower = filename.lower()
     actions: List[str] = []
+    document_meta = ingest_document(file_bytes, mime_type, filename)
     is_pdf = mime_type == "application/pdf" or lower.endswith(".pdf") or is_probable_pdf_bytes(file_bytes)
     if is_pdf:
-        text, pages, page_methods = extract_pdf_text(file_bytes)
-        if text and not looks_like_pdf_binary(text):
-            return text, pages, page_methods, "pdf-native", actions
-        actions.append("pdf_contamination_detected")
-        ocr_text, ocr_pages, ocr_methods, ocr_error = ocr_pdf_text(file_bytes)
-        if ocr_text.strip():
-            actions.append("pdf_ocr_fallback_used")
-            return ocr_text, ocr_pages, ocr_methods, "pdf-ocr", actions
-        if ocr_error:
-            actions.append("pdf_ocr_unavailable")
-        return text, pages, page_methods, "pdf-native", actions
+        text, pages, page_methods, method_used, pdf_actions, diagnostics = extract_pdf_with_page_intelligence(
+            file_bytes
+        )
+        return text, pages, page_methods, method_used, actions + pdf_actions, {
+            **diagnostics,
+            "document": document_meta,
+        }
     if lower.endswith(".docx") or "wordprocessingml.document" in mime_type:
-        return extract_docx_text(file_bytes), 1, [{"page": "1", "method": "docx"}], "docx", actions
+        return extract_docx_text(file_bytes), 1, [{"page": "1", "method": "docx"}], "docx", actions, {
+            "page_decisions": [],
+            "page_source_summary": {"docx": 1},
+            "ocr_needed": False,
+            "ocr_status": "skipped_unnecessary",
+            "ocr_attempted": False,
+            "ocr_improved_quality": None,
+            "layout_reconstruction_used": False,
+            "document": document_meta,
+        }
     if lower.endswith(".rtf") or "rtf" in mime_type:
-        return extract_rtf_text(file_bytes), 1, [{"page": "1", "method": "rtf"}], "rtf", actions
-    return file_bytes.decode("utf-8", errors="ignore"), 1, [{"page": "1", "method": "text"}], "text", actions
+        return extract_rtf_text(file_bytes), 1, [{"page": "1", "method": "rtf"}], "rtf", actions, {
+            "page_decisions": [],
+            "page_source_summary": {"rtf": 1},
+            "ocr_needed": False,
+            "ocr_status": "skipped_unnecessary",
+            "ocr_attempted": False,
+            "ocr_improved_quality": None,
+            "layout_reconstruction_used": False,
+            "document": document_meta,
+        }
+    return file_bytes.decode("utf-8", errors="ignore"), 1, [{"page": "1", "method": "text"}], "text", actions, {
+        "page_decisions": [],
+        "page_source_summary": {"text": 1},
+        "ocr_needed": False,
+        "ocr_status": "skipped_unnecessary",
+        "ocr_attempted": False,
+        "ocr_improved_quality": None,
+        "layout_reconstruction_used": False,
+        "document": document_meta,
+    }
 
 
 def infer_candidate_basics(text: str) -> CandidateBasics:
@@ -1715,6 +1885,8 @@ async def extract(
         cleaned_text = cached["cleaned_text"]
         page_count = cached["page_count"]
         page_methods = cached["page_methods"]
+        page_decisions = cached.get("page_decisions", [])
+        page_source_summary = cached.get("page_source_summary", {})
         method_used = cached["method_used"]
         contamination = cached["contamination"]
         candidate = CandidateBasics(**cached["candidate"])
@@ -1758,9 +1930,17 @@ async def extract(
             diagnostics=DiagnosticsBlock(
                 method_used=method_used,
                 page_methods=page_methods,
+                page_decisions=page_decisions,
+                page_source_summary=page_source_summary,
+                page_count=page_count,
                 contamination_score=contamination,
                 salvage_score=round(confidence.overall * 100.0, 2),
                 cleaning_actions=cached.get("cleaning_actions", []) + actions_post + [llm_action, "post_processed_v2"],
+                ocr_needed=cached.get("ocr_needed", False),
+                ocr_status=cached.get("ocr_status"),
+                ocr_attempted=cached.get("ocr_attempted", False),
+                ocr_improved_quality=cached.get("ocr_improved_quality"),
+                layout_reconstruction_used=cached.get("layout_reconstruction_used", False),
                 final_source=cached.get("final_source"),
                 llm_status=cached.get("llm_status"),
                 llm_error=cached.get("llm_error"),
@@ -1769,9 +1949,20 @@ async def extract(
             normalized_resume=NormalizedResume(text=cached["normalized_text"], sections=cached["section_map"]),
         )
 
-    raw_text, page_count, page_methods, method_used, extraction_actions = extract_text_by_type(
-        data, resolved_mime, resolved_filename
-    )
+    extraction_result = extract_text_by_type(data, resolved_mime, resolved_filename)
+    if len(extraction_result) == 6:
+        raw_text, page_count, page_methods, method_used, extraction_actions, extraction_diagnostics = extraction_result
+    else:
+        raw_text, page_count, page_methods, method_used, extraction_actions = extraction_result  # type: ignore[misc]
+        extraction_diagnostics = {
+            "page_decisions": [],
+            "page_source_summary": {},
+            "ocr_needed": False,
+            "ocr_status": None,
+            "ocr_attempted": False,
+            "ocr_improved_quality": None,
+            "layout_reconstruction_used": False,
+        }
     cleaned_text, cleaning_actions = clean_resume_text(raw_text)
     reconstructed_text = reconstruct_resume_text(cleaned_text)
     contamination = contamination_score(raw_text)
@@ -1944,6 +2135,9 @@ async def extract(
         diagnostics=DiagnosticsBlock(
             method_used=method_used,
             page_methods=page_methods,
+            page_decisions=extraction_diagnostics.get("page_decisions", []),
+            page_source_summary=extraction_diagnostics.get("page_source_summary", {}),
+            page_count=page_count,
             contamination_score=contamination,
             salvage_score=round(confidence.overall * 100.0, 2),
             cleaning_actions=cleaning_actions
@@ -1952,6 +2146,11 @@ async def extract(
             + actions_post
             + ["experience_months_recomputed", "ats_score_recalculated", "post_processed_v2"]
             + (["ignored_declaration"] if section_map.get("declaration") else []),
+            ocr_needed=bool(extraction_diagnostics.get("ocr_needed", False)),
+            ocr_status=extraction_diagnostics.get("ocr_status"),
+            ocr_attempted=bool(extraction_diagnostics.get("ocr_attempted", False)),
+            ocr_improved_quality=extraction_diagnostics.get("ocr_improved_quality"),
+            layout_reconstruction_used=bool(extraction_diagnostics.get("layout_reconstruction_used", False)),
             final_source=final_source,
             llm_status=llm_status,
             llm_error=llm_error,
@@ -1966,6 +2165,8 @@ async def extract(
             "cleaned_text": cleaned_text,
             "page_count": page_count,
             "page_methods": page_methods,
+            "page_decisions": extraction_diagnostics.get("page_decisions", []),
+            "page_source_summary": extraction_diagnostics.get("page_source_summary", {}),
             "method_used": method_used,
             "contamination": contamination,
             "candidate": candidate.model_dump(),
@@ -1985,6 +2186,11 @@ async def extract(
             "llm_error": llm_error,
             "llm_raw_present": llm_raw_present,
             "final_source": final_source,
+            "ocr_needed": bool(extraction_diagnostics.get("ocr_needed", False)),
+            "ocr_status": extraction_diagnostics.get("ocr_status"),
+            "ocr_attempted": bool(extraction_diagnostics.get("ocr_attempted", False)),
+            "ocr_improved_quality": extraction_diagnostics.get("ocr_improved_quality"),
+            "layout_reconstruction_used": bool(extraction_diagnostics.get("layout_reconstruction_used", False)),
             "cleaning_actions": cleaning_actions
             + extraction_actions
             + ["parsed_sections_v2", llm_action]
@@ -1997,6 +2203,14 @@ async def extract(
         },
     )
     log_event(
-        f"llm_status={llm_status} final_source={final_source} llm_error={llm_error or 'none'}"
+        " ".join(
+            [
+                f"llm_status={llm_status}",
+                f"final_source={final_source}",
+                f"ocr_status={extraction_diagnostics.get('ocr_status') or 'none'}",
+                f"page_sources={json.dumps(extraction_diagnostics.get('page_source_summary', {}), sort_keys=True)}",
+                f"llm_error={llm_error or 'none'}",
+            ]
+        )
     )
     return response

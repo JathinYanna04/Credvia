@@ -340,6 +340,10 @@ export async function POST(
       extraction: {
         method: preparation.extraction.method,
         attemptedMethods: preparation.extraction.attemptedMethods,
+        pageCount: preparation.extraction.pageCount,
+        pageSourceSummary: preparation.extraction.pageSourceSummary,
+        pageDecisions: preparation.extraction.pageDecisions,
+        layoutReconstructionUsed: preparation.extraction.layoutReconstructionUsed,
         usedOcr: preparation.extraction.usedOcr,
         ocrNeeded: preparation.extraction.ocrNeeded,
         ocrStatus: preparation.extraction.ocrStatus,

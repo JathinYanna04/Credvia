@@ -264,6 +264,13 @@ function buildStructuredProfile(
       usedOcr: options.usedOcr,
       extractionMethod: options.methodUsed,
       attemptedMethods: options.attemptedMethods,
+      pageCount: external.diagnostics?.page_count ?? external.raw?.page_count ?? null,
+      pageSourceSummary: external.diagnostics?.page_source_summary ?? {},
+      layoutReconstructionUsed: external.diagnostics?.layout_reconstruction_used ?? false,
+      ocrNeeded: external.diagnostics?.ocr_needed ?? false,
+      ocrStatus: external.diagnostics?.ocr_status ?? null,
+      ocrAttempted: external.diagnostics?.ocr_attempted ?? false,
+      ocrImprovedQuality: external.diagnostics?.ocr_improved_quality ?? null,
     },
   };
 }
@@ -353,9 +360,23 @@ export interface ExternalExtractionPayload {
   diagnostics?: {
     method_used?: string;
     page_methods?: Array<Record<string, unknown>>;
+    page_decisions?: Array<Record<string, unknown>>;
+    page_source_summary?: Record<string, number>;
+    page_count?: number;
     contamination_score?: number;
     salvage_score?: number;
     cleaning_actions?: string[];
+    ocr_needed?: boolean;
+    ocr_status?:
+      | 'skipped_unnecessary'
+      | 'attempted_no_gain'
+      | 'failed_preserved_previous'
+      | 'used_successfully'
+      | 'unavailable_preserved_previous'
+      | null;
+    ocr_attempted?: boolean;
+    ocr_improved_quality?: boolean | null;
+    layout_reconstruction_used?: boolean;
     final_source?: 'llm' | 'heuristic_fallback' | 'merged';
     llm_status?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
     llm_error?: string | null;
@@ -698,6 +719,10 @@ export async function prepareResumeForAnalysis(
       parsed = parseResumeText(cleanedText, {
         extractionMethod: extraction.method,
         attemptedMethods: extraction.attemptedMethods,
+        pageCount: extraction.pageCount,
+        pageSourceSummary: extraction.pageSourceSummary,
+        pageDecisions: extraction.pageDecisions,
+        layoutReconstructionUsed: extraction.layoutReconstructionUsed,
         extractionQuality: {
           ...extraction.quality,
           contaminationScore: extraction.contaminationScore,
@@ -852,6 +877,10 @@ export async function prepareResumeFromExternalExtraction(
     const fallbackParsed = parseResumeText(reconstructedText, {
       extractionMethod: methodUsed,
       attemptedMethods: [],
+      pageCount: external.diagnostics?.page_count ?? external.raw?.page_count,
+      pageSourceSummary: external.diagnostics?.page_source_summary,
+      pageDecisions: external.diagnostics?.page_decisions,
+      layoutReconstructionUsed: external.diagnostics?.layout_reconstruction_used,
       extractionQuality: {
         contaminationScore,
         salvageScore,
@@ -870,6 +899,10 @@ export async function prepareResumeFromExternalExtraction(
       cleanedTextLength: cleanedText.length,
       rawText,
       cleanedText,
+      ocrNeeded: external.diagnostics?.ocr_needed,
+      ocrStatus: external.diagnostics?.ocr_status,
+      ocrAttempted: external.diagnostics?.ocr_attempted,
+      ocrImprovedQuality: external.diagnostics?.ocr_improved_quality,
       finalSource: llmFinalSource ?? undefined,
       llmStatus: llmStatus ?? undefined,
       llmError,
@@ -1003,10 +1036,10 @@ export async function prepareResumeFromExternalExtraction(
         rawText,
         method: 'render-extractor',
         usedOcr,
-        ocrNeeded: false,
-        ocrStatus: usedOcr ? 'used_successfully' : null,
-        ocrAttempted: false,
-        ocrImprovedQuality: null,
+        ocrNeeded: external.diagnostics?.ocr_needed ?? false,
+        ocrStatus: external.diagnostics?.ocr_status ?? (usedOcr ? 'used_successfully' : null),
+        ocrAttempted: external.diagnostics?.ocr_attempted ?? usedOcr,
+        ocrImprovedQuality: external.diagnostics?.ocr_improved_quality ?? null,
         ocrConfidence: null,
         ocrAvailable: true,
         ocrUnavailableReason: null,
@@ -1014,6 +1047,11 @@ export async function prepareResumeFromExternalExtraction(
         warningCode: acceptedWithWarnings ? 'SALVAGED_FROM_NOISE' : null,
         warningMessage: warnings[0] ?? null,
         attemptedMethods,
+        pageCount: external.diagnostics?.page_count ?? external.raw?.page_count ?? undefined,
+        pageSourceSummary: external.diagnostics?.page_source_summary ?? undefined,
+        pageDecisions: external.diagnostics?.page_decisions ?? undefined,
+        layoutReconstructionUsed:
+          external.diagnostics?.layout_reconstruction_used ?? undefined,
         textLength: cleanedText.length,
         cleanedTextLength: cleanedText.length,
         contaminationScore,

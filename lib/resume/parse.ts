@@ -32,6 +32,10 @@ export interface LegacyParsedResumeSections {
 export interface ParsedResumeMeta {
   extractionMethod?: string;
   attemptedMethods?: string[];
+  pageCount?: number;
+  pageSourceSummary?: Record<string, number>;
+  pageDecisions?: Array<Record<string, unknown>>;
+  layoutReconstructionUsed?: boolean;
   extractionQuality?: Record<string, unknown>;
   contaminationScore?: number;
   salvageScore?: number;

@@ -101,6 +101,13 @@ function buildFallbackStructuredProfile(profile: CareerResumeProfile | null): Ca
     usedOcr: profile.raw_sections?.__meta?.usedOcr ?? false,
     extractionMethod: profile.raw_sections?.__meta?.extractionMethod ?? null,
     attemptedMethods: profile.raw_sections?.__meta?.attemptedMethods ?? [],
+    pageCount: profile.raw_sections?.__meta?.pageCount ?? null,
+    pageSourceSummary: profile.raw_sections?.__meta?.pageSourceSummary ?? {},
+    layoutReconstructionUsed: profile.raw_sections?.__meta?.layoutReconstructionUsed ?? false,
+    ocrNeeded: profile.raw_sections?.__meta?.ocrNeeded ?? false,
+    ocrStatus: profile.raw_sections?.__meta?.ocrStatus ?? null,
+    ocrAttempted: profile.raw_sections?.__meta?.ocrAttempted ?? false,
+    ocrImprovedQuality: profile.raw_sections?.__meta?.ocrImprovedQuality ?? null,
   };
 
   return {
@@ -245,6 +252,18 @@ export function buildResumeAtsAnalysis(args: {
     ...skills.others,
   ].length;
   const skillsCoverage = clampScore(Math.min(100, skillCount * 8));
+  const hasSparseExperience = effectiveProfile.experience.length === 0;
+  const extractionConfidencePenalty =
+    extractionMeta?.extractionQuality?.confidenceTier === 'low'
+      ? 12
+      : extractionMeta?.extractionQuality?.confidenceTier === 'medium'
+        ? 5
+        : 0;
+  const contaminationPenalty =
+    typeof extractionMeta?.contaminationScore === 'number'
+      ? Math.min(12, Math.round(extractionMeta.contaminationScore / 8))
+      : 0;
+  const layoutBonus = extractionMeta?.layoutReconstructionUsed ? 4 : 0;
 
   const educationQuality = clampScore(
     effectiveProfile.education.length === 0
@@ -287,13 +306,16 @@ export function buildResumeAtsAnalysis(args: {
 
   const parseConfidence = clampScore(confidenceScore);
   const overallScore = clampScore(
-    sectionCompleteness * 0.2 +
-      contactCompleteness * 0.15 +
-      skillsCoverage * 0.2 +
-      educationQuality * 0.1 +
-      experienceDepth * 0.2 +
-      projectsQuality * 0.1 +
-      parseConfidence * 0.05,
+    sectionCompleteness * 0.14 +
+      contactCompleteness * 0.16 +
+      skillsCoverage * (hasSparseExperience ? 0.18 : 0.15) +
+      educationQuality * (hasSparseExperience ? 0.16 : 0.1) +
+      experienceDepth * (hasSparseExperience ? 0.12 : 0.2) +
+      projectsQuality * (hasSparseExperience ? 0.19 : 0.1) +
+      parseConfidence * 0.05 +
+      layoutBonus -
+      extractionConfidencePenalty -
+      contaminationPenalty,
   );
 
   const strengths: string[] = [];
@@ -367,6 +389,25 @@ export function buildResumeAtsAnalysis(args: {
   const topMatch = topMatches[0] ?? null;
   if (topMatch && topMatch.overall_score >= 70) {
     strengths.push(`Top current match is ${Math.round(topMatch.overall_score)}% fit.`);
+  }
+  if (extractionMeta?.layoutReconstructionUsed) {
+    strengths.push('Layout-aware reconstruction recovered additional resume structure.');
+  }
+  if (extractionMeta?.ocrStatus === 'used_successfully') {
+    strengths.push('OCR recovery improved extraction on low-quality or scanned content.');
+  }
+  if ((extractionMeta?.extractionQuality?.confidenceTier ?? 'high') === 'low') {
+    warnings.push('Extraction confidence is low. Review parsed sections carefully.');
+  }
+  if (typeof extractionMeta?.contaminationScore === 'number' && extractionMeta.contaminationScore >= 35) {
+    warnings.push('Document noise or glyph contamination was detected during extraction.');
+  }
+  if (extractionMeta?.ocrStatus === 'attempted_no_gain') {
+    suggestedActions.push({
+      title: 'Upload a cleaner export if available',
+      reason: 'OCR was attempted but did not materially improve the extracted text.',
+      impact: 'nice_to_have',
+    });
   }
 
   return {

@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app.page_intelligence import build_layout_blocks, choose_best_page_representation, compute_text_quality
 
 
 def _assert_structured_contract(payload: Dict[str, Any]) -> None:
@@ -231,6 +232,45 @@ class TestFallback:
         assert payload["diagnostics"]["final_source"] == "heuristic_fallback"
         _assert_structured_contract(payload)
 
+    def test_extract_route_preserves_page_intelligence_diagnostics(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sample_text = (
+            "JANE BUILDER\njane@example.com\n+1 555 000 1111\n"
+            "SKILLS\nPython\nFastAPI\nPROJECTS\nResume Engine\n"
+        )
+
+        def fake_extract(*_args: Any, **_kwargs: Any) -> Any:
+            return (
+                sample_text,
+                2,
+                [{"page": "1", "method": "pdf-native"}, {"page": "2", "method": "pdf-ocr"}],
+                "pdf-native",
+                ["page_2_ocr_candidate"],
+                {
+                    "page_decisions": [
+                        {"page": 1, "selected_method": "native"},
+                        {"page": 2, "selected_method": "ocr"},
+                    ],
+                    "page_source_summary": {"native": 1, "ocr": 1},
+                    "ocr_needed": True,
+                    "ocr_status": "used_successfully",
+                    "ocr_attempted": True,
+                    "ocr_improved_quality": True,
+                    "layout_reconstruction_used": True,
+                },
+            )
+
+        monkeypatch.setattr(main, "extract_text_by_type", fake_extract)
+        monkeypatch.setattr(main, "call_llm_refiner", lambda *_args, **_kwargs: None)
+        payload = _upload(client)
+
+        assert payload["diagnostics"]["page_count"] == 2
+        assert payload["diagnostics"]["page_source_summary"] == {"native": 1, "ocr": 1}
+        assert payload["diagnostics"]["ocr_status"] == "used_successfully"
+        assert payload["diagnostics"]["layout_reconstruction_used"] is True
+        _assert_structured_contract(payload)
+
     def test_invalid_json_fallback_sets_diagnostics(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -312,6 +352,46 @@ class TestEdgeCases:
         assert payload["diagnostics"]["final_source"] == "heuristic_fallback"
         _assert_structured_contract(payload)
 
+
+class TestPageIntelligence:
+    def test_prefers_native_when_text_is_strong(self) -> None:
+        native = "JANE BUILDER\njane@example.com\n+1 555 000 1111\nSKILLS\nPython\nFastAPI"
+        ocr = "JANE BUI1DER\njane@example.com\n+1 555 000 1111\nSK1LLS\nPython\nFastAPI"
+
+        decision = choose_best_page_representation(
+            1,
+            [
+                {"method": "native", "text": native},
+                {"method": "ocr", "text": ocr},
+            ],
+        )
+
+        assert decision["selected_method"] == "native"
+        assert decision["ocr_attempted"] is True
+
+    def test_prefers_ocr_when_native_is_noisy(self) -> None:
+        native = "xref stream endstream /Type /Catalog random obj obj obj"
+        ocr = "Vaishali Ragi\nvaishali.ragi66@gmail.com\nSKILLS\nPython\nJava"
+
+        decision = choose_best_page_representation(
+            1,
+            [
+                {"method": "native", "text": native},
+                {"method": "ocr", "text": ocr},
+            ],
+        )
+
+        assert decision["selected_method"] == "ocr"
+        assert decision["ocr_needed"] is True
+        assert decision["ocr_improved_quality"] is True
+
+    def test_builds_layout_blocks_for_headings_and_bullets(self) -> None:
+        text = "SKILLS\nPython\nFastAPI\n\nPROJECTS\n- Resume Engine\n- ATS Dashboard"
+        blocks = build_layout_blocks(text)
+        assert len(blocks) >= 2
+        assert any(block["kind"] == "section" for block in blocks)
+        assert compute_text_quality(text)["section_heading_count"] >= 2
+
     def test_ocr_garbage_like_text_still_returns_contract(
         self,
         client: TestClient,
@@ -374,6 +454,16 @@ class TestEdgeCases:
     def test_duplicate_llm_entries_do_not_crash(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        sample_text = (
+            "JANE BUILDER\nSoftware Engineer\njane@example.com\n+1 555 000 1111\n"
+            "SKILLS\nPython\nTypeScript\nPROJECTS\nResume Engine\n"
+        )
+
+        def fake_extract(*_args: Any, **_kwargs: Any) -> Any:
+            return sample_text, 1, [{"page": "1", "method": "pdf-native"}], "pdf-native", []
+
+        monkeypatch.setattr(main, "extract_text_by_type", fake_extract)
+
         def fake_llm(_cleaned: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             base = {
                 "candidate": payload["candidate"],
@@ -409,6 +499,16 @@ class TestEdgeCases:
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         long_summary = " ".join(["reliable"] * 1500)
+
+        sample_text = (
+            "JANE BUILDER\nSoftware Engineer\njane@example.com\n+1 555 000 1111\n"
+            "SKILLS\nPython\nTypeScript\nPROJECTS\nResume Engine\n"
+        )
+
+        def fake_extract(*_args: Any, **_kwargs: Any) -> Any:
+            return sample_text, 1, [{"page": "1", "method": "pdf-native"}], "pdf-native", []
+
+        monkeypatch.setattr(main, "extract_text_by_type", fake_extract)
 
         def fake_llm(_cleaned: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             result = {

@@ -9,6 +9,10 @@ export interface CareerSkill {
 export interface CareerResumeExtractionMeta {
   extractionMethod?: string;
   attemptedMethods?: string[];
+  pageCount?: number | null;
+  pageSourceSummary?: Record<string, number>;
+  pageDecisions?: Array<Record<string, unknown>>;
+  layoutReconstructionUsed?: boolean;
   extractionQuality?: {
     confidenceScore?: number;
     confidenceTier?: 'high' | 'medium' | 'low';
@@ -141,6 +145,19 @@ export interface CareerStructuredDiagnostics {
   usedOcr?: boolean;
   extractionMethod?: string | null;
   attemptedMethods?: string[];
+  pageCount?: number | null;
+  pageSourceSummary?: Record<string, number>;
+  layoutReconstructionUsed?: boolean;
+  ocrNeeded?: boolean;
+  ocrStatus?:
+    | 'skipped_unnecessary'
+    | 'attempted_no_gain'
+    | 'failed_preserved_previous'
+    | 'used_successfully'
+    | 'unavailable_preserved_previous'
+    | null;
+  ocrAttempted?: boolean;
+  ocrImprovedQuality?: boolean | null;
 }
 
 export interface CareerResumeAtsSuggestion {
