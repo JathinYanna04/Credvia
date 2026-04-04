@@ -52,7 +52,7 @@ export function TestimonialsOrProof() {
                 {item.title}
               </div>
               <p className="mt-5 text-lg leading-8 text-[var(--marketing-text-primary)]">
-                "{item.quote}"
+                &ldquo;{item.quote}&rdquo;
               </p>
               <div className="marketing-muted mt-6 text-sm font-medium">{item.result}</div>
             </Card>
