@@ -1,7 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { CareerResumeProfile } from '@/components/career-match/types';
 import type { Database } from '@/lib/supabase/types';
 import { computeJobMatch } from '@/lib/matching/score';
 import { ResumeAnalysisExecutionError } from '@/lib/resume/analysis-error';
+import { getEffectiveStructuredProfile } from '@/lib/resume/intelligence';
 import { logError, logInfo } from '@/lib/utils/logger';
 
 type TypedSupabaseClient = SupabaseClient<Database>;
@@ -120,9 +122,22 @@ export async function recomputeMatchesForResume(
     });
   }
 
-  const resumeSkillSlugs = (resumeSkillsResult.data ?? [])
-    .map((row) => row.skill_slug ?? null)
-    .filter(Boolean) as string[];
+  const structuredProfile = getEffectiveStructuredProfile(
+    (resumeProfileResult.data ?? null) as CareerResumeProfile | null,
+  );
+
+  if (!structuredProfile) {
+    throw new ResumeAnalysisExecutionError({
+      code: 'PROFILE_MISSING',
+      operation: 'load-effective-structured-profile',
+      table: 'resume_profiles',
+      resumeId,
+      userId,
+      message: 'Canonical structured profile is missing for job matching.',
+      details: 'effective structured profile resolved to null',
+      hint: 'Retry extraction so ATS and job matching can rebuild the canonical profile.',
+    });
+  }
 
   const jobSkillMap = new Map<string, Array<{ slug: string; name: string; required: boolean; weight: number }>>();
   for (const row of jobSkillsResult.data ?? []) {
@@ -139,9 +154,7 @@ export async function recomputeMatchesForResume(
   const companyLookup = new Map((companiesResult.data ?? []).map((company) => [company.id, company.company_name]));
   const rows = (jobsResult.data ?? []).map((job) => {
     const match = computeJobMatch({
-      resumeTitleText: `${resumeProfileResult.data?.current_title ?? ''} ${resumeProfileResult.data?.summary ?? ''} ${resumeProfileResult.data?.experience ? JSON.stringify(resumeProfileResult.data.experience) : ''}`,
-      resumeProfile: resumeProfileResult.data,
-      resumeSkillSlugs,
+      structuredProfile,
       job,
       jobSkills: jobSkillMap.get(job.id) ?? [],
     });

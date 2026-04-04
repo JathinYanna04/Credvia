@@ -1,11 +1,14 @@
+import crypto from 'node:crypto';
 import { fail, handleApiError, ok } from '@/lib/api';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { getResumeById } from '@/lib/career-match/queries';
+import { getAppResumeEnv } from '@/lib/resume/config';
 import {
   prepareResumeForAnalysis,
   prepareResumeFromExternalExtraction,
   type ExternalExtractionPayload,
 } from '@/lib/resume/analyze';
+import { callRemoteExtractor, RemoteExtractorError } from '@/lib/resume-extractor/server';
 import { ResumeExtractionError } from '@/lib/resume/extract';
 import {
   ResumePersistenceError,
@@ -83,6 +86,10 @@ function hasExternalExtractorShape(payload: unknown): payload is ExternalExtract
     (typeof record.sections === 'object' && record.sections !== null);
 
   return Boolean(hasRawText && hasSections);
+}
+
+function createRequestId(resumeId: string) {
+  return `resume-${resumeId}-${crypto.randomUUID()}`;
 }
 
 function normalizeExtractionFailure(error: ResumeExtractionError): {
@@ -245,37 +252,29 @@ export async function POST(
       resumeId: resume.id,
     });
     const buffer = Buffer.from(await download.data.arrayBuffer());
-    const extractorUrl = process.env.RESUME_EXTRACTOR_URL ?? null;
+    const env = getAppResumeEnv();
+    const extractorUrl = env.RESUME_EXTRACTOR_URL ?? null;
+    const requestId = createRequestId(resume.id);
     let preparation;
 
     if (extractorUrl) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 60000);
       try {
-        const form = new FormData();
-        form.set('file', new Blob([buffer]), resume.file_name);
-        form.set('mime_type', resume.mime_type);
-        form.set('filename', resume.file_name);
-
-        const response = await fetch(`${extractorUrl.replace(/\/$/, '')}/extract`, {
-          method: 'POST',
-          body: form,
-          signal: controller.signal,
+        const { payload } = await callRemoteExtractor({
+          fileBuffer: buffer,
+          filename: resume.file_name,
+          mimeType: resume.mime_type,
+          forceLlm: body.forceLLM ?? true,
+          skipLlm: body.skipLLM ?? false,
+          requestId,
         });
-
-        if (!response.ok) {
-          throw new Error(`Extractor service failed (${response.status}).`);
-        }
-
-        const payload = (await response.json()) as unknown;
         if (!hasExternalExtractorShape(payload)) {
           throw new Error('Extractor service returned a malformed payload');
         }
         logInfo('resume-extract', 'Extractor diagnostics', {
           resumeId: resume.id,
-          rawTextLength: payload.raw?.raw_text?.length ?? payload.raw_text?.length ?? 0,
-          cleanedTextLength:
-            payload.raw?.cleaned_text?.length ?? payload.cleaned_text?.length ?? 0,
+          requestId,
+          rawTextLength: payload.raw.raw_text.length,
+          cleanedTextLength: payload.raw.cleaned_text.length,
           llmStatus: payload.diagnostics?.llm_status ?? null,
           llmFinalSource: payload.diagnostics?.final_source ?? null,
           llmError: payload.diagnostics?.llm_error ?? null,
@@ -283,6 +282,7 @@ export async function POST(
         preparation = await prepareResumeFromExternalExtraction(orchestrationClient, resume, payload);
         logInfo('resume-extract', 'External extraction persisted', {
           resumeId: resume.id,
+          requestId,
           hasStructured: Boolean(preparation.parsed?.parsedSections?.__structured),
           structuredExperience:
             preparation.parsed?.parsedSections?.__structured?.experience?.length ?? 0,
@@ -292,9 +292,13 @@ export async function POST(
             preparation.parsed?.parsedSections?.__structured?.education?.length ?? 0,
         });
       } catch (externalError) {
+        const errorCode =
+          externalError instanceof RemoteExtractorError ? externalError.code : 'UNKNOWN';
         logError('resume-extract', 'External extractor failed, using deterministic fallback', {
           resumeId: resume.id,
           extractorUrl,
+          requestId,
+          errorCode,
           message:
             externalError instanceof Error
               ? externalError.message
@@ -302,13 +306,13 @@ export async function POST(
         });
         preparation = await prepareResumeForAnalysis(orchestrationClient, resume, buffer, {
           forceOCR: body.forceOCR ?? body.forceOcr,
+          requestId,
         });
-      } finally {
-        clearTimeout(timeout);
       }
     } else {
       preparation = await prepareResumeForAnalysis(orchestrationClient, resume, buffer, {
         forceOCR: body.forceOCR ?? body.forceOcr,
+        requestId,
       });
     }
 
@@ -320,6 +324,7 @@ export async function POST(
         method: preparation.extraction.method,
         usedOcr: preparation.extraction.usedOcr,
         confidenceTier: preparation.extraction.quality.confidenceTier,
+        requestId,
       },
     });
 
@@ -330,6 +335,7 @@ export async function POST(
       method: preparation.extraction.method,
       usedOcr: preparation.extraction.usedOcr,
       confidenceTier: preparation.extraction.quality.confidenceTier,
+      requestId,
     });
 
     return ok({

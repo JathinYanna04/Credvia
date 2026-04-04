@@ -54,6 +54,8 @@ export const ResumeExtractSchema = z
     retry: z.boolean().optional(),
     forceOCR: z.boolean().optional(),
     forceOcr: z.boolean().optional(),
+    forceLLM: z.boolean().optional(),
+    skipLLM: z.boolean().optional(),
   })
   .strict();
 

@@ -183,6 +183,16 @@ export function ResumeAnalysisStatus({
       : analysisReadiness.ready
         ? 'waiting'
         : 'warning';
+  const llmStatus = extractionMeta?.llmStatus ?? null;
+  const llmStage =
+    llmStatus === 'success'
+      ? 'completed'
+      : llmStatus === 'timeout' || llmStatus === 'error' || llmStatus === 'invalid_json'
+        ? 'warning'
+        : llmStatus === 'skipped'
+          ? 'waiting'
+          : 'waiting';
+  const finalSource = extractionMeta?.finalSource ?? null;
 
   return (
     <section className="surface-panel space-y-5 p-6">
@@ -200,7 +210,7 @@ export function ResumeAnalysisStatus({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
         <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(uploadStage)}`}>
           <div className="flex items-center justify-between text-xs uppercase tracking-[0.18em]">
             Upload
@@ -245,6 +255,24 @@ export function ResumeAnalysisStatus({
                   : ocrStatus === 'skipped_unnecessary'
                     ? 'Skipped as unnecessary'
                     : 'OCR skipped'}
+          </div>
+        </div>
+        <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(llmStage)}`}>
+          <div className="flex items-center justify-between text-xs uppercase tracking-[0.18em]">
+            LLM refinement
+            <Sparkles className="h-4 w-4" />
+          </div>
+          <div className="mt-2 text-sm">{stageStateLabel(llmStage)}</div>
+          <div className="mt-1 text-xs text-text-tertiary">
+            {llmStatus === 'success'
+              ? finalSource === 'merged'
+                ? 'Merged profile ready'
+                : 'LLM profile ready'
+              : llmStatus === 'skipped'
+                ? 'Skipped by request/config'
+                : llmStatus
+                  ? 'Using deterministic fallback'
+                  : 'Awaiting extraction'}
           </div>
         </div>
         <div className={`rounded-2xl border px-4 py-3 ${stageToneClass(analysisStage)}`}>
@@ -381,6 +409,20 @@ export function ResumeAnalysisStatus({
       {ocrStatus === 'skipped_unnecessary' ? (
         <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
           This file already contains readable text. OCR was skipped because it was unlikely to improve extraction.
+        </div>
+      ) : null}
+
+      {llmStatus === 'success' ? (
+        <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+          LLM refinement completed successfully.
+          {finalSource === 'merged' ? ' The final profile source is merged deterministic plus LLM output.' : ''}
+        </div>
+      ) : null}
+
+      {llmStatus && llmStatus !== 'success' && llmStatus !== 'skipped' ? (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          LLM refinement unavailable, using deterministic fallback.
+          {extractionMeta?.llmError ? ` Reason: ${extractionMeta.llmError}.` : ''}
         </div>
       ) : null}
 

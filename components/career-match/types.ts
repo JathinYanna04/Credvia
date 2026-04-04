@@ -13,6 +13,9 @@ export interface CareerResumeExtractionMeta {
   pageSourceSummary?: Record<string, number>;
   pageDecisions?: Array<Record<string, unknown>>;
   layoutReconstructionUsed?: boolean;
+  requestId?: string | null;
+  parserVersion?: string | null;
+  schemaVersion?: string | null;
   extractionQuality?: {
     confidenceScore?: number;
     confidenceTier?: 'high' | 'medium' | 'low';
@@ -60,6 +63,7 @@ export interface CareerResumeExtractionMeta {
   llmStatus?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
   llmError?: string | null;
   llmRawPresent?: boolean | null;
+  nativeTextQuality?: Record<string, unknown>;
 }
 
 export interface CareerResumeAnalysisReadiness {
@@ -89,9 +93,13 @@ export interface CareerStructuredCandidate {
 export interface CareerStructuredSkills {
   languages: string[];
   frameworks: string[];
+  libraries: string[];
   tools: string[];
   databases: string[];
   cloud: string[];
+  ai_ml: string[];
+  devops: string[];
+  platforms: string[];
   others: string[];
   spoken_languages: string[];
 }
@@ -133,6 +141,8 @@ export interface CareerStructuredAdditional {
   leadership: string[];
   volunteering: string[];
   publications: string[];
+  positions_of_responsibility: string[];
+  extracurricular: string[];
 }
 
 export interface CareerStructuredDiagnostics {
@@ -149,6 +159,12 @@ export interface CareerStructuredDiagnostics {
   pageSourceSummary?: Record<string, number>;
   layoutReconstructionUsed?: boolean;
   ocrNeeded?: boolean;
+  requestId?: string | null;
+  schemaVersion?: string | null;
+  methodUsed?: string | null;
+  extractionQualityScore?: number | null;
+  warnings?: string[];
+  errors?: string[];
   ocrStatus?:
     | 'skipped_unnecessary'
     | 'attempted_no_gain'
@@ -158,6 +174,7 @@ export interface CareerStructuredDiagnostics {
     | null;
   ocrAttempted?: boolean;
   ocrImprovedQuality?: boolean | null;
+  nativeTextQuality?: Record<string, unknown>;
 }
 
 export interface CareerResumeAtsSuggestion {
@@ -166,8 +183,18 @@ export interface CareerResumeAtsSuggestion {
   impact: 'must_fix' | 'high' | 'nice_to_have';
 }
 
+export interface CareerWeightedScoreBreakdown {
+  key: string;
+  label: string;
+  score: number;
+  weight: number;
+  weightedScore: number;
+  rationale: string;
+}
+
 export interface CareerResumeAtsAnalysis {
   overallScore: number;
+  mode?: 'general' | 'targeted';
   parseConfidence: number;
   sectionCompleteness: number;
   contactCompleteness: number;
@@ -178,7 +205,17 @@ export interface CareerResumeAtsAnalysis {
   strengths: string[];
   warnings: string[];
   missingEssentials: string[];
+  missingKeywords: string[];
+  confidenceLabel: string;
+  summary: string;
+  subScores: CareerWeightedScoreBreakdown[];
   suggestedActions: CareerResumeAtsSuggestion[];
+}
+
+export interface CareerFieldProvenance {
+  source: 'deterministic' | 'ocr' | 'llm' | 'user_override';
+  confidence?: number | null;
+  path?: string | null;
 }
 
 export interface CareerStructuredProfile {
@@ -188,6 +225,7 @@ export interface CareerStructuredProfile {
   projects: CareerStructuredProject[];
   education: CareerStructuredEducation[];
   additional: CareerStructuredAdditional;
+  provenance?: Record<string, CareerFieldProvenance>;
   diagnostics?: CareerStructuredDiagnostics;
   analysis?: CareerResumeAtsAnalysis | null;
 }
@@ -355,12 +393,25 @@ export interface CareerMatch {
   warnings: string[];
   explanation: {
     fitEstimateLabel?: string;
+    summary?: string;
     roleFamily?: {
       resume?: string;
       job?: string;
     };
     matchedSkillCount?: number;
     missingSkillCount?: number;
+    breakdown?: CareerWeightedScoreBreakdown[];
+    matchedSkills?: string[];
+    adjacentSkills?: string[];
+    missingMustHaveSkills?: string[];
+    missingNiceToHaveSkills?: string[];
+    matchedEvidence?: Array<{
+      section: 'experience' | 'project' | 'summary' | 'skills' | 'education';
+      text: string;
+      relevance: number;
+    }>;
+    riskFlags?: string[];
+    recommendations?: string[];
     [key: string]: unknown;
   };
   computed_at: string;

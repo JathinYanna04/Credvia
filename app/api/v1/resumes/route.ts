@@ -1,7 +1,13 @@
 import { fail, handleApiError, ok } from '@/lib/api';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
+import { resolveClientIpFromHeaders } from '@/lib/network/cidrs';
 import { enforceRateLimit } from '@/lib/rate-limit';
-import { prepareResumeForAnalysis } from '@/lib/resume/analyze';
+import {
+  prepareResumeForAnalysis,
+  prepareResumeFromExternalExtraction,
+} from '@/lib/resume/analyze';
+import { getAppResumeEnv } from '@/lib/resume/config';
+import { callRemoteExtractor } from '@/lib/resume-extractor/server';
 import { resolveResumeOrchestrationClient } from '@/lib/resume/orchestration-client';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
@@ -21,8 +27,7 @@ function resolveRateLimitIdentifier(request: Request, userId?: string | null) {
     return `user:${userId}`;
   }
 
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  const ip = forwardedFor?.split(',')[0]?.trim() ?? request.headers.get('x-real-ip')?.trim();
+  const ip = resolveClientIpFromHeaders(request, getAppResumeEnv().trustedSourceCidrs);
   if (ip) {
     return `ip:${ip}`;
   }
@@ -204,6 +209,7 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const resumeId = crypto.randomUUID();
+    const requestId = `resume-${resumeId}-${crypto.randomUUID()}`;
     const storagePath = `${user.id}/${resumeId}/original.${extension}`;
 
     const deactivateExisting = await supabase
@@ -286,11 +292,28 @@ export async function POST(request: Request) {
       const orchestrationClient = resolveResumeOrchestrationClient({
         resumeId,
       });
-      await prepareResumeForAnalysis(orchestrationClient, resumeInsert.data, buffer, {});
+      const extractorUrl = getAppResumeEnv().RESUME_EXTRACTOR_URL ?? null;
+
+      if (extractorUrl) {
+        const { payload } = await callRemoteExtractor({
+          fileBuffer: buffer,
+          filename: resumeInsert.data.file_name,
+          mimeType: resumeInsert.data.mime_type,
+          forceLlm: true,
+          skipLlm: false,
+          requestId,
+        });
+        await prepareResumeFromExternalExtraction(orchestrationClient, resumeInsert.data, payload);
+      } else {
+        await prepareResumeForAnalysis(orchestrationClient, resumeInsert.data, buffer, {
+          requestId,
+        });
+      }
     } catch (preparationError) {
       logError('resume-upload', 'Initial preparation failed', {
         userId: user.id,
         resumeId,
+        requestId,
         message:
           preparationError instanceof Error
             ? preparationError.message

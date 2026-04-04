@@ -35,9 +35,13 @@ export type ExtractResponse = {
     skills: {
       languages: string[];
       frameworks: string[];
+      libraries: string[];
       tools: string[];
       databases: string[];
       cloud: string[];
+      ai_ml: string[];
+      devops: string[];
+      platforms: string[];
       others: string[];
       spoken_languages: string[];
     };
@@ -74,6 +78,7 @@ export type ExtractResponse = {
     hackathons: string[];
     publications: string[];
     volunteering: string[];
+    extracurricular: string[];
   };
   ats: {
     total_experience_months: number | null;
@@ -94,13 +99,28 @@ export type ExtractResponse = {
   diagnostics: {
     method_used: string;
     page_methods: Array<Record<string, string>>;
+    page_decisions: Array<Record<string, unknown>>;
+    page_source_summary: Record<string, number>;
+    page_count?: number;
+    native_text_quality?: Record<string, unknown>;
     contamination_score: number;
     salvage_score: number;
+    extraction_quality_score?: number;
     cleaning_actions: string[];
+    ocr_needed?: boolean;
+    ocr_status?: string | null;
+    ocr_attempted?: boolean;
+    ocr_improved_quality?: boolean | null;
+    layout_reconstruction_used?: boolean;
     final_source?: 'llm' | 'heuristic_fallback' | 'merged';
     llm_status?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
     llm_error?: string | null;
     llm_raw_present?: boolean | null;
+    warnings?: string[];
+    errors?: string[];
+    request_id?: string;
+    parser_version?: string;
+    schema_version?: string;
   };
   normalized_resume: {
     text: string;

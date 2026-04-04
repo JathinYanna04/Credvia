@@ -63,9 +63,11 @@ export async function GET(
 
     if (versionsResult.error) throw new Error(versionsResult.error.message);
 
+    const profileRow = (profileResult.data ?? null) as CareerResumeProfile | null;
+    const hasCanonicalStructuredProfile = Boolean(profileRow?.raw_sections?.__structured);
     const profileLooksValid = Boolean(
-      profileResult.data?.parsed_text &&
-        assessResumeTextQuality(profileResult.data.parsed_text).isAcceptable,
+      hasCanonicalStructuredProfile ||
+        (profileRow?.parsed_text && assessResumeTextQuality(profileRow.parsed_text).isAcceptable),
     );
 
     const jobs = await getJobCardsByIds(
@@ -74,9 +76,7 @@ export async function GET(
     );
     const jobLookup = new Map(jobs.map((job) => [job.id, job]));
     const latestRun = analysesResult.data?.[0] ?? null;
-    const profile = (profileLooksValid
-      ? ((profileResult.data ?? null) as CareerResumeProfile | null)
-      : null);
+    const profile = profileLooksValid ? profileRow : null;
     const topMatches = ((profileLooksValid ? matchesResult.data ?? [] : []) as CareerMatch[]).map((match) => ({
       ...match,
       job: (jobLookup.get(match.job_id) ?? null) as CareerMatch['job'],

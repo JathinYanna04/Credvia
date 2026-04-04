@@ -769,9 +769,7 @@ export default function ResumePage() {
                       </ul>
                     </div>
                     <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-text-tertiary">
-                        Missing skills
-                      </div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-text-tertiary">Missing skills</div>
                       <div className="mt-2 flex flex-wrap gap-2 text-sm text-text-secondary">
                         {(match.missing_skills ?? []).slice(0, 6).map((item) => (
                           <span
@@ -787,6 +785,34 @@ export default function ResumePage() {
                       </div>
                     </div>
                   </div>
+                  {Array.isArray(match.explanation?.matchedEvidence) &&
+                  match.explanation.matchedEvidence.length > 0 ? (
+                    <div className="mt-4">
+                      <div className="text-xs uppercase tracking-[0.14em] text-text-tertiary">
+                        Supporting evidence
+                      </div>
+                      <div className="mt-2 space-y-2 text-sm text-text-secondary">
+                        {match.explanation.matchedEvidence.slice(0, 3).map((item, index) => (
+                          <div key={`${match.id}-evidence-${index}`} className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-3">
+                            {item.text}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {Array.isArray(match.explanation?.breakdown) && match.explanation.breakdown.length > 0 ? (
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      {match.explanation.breakdown.slice(0, 4).map((item) => (
+                        <div key={`${match.id}-${item.key}`} className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm font-medium text-text-primary">{item.label}</div>
+                            <Badge variant={scoreTone(item.score)}>{item.score}</Badge>
+                          </div>
+                          <div className="mt-1 text-xs text-text-tertiary">{item.rationale}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>

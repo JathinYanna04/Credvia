@@ -117,6 +117,7 @@ export function ParsedResumeInsights({ detail, variant = 'main' }: ParsedResumeI
   const parsedAtLabel = profile?.parsed_at ? formatDateTime(profile.parsed_at) : null;
   const usedOcr = structuredDiagnostics?.usedOcr ?? extractionMeta?.usedOcr;
   const confidenceTier = extractionMeta?.extractionQuality?.confidenceTier ?? null;
+  const provenanceEntries = Object.entries(structured?.provenance ?? {}).slice(0, 8);
 
   const metaBadges = [
     finalSourceLabel ? { label: finalSourceLabel, variant: 'secondary' as const } : null,
@@ -542,6 +543,22 @@ export function ParsedResumeInsights({ detail, variant = 'main' }: ParsedResumeI
             {finalSourceLabel ? <div>Source: {finalSourceLabel}</div> : null}
             {extractionMeta?.llmStatus ? <div>LLM status: {extractionMeta.llmStatus}</div> : null}
             {confidenceTier ? <div>Confidence tier: {confidenceTier}</div> : null}
+            {structuredDiagnostics?.requestId ? <div>Request ID: {structuredDiagnostics.requestId}</div> : null}
+          </div>
+        </article>
+
+        <article className="surface-panel p-5">
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Field provenance</div>
+          <div className="mt-3 space-y-2 text-xs text-text-tertiary">
+            {provenanceEntries.length > 0 ? (
+              provenanceEntries.map(([path, info]) => (
+                <div key={path}>
+                  {path}: {info.source}
+                </div>
+              ))
+            ) : (
+              <div>No field-level provenance captured yet.</div>
+            )}
           </div>
         </article>
 

@@ -62,6 +62,10 @@ export function ResumeAtsAnalysisPanel({ analysis }: ResumeAtsAnalysisPanelProps
             <div className="text-5xl font-semibold text-text-primary">{analysis.overallScore}</div>
             <div className="pb-1 text-sm text-text-secondary">/ 100</div>
           </div>
+          <p className="mt-4 text-sm text-text-secondary">{analysis.summary}</p>
+          <div className="mt-3 text-xs uppercase tracking-[0.14em] text-text-tertiary">
+            Confidence: {analysis.confidenceLabel}
+          </div>
 
           <div className="mt-4 h-2.5 w-full rounded-full bg-bg-overlay">
             <div
@@ -107,6 +111,24 @@ export function ResumeAtsAnalysisPanel({ analysis }: ResumeAtsAnalysisPanelProps
         ))}
       </div>
 
+      <article className="surface-panel rounded-2xl p-6">
+        <h3 className="text-base font-semibold">Score breakdown</h3>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {analysis.subScores.map((item) => (
+            <div key={item.key} className="rounded-xl border border-border-subtle bg-bg-surface p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-medium text-text-primary">{item.label}</div>
+                <Badge variant={scoreTone(item.score)}>{item.score}</Badge>
+              </div>
+              <div className="mt-2 text-xs text-text-tertiary">
+                Weight {Math.round(item.weight * 100)}% · Contribution {item.weightedScore}
+              </div>
+              <p className="mt-2 text-sm text-text-secondary">{item.rationale}</p>
+            </div>
+          ))}
+        </div>
+      </article>
+
       <div className="grid gap-4 xl:grid-cols-3">
         <article className="surface-panel rounded-2xl p-5">
           <h3 className="text-base font-semibold">Strengths</h3>
@@ -141,6 +163,21 @@ export function ResumeAtsAnalysisPanel({ analysis }: ResumeAtsAnalysisPanelProps
           </ul>
         </article>
       </div>
+
+      <article className="surface-panel rounded-2xl p-5">
+        <h3 className="text-base font-semibold">Missing keywords</h3>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {analysis.missingKeywords.length > 0 ? (
+            analysis.missingKeywords.map((item) => (
+              <Badge key={item} variant="warning">
+                {item}
+              </Badge>
+            ))
+          ) : (
+            <span className="text-sm text-text-secondary">No current target-keyword gaps were flagged.</span>
+          )}
+        </div>
+      </article>
     </section>
   );
 }

@@ -25,6 +25,10 @@ type TypedSupabaseClient = SupabaseClient<Database>;
 
 type ResumeRow = Database['public']['Tables']['resumes']['Row'];
 
+interface ResumePreparationRequest extends AnalyzeResumeRequest {
+  requestId?: string;
+}
+
 const RESUME_EXTRACTION_METHODS = new Set<ResumeExtractionMethod>([
   'docx-mammoth',
   'txt-direct',
@@ -133,9 +137,13 @@ function flattenExternalSkills(skills: ExternalExtractionPayload['sections'] ext
   return [
     ...(skillBuckets.languages ?? []),
     ...(skillBuckets.frameworks ?? []),
+    ...(skillBuckets.libraries ?? []),
     ...(skillBuckets.tools ?? []),
     ...(skillBuckets.databases ?? []),
     ...(skillBuckets.cloud ?? []),
+    ...(skillBuckets.ai_ml ?? []),
+    ...(skillBuckets.devops ?? []),
+    ...(skillBuckets.platforms ?? []),
     ...(skillBuckets.others ?? []),
   ].filter(Boolean);
 }
@@ -166,9 +174,13 @@ function buildStructuredProfile(
   const structuredSkills = {
     languages: normalizeExternalStringArray(sections.skills?.languages),
     frameworks: normalizeExternalStringArray(sections.skills?.frameworks),
+    libraries: normalizeExternalStringArray((sections.skills as Record<string, string[]> | undefined)?.libraries),
     tools: normalizeExternalStringArray(sections.skills?.tools),
     databases: normalizeExternalStringArray(sections.skills?.databases),
     cloud: normalizeExternalStringArray(sections.skills?.cloud),
+    ai_ml: normalizeExternalStringArray((sections.skills as Record<string, string[]> | undefined)?.ai_ml),
+    devops: normalizeExternalStringArray((sections.skills as Record<string, string[]> | undefined)?.devops),
+    platforms: normalizeExternalStringArray((sections.skills as Record<string, string[]> | undefined)?.platforms),
     others: normalizeExternalStringArray(sections.skills?.others),
     spoken_languages: normalizeExternalStringArray(sections.skills?.spoken_languages),
   };
@@ -245,6 +257,8 @@ function buildStructuredProfile(
     leadership: normalizeExternalStringArray(sections.positions_of_responsibility),
     volunteering: normalizeExternalStringArray(sections.volunteering),
     publications: normalizeExternalStringArray(sections.publications),
+    positions_of_responsibility: normalizeExternalStringArray(sections.positions_of_responsibility),
+    extracurricular: normalizeExternalStringArray((sections as Record<string, unknown>).extracurricular),
   };
 
   return {
@@ -254,8 +268,20 @@ function buildStructuredProfile(
     projects: structuredProjects,
     education: structuredEducation,
     additional: structuredAdditional,
+    provenance: {
+      ...Object.fromEntries(
+        Object.entries(structuredCandidate)
+          .filter(([, value]) => value)
+          .map(([key]) => [
+            `candidate.${key}`,
+            { source: options.usedOcr ? 'ocr' : 'deterministic', confidence: external.status?.confidence_overall ?? null, path: `candidate.${key}` },
+          ]),
+      ),
+    },
     diagnostics: {
+      requestId: external.request?.request_id ?? null,
       parserVersion: external.parser_version ?? null,
+      schemaVersion: external.schema_version ?? null,
       finalSource: external.diagnostics?.final_source ?? null,
       llmStatus: external.diagnostics?.llm_status ?? null,
       llmError: external.diagnostics?.llm_error ?? null,
@@ -263,6 +289,7 @@ function buildStructuredProfile(
       confidence: external.status?.confidence_overall ?? null,
       usedOcr: options.usedOcr,
       extractionMethod: options.methodUsed,
+      methodUsed: options.methodUsed,
       attemptedMethods: options.attemptedMethods,
       pageCount: external.diagnostics?.page_count ?? external.raw?.page_count ?? null,
       pageSourceSummary: external.diagnostics?.page_source_summary ?? {},
@@ -271,7 +298,115 @@ function buildStructuredProfile(
       ocrStatus: external.diagnostics?.ocr_status ?? null,
       ocrAttempted: external.diagnostics?.ocr_attempted ?? false,
       ocrImprovedQuality: external.diagnostics?.ocr_improved_quality ?? null,
+      extractionQualityScore:
+        external.diagnostics?.extraction_quality_score ??
+        external.ats?.extraction_quality_score ??
+        null,
+      warnings: external.status?.warnings ?? external.diagnostics?.warnings ?? [],
+      errors: external.status?.errors ?? external.diagnostics?.errors ?? [],
+      nativeTextQuality: external.diagnostics?.native_text_quality,
     },
+  };
+}
+
+function buildStructuredProfileFromParsed(args: {
+  parsed: ReturnType<typeof parseResumeText>;
+  extraction: Awaited<ReturnType<typeof extractResumeText>>;
+}) {
+  const { parsed, extraction } = args;
+  return {
+    candidate: {
+      full_name: parsed.fullName,
+      current_title: parsed.currentTitle,
+      email: parsed.email,
+      phone: parsed.phone,
+      location: parsed.locationText,
+      linkedin: null,
+      github: null,
+      portfolio: null,
+      summary: parsed.summary,
+    },
+    skills: {
+      languages: [],
+      frameworks: [],
+      libraries: [],
+      tools: [],
+      databases: [],
+      cloud: [],
+      ai_ml: [],
+      devops: [],
+      platforms: [],
+      others: parsed.parsedSections.skills ?? [],
+      spoken_languages: [],
+    },
+    experience: (parsed.experience ?? []).map((line) => ({
+      company: null,
+      title: line,
+      location: null,
+      start_date: null,
+      end_date: null,
+      currently_working: false,
+      bullets: [],
+      technologies: [],
+    })),
+    projects: (parsed.projects ?? []).map((line) => ({
+      name: line,
+      description: null,
+      technologies: [],
+      links: [],
+      bullets: [],
+    })),
+    education: (parsed.education ?? []).map((line) => ({
+      institution: line,
+      degree: null,
+      field_of_study: null,
+      start_date: null,
+      end_date: null,
+      grade: null,
+      location: null,
+      description: null,
+    })),
+    additional: {
+      certifications: [],
+      achievements: [],
+      hackathons: [],
+      leadership: [],
+      volunteering: [],
+      publications: [],
+      positions_of_responsibility: [],
+      extracurricular: [],
+    },
+    provenance: {
+      ...(parsed.fullName ? { 'candidate.full_name': { source: extraction.usedOcr ? 'ocr' : 'deterministic', confidence: extraction.quality.confidenceScore, path: 'candidate.full_name' } } : {}),
+      ...(parsed.email ? { 'candidate.email': { source: extraction.usedOcr ? 'ocr' : 'deterministic', confidence: extraction.quality.confidenceScore, path: 'candidate.email' } } : {}),
+      ...(parsed.phone ? { 'candidate.phone': { source: extraction.usedOcr ? 'ocr' : 'deterministic', confidence: extraction.quality.confidenceScore, path: 'candidate.phone' } } : {}),
+    },
+    diagnostics: {
+      requestId: parsed.parsedSections.__meta?.requestId ?? null,
+      parserVersion: 'deterministic-v3',
+      schemaVersion: 'career-structured-v1',
+      finalSource: 'heuristic_fallback',
+      llmStatus: 'skipped',
+      llmError: null,
+      llmRawPresent: false,
+      confidence: extraction.quality.confidenceScore,
+      usedOcr: extraction.usedOcr,
+      extractionMethod: extraction.method,
+      methodUsed: extraction.method,
+      attemptedMethods: extraction.attemptedMethods,
+      pageCount: extraction.pageCount ?? null,
+      pageSourceSummary: extraction.pageSourceSummary ?? {},
+      layoutReconstructionUsed: extraction.layoutReconstructionUsed ?? false,
+      ocrNeeded: extraction.ocrNeeded,
+      ocrStatus: extraction.ocrStatus,
+      ocrAttempted: extraction.ocrAttempted,
+      ocrImprovedQuality: extraction.ocrImprovedQuality,
+      extractionQualityScore: extraction.quality.confidenceScore,
+      warnings: extraction.warningMessage ? [extraction.warningMessage] : [],
+      errors: [],
+      nativeTextQuality: extraction.quality as unknown as Record<string, unknown>,
+    },
+    analysis: null,
   };
 }
 
@@ -341,9 +476,13 @@ export interface ExternalExtractionPayload {
     skills?: {
       languages?: string[];
       frameworks?: string[];
+      libraries?: string[];
       tools?: string[];
       databases?: string[];
       cloud?: string[];
+      ai_ml?: string[];
+      devops?: string[];
+      platforms?: string[];
       others?: string[];
       spoken_languages?: string[];
     };
@@ -356,6 +495,10 @@ export interface ExternalExtractionPayload {
     hackathons?: string[];
     publications?: string[];
     volunteering?: string[];
+    extracurricular?: string[];
+  };
+  ats?: {
+    extraction_quality_score?: number;
   };
   diagnostics?: {
     method_used?: string;
@@ -363,8 +506,10 @@ export interface ExternalExtractionPayload {
     page_decisions?: Array<Record<string, unknown>>;
     page_source_summary?: Record<string, number>;
     page_count?: number;
+    native_text_quality?: Record<string, unknown>;
     contamination_score?: number;
     salvage_score?: number;
+    extraction_quality_score?: number;
     cleaning_actions?: string[];
     ocr_needed?: boolean;
     ocr_status?:
@@ -380,7 +525,9 @@ export interface ExternalExtractionPayload {
     final_source?: 'llm' | 'heuristic_fallback' | 'merged';
     llm_status?: 'success' | 'invalid_json' | 'timeout' | 'error' | 'skipped';
     llm_error?: string | null;
-    llm_raw_present?: boolean;
+    llm_raw_present?: boolean | null;
+    warnings?: string[];
+    errors?: string[];
   };
   normalized_resume?: {
     text?: string | null;
@@ -630,7 +777,7 @@ export async function prepareResumeForAnalysis(
   supabase: TypedSupabaseClient,
   resume: ResumeRow,
   fileBuffer: Buffer,
-  requestBody: AnalyzeResumeRequest = {},
+  requestBody: ResumePreparationRequest = {},
 ): Promise<ResumePreparationResult> {
   const runId = await createAnalysisRun(
     supabase,
@@ -690,6 +837,7 @@ export async function prepareResumeForAnalysis(
 
     logInfo('resume-preparation', 'Extraction completed', {
       resumeId: resume.id,
+      requestId: requestBody.requestId ?? null,
       method: extraction.method,
       attemptedMethods: extraction.attemptedMethods,
       textLength: cleanedText.length,
@@ -745,6 +893,7 @@ export async function prepareResumeForAnalysis(
         readiness: extraction.readiness,
         rawText,
         cleanedText,
+        requestId: requestBody.requestId,
       });
     } catch (parseError) {
       await updateResumeLifecycleStatus(
@@ -754,6 +903,11 @@ export async function prepareResumeForAnalysis(
       );
       throw parseError;
     }
+
+    parsed.parsedSections.__structured = buildStructuredProfileFromParsed({
+      parsed,
+      extraction,
+    });
 
     await updateResumeLifecycleStatus(supabase, resume.id, RESUME_LIFECYCLE_STATUSES.PARSED);
     const matchedSkillRows = await persistParsedResume(
@@ -875,6 +1029,9 @@ export async function prepareResumeFromExternalExtraction(
     const llmRawPresent = external.diagnostics?.llm_raw_present ?? null;
     const quality = assessResumeTextQuality(cleanedText);
     const fallbackParsed = parseResumeText(reconstructedText, {
+      requestId: external.request?.request_id,
+      parserVersion: external.parser_version,
+      schemaVersion: external.schema_version,
       extractionMethod: methodUsed,
       attemptedMethods: [],
       pageCount: external.diagnostics?.page_count ?? external.raw?.page_count,

@@ -30,6 +30,9 @@ export interface LegacyParsedResumeSections {
 }
 
 export interface ParsedResumeMeta {
+  requestId?: string;
+  parserVersion?: string;
+  schemaVersion?: string;
   extractionMethod?: string;
   attemptedMethods?: string[];
   pageCount?: number;

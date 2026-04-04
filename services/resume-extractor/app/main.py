@@ -22,7 +22,7 @@ from app.page_intelligence import (
     summarize_page_sources,
 )
 
-app = FastAPI(title="Credvia Resume Extractor", version="0.2.0")
+app = FastAPI(title="Credvia Resume Extractor", version="0.3.0")
 
 SCHEMA_VERSION = "2.0.0"
 PARSER_VERSION = "phase2-heuristic"
@@ -205,7 +205,8 @@ TECHNOLOGY_CANONICAL = {
 }
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-MAX_LLM_TEXT_CHARS = 12000
+OPENAI_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_MAX_LLM_TEXT_CHARS = 12000
 
 
 def read_env_value(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -226,19 +227,59 @@ def read_env_float(name: str, default: float) -> float:
         return default
 
 
+def read_env_int(name: str, default: int) -> int:
+    raw = read_env_value(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def read_env_bool(name: str, default: bool) -> bool:
+    raw = read_env_value(name)
+    if raw is None:
+        return default
+    return raw.lower() in {"1", "true", "yes", "on"}
+
+
+APP_VERSION = read_env_value("APP_VERSION", "0.3.0")
+GIT_SHA = read_env_value("GIT_SHA", read_env_value("RENDER_GIT_COMMIT", "unknown"))
+SCHEMA_VERSION = read_env_value("RESUME_SCHEMA_VERSION", SCHEMA_VERSION)
+PARSER_VERSION = read_env_value("RESUME_PARSER_VERSION", PARSER_VERSION)
+LLM_ALWAYS_ON = read_env_bool("LLM_ALWAYS_ON", True)
+LLM_PROVIDER = read_env_value("LLM_PROVIDER", "groq")
 GROQ_MODEL = read_env_value("GROQ_MODEL", "llama-3.1-8b-instant")
-GROQ_TIMEOUT_SECONDS = read_env_float("GROQ_TIMEOUT_SECONDS", 5.0)
-GROQ_FORCE = read_env_value("GROQ_FORCE", "false").lower() == "true"
-RESUME_CACHE_ENABLED = read_env_value("RESUME_CACHE_ENABLED", "false").lower() == "true"
+OPENAI_MODEL = read_env_value("OPENAI_MODEL", "gpt-4.1-mini")
+LLM_TIMEOUT_SECONDS = read_env_float("LLM_TIMEOUT_SECONDS", read_env_float("GROQ_TIMEOUT_SECONDS", 12.0))
+GROQ_FORCE = read_env_bool("GROQ_FORCE", False)
+RESUME_CACHE_ENABLED = read_env_bool("RESUME_CACHE_ENABLED", False)
+OCR_ENABLED = read_env_bool("OCR_ENABLED", True)
+MAX_LLM_TEXT_CHARS = read_env_int("MAX_LLM_TEXT_CHARS", DEFAULT_MAX_LLM_TEXT_CHARS)
+MAX_INPUT_SIZE_BYTES = read_env_int("MAX_INPUT_SIZE_BYTES", 10 * 1024 * 1024)
+LOG_LEVEL = read_env_value("LOG_LEVEL", read_env_value("RESUME_LOG_LEVEL", "info"))
 
 RESUME_CACHE: Dict[str, Dict[str, Any]] = {}
 RESUME_CACHE_MAX = 32
 
 
 def log_event(message: str) -> None:
-    if read_env_value("RESUME_LOG_LEVEL", "info").lower() == "none":
+    if (LOG_LEVEL or "info").lower() == "none":
         return
     print(f"[resume-extractor] {message}")
+
+
+def llm_provider_configured() -> bool:
+    if LLM_PROVIDER == "openai":
+        return bool(read_env_value("OPENAI_API_KEY"))
+    return bool(read_env_value("GROQ_API_KEY")) or bool(read_env_value("OPENAI_API_KEY"))
+
+
+@app.on_event("startup")
+def startup_validation() -> None:
+    if LLM_ALWAYS_ON and not llm_provider_configured():
+        log_event("startup_warning llm_always_on=true but no LLM provider key is configured; extractor will fall back deterministically.")
 
 
 def get_cache_key(file_bytes: bytes) -> str:
@@ -296,9 +337,13 @@ class CandidateBasics(BaseModel):
 class SkillsBlock(BaseModel):
     languages: List[str] = Field(default_factory=list)
     frameworks: List[str] = Field(default_factory=list)
+    libraries: List[str] = Field(default_factory=list)
     tools: List[str] = Field(default_factory=list)
     databases: List[str] = Field(default_factory=list)
     cloud: List[str] = Field(default_factory=list)
+    ai_ml: List[str] = Field(default_factory=list)
+    devops: List[str] = Field(default_factory=list)
+    platforms: List[str] = Field(default_factory=list)
     others: List[str] = Field(default_factory=list)
     spoken_languages: List[str] = Field(default_factory=list)
 
@@ -344,6 +389,7 @@ class SectionsBlock(BaseModel):
     hackathons: List[str] = Field(default_factory=list)
     publications: List[str] = Field(default_factory=list)
     volunteering: List[str] = Field(default_factory=list)
+    extracurricular: List[str] = Field(default_factory=list)
 
 
 class AtsFields(BaseModel):
@@ -370,8 +416,10 @@ class DiagnosticsBlock(BaseModel):
     page_decisions: List[Dict[str, Any]] = Field(default_factory=list)
     page_source_summary: Dict[str, int] = Field(default_factory=dict)
     page_count: int = 0
+    native_text_quality: Dict[str, Any] = Field(default_factory=dict)
     contamination_score: float = 0.0
     salvage_score: float = 0.0
+    extraction_quality_score: float = 0.0
     cleaning_actions: List[str] = Field(default_factory=list)
     ocr_needed: bool = False
     ocr_status: Optional[str] = None
@@ -382,6 +430,11 @@ class DiagnosticsBlock(BaseModel):
     llm_status: Optional[str] = None
     llm_error: Optional[str] = None
     llm_raw_present: Optional[bool] = None
+    warnings: List[str] = Field(default_factory=list)
+    errors: List[str] = Field(default_factory=list)
+    request_id: Optional[str] = None
+    parser_version: Optional[str] = None
+    schema_version: Optional[str] = None
 
 
 class NormalizedResume(BaseModel):
@@ -1488,7 +1541,21 @@ def call_llm_refiner(cleaned_text: str, payload: Dict[str, Any]) -> Optional[Dic
     call_llm_refiner.last_error = None
     call_llm_refiner.last_status = None
     call_llm_refiner.last_raw_present = False
+    provider = (LLM_PROVIDER or "groq").lower()
     api_key = read_env_value("GROQ_API_KEY")
+    base_url = GROQ_BASE_URL
+    model = GROQ_MODEL
+
+    if provider == "openai" or (provider != "groq" and not api_key):
+        api_key = read_env_value("OPENAI_API_KEY")
+        base_url = read_env_value("OPENAI_BASE_URL", OPENAI_BASE_URL)
+        model = OPENAI_MODEL
+
+    if not api_key and read_env_value("OPENAI_API_KEY"):
+        api_key = read_env_value("OPENAI_API_KEY")
+        base_url = read_env_value("OPENAI_BASE_URL", OPENAI_BASE_URL)
+        model = OPENAI_MODEL
+
     if not api_key:
         call_llm_refiner.last_error = "missing_api_key"
         call_llm_refiner.last_status = "error"
@@ -1496,7 +1563,7 @@ def call_llm_refiner(cleaned_text: str, payload: Dict[str, Any]) -> Optional[Dic
 
     prompt = build_llm_prompt(cleaned_text, payload)
     request_payload = {
-        "model": GROQ_MODEL,
+        "model": model,
         "temperature": 0.1,
         "messages": [
             {"role": "system", "content": "Return ONLY JSON that matches the schema exactly."},
@@ -1510,9 +1577,9 @@ def call_llm_refiner(cleaned_text: str, payload: Dict[str, Any]) -> Optional[Dic
     }
 
     try:
-        with httpx.Client(timeout=GROQ_TIMEOUT_SECONDS) as client:
+        with httpx.Client(timeout=LLM_TIMEOUT_SECONDS) as client:
             response = client.post(
-                f"{GROQ_BASE_URL}/chat/completions",
+                f"{base_url.rstrip('/')}/chat/completions",
                 headers=headers,
                 json=request_payload,
             )
@@ -1853,12 +1920,23 @@ def infer_seniority(experience: List[ExperienceEntry]) -> Optional[str]:
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "app_version": APP_VERSION,
+        "git_sha": GIT_SHA,
+        "schema_version": SCHEMA_VERSION,
+        "parser_version": PARSER_VERSION,
+        "llm_always_on": LLM_ALWAYS_ON,
+        "llm_provider": LLM_PROVIDER,
+        "llm_provider_configured": llm_provider_configured(),
+        "ocr_enabled": OCR_ENABLED,
+        "cache_enabled": RESUME_CACHE_ENABLED,
+    }
 
 
 @app.get("/")
 def root():
-    return {"message": "resume-extractor is running"}
+    return {"message": "resume-extractor is running", "version": APP_VERSION}
 
 
 @app.post("/extract", response_model=ExtractResponse)
@@ -1866,6 +1944,9 @@ async def extract(
     file: UploadFile = File(...),
     mime_type: Optional[str] = Form(None),
     filename: Optional[str] = Form(None),
+    request_id: Optional[str] = Form(None),
+    force_llm: Optional[bool] = Form(None),
+    skip_llm: Optional[bool] = Form(None),
 ):
     if not file:
         raise HTTPException(status_code=400, detail="Missing file upload.")
@@ -1873,11 +1954,15 @@ async def extract(
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty file upload.")
+    if len(data) > MAX_INPUT_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail=f"File exceeds max size of {MAX_INPUT_SIZE_BYTES} bytes.")
 
     resolved_filename = filename or file.filename or "resume"
     resolved_mime = mime_type or file.content_type or "application/octet-stream"
+    resolved_request_id = request_id or str(uuid.uuid4())
+    llm_enabled_for_request = False if skip_llm else bool(force_llm) or LLM_ALWAYS_ON
 
-    cache_key = get_cache_key(data)
+    cache_key = get_cache_key(data + f":llm={llm_enabled_for_request}:skip={bool(skip_llm)}".encode("utf-8"))
     cached = get_cached_parse(cache_key)
     if cached:
         log_event("cache hit")
@@ -1908,7 +1993,7 @@ async def extract(
             schema_version=SCHEMA_VERSION,
             parser_version=cached.get("parser_version", PARSER_VERSION),
             request=RequestMeta(
-                request_id=str(uuid.uuid4()),
+                request_id=resolved_request_id,
                 filename=resolved_filename,
                 mime_type=resolved_mime,
                 file_size_bytes=len(data),
@@ -1933,8 +2018,10 @@ async def extract(
                 page_decisions=page_decisions,
                 page_source_summary=page_source_summary,
                 page_count=page_count,
+                native_text_quality=cached.get("native_text_quality", {}),
                 contamination_score=contamination,
                 salvage_score=round(confidence.overall * 100.0, 2),
+                extraction_quality_score=ats_cached["extraction_quality_score"],
                 cleaning_actions=cached.get("cleaning_actions", []) + actions_post + [llm_action, "post_processed_v2"],
                 ocr_needed=cached.get("ocr_needed", False),
                 ocr_status=cached.get("ocr_status"),
@@ -1945,6 +2032,11 @@ async def extract(
                 llm_status=cached.get("llm_status"),
                 llm_error=cached.get("llm_error"),
                 llm_raw_present=cached.get("llm_raw_present"),
+                warnings=cached.get("warnings", []),
+                errors=cached.get("errors", []),
+                request_id=resolved_request_id,
+                parser_version=cached.get("parser_version", PARSER_VERSION),
+                schema_version=SCHEMA_VERSION,
             ),
             normalized_resume=NormalizedResume(text=cached["normalized_text"], sections=cached["section_map"]),
         )
@@ -1966,6 +2058,7 @@ async def extract(
     cleaned_text, cleaning_actions = clean_resume_text(raw_text)
     reconstructed_text = reconstruct_resume_text(cleaned_text)
     contamination = contamination_score(raw_text)
+    native_text_quality = compute_text_quality(cleaned_text)
 
     warnings: List[str] = []
     errors: List[str] = []
@@ -2024,7 +2117,7 @@ async def extract(
     llm_error: Optional[str] = None
     llm_raw_present: Optional[bool] = None
     llm_final_source: Optional[str] = None
-    if cleaned_text.strip():
+    if cleaned_text.strip() and llm_enabled_for_request:
         trimmed_text = cleaned_text[:MAX_LLM_TEXT_CHARS]
         refined = call_llm_refiner(
             trimmed_text,
@@ -2052,7 +2145,7 @@ async def extract(
             else:
                 llm_action = "llm_invalid_json_fallback"
     else:
-        llm_action = "llm_skipped_empty_text"
+        llm_action = "llm_skipped_empty_text" if not cleaned_text.strip() else "llm_skipped_by_request"
         llm_status = "skipped"
     if llm_status == "skipped":
         llm_raw_present = False
@@ -2112,8 +2205,8 @@ async def extract(
     response = ExtractResponse(
         schema_version=SCHEMA_VERSION,
         parser_version=parser_version,
-        request=RequestMeta(
-            request_id=str(uuid.uuid4()),
+            request=RequestMeta(
+            request_id=resolved_request_id,
             filename=resolved_filename,
             mime_type=resolved_mime,
             file_size_bytes=len(data),
@@ -2138,8 +2231,10 @@ async def extract(
             page_decisions=extraction_diagnostics.get("page_decisions", []),
             page_source_summary=extraction_diagnostics.get("page_source_summary", {}),
             page_count=page_count,
+            native_text_quality=native_text_quality,
             contamination_score=contamination,
             salvage_score=round(confidence.overall * 100.0, 2),
+            extraction_quality_score=round(extraction_quality_score, 2),
             cleaning_actions=cleaning_actions
             + extraction_actions
             + ["parsed_sections_v2", llm_action]
@@ -2155,6 +2250,11 @@ async def extract(
             llm_status=llm_status,
             llm_error=llm_error,
             llm_raw_present=llm_raw_present,
+            warnings=warnings,
+            errors=errors,
+            request_id=resolved_request_id,
+            parser_version=parser_version,
+            schema_version=SCHEMA_VERSION,
         ),
         normalized_resume=NormalizedResume(text=reconstructed_text, sections=section_map),
     )
@@ -2169,6 +2269,7 @@ async def extract(
             "page_source_summary": extraction_diagnostics.get("page_source_summary", {}),
             "method_used": method_used,
             "contamination": contamination,
+            "native_text_quality": native_text_quality,
             "candidate": candidate.model_dump(),
             "sections": sections.model_dump(),
             "confidence": confidence.model_dump(),

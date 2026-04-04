@@ -162,6 +162,14 @@ export interface AnalyzeResumeRequest {
   forceOcr?: boolean;
 }
 
+export interface ExtractResumeRequest {
+  retry?: boolean;
+  forceOCR?: boolean;
+  forceOcr?: boolean;
+  forceLLM?: boolean;
+  skipLLM?: boolean;
+}
+
 export interface ResumeExtractionQualitySummary {
   textLength: number;
   wordCount: number;
