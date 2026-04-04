@@ -20,7 +20,7 @@ export interface ShellUserMenuProps {
 export function ShellUserMenu({ username, fullName }: ShellUserMenuProps) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="inline-flex items-center gap-2 rounded-2xl border border-border-subtle bg-bg-surface px-2.5 py-2 text-left transition-colors hover:border-border-default">
+      <DropdownMenuTrigger className="inline-flex items-center gap-2 rounded-2xl border border-border-subtle bg-bg-surface px-2.5 py-2 text-left transition-colors hover:border-border-default lg:px-3">
         <Avatar className="h-8 w-8">
           <AvatarFallback className="bg-accent/10 text-[11px] font-semibold text-accent">
             {fullName
@@ -30,9 +30,9 @@ export function ShellUserMenu({ username, fullName }: ShellUserMenuProps) {
               .slice(0, 2)}
           </AvatarFallback>
         </Avatar>
-        <div className="hidden min-w-0 sm:block">
-          <div className="max-w-[120px] truncate text-sm font-medium text-text-primary">{fullName}</div>
-          <div className="max-w-[120px] truncate text-xs text-text-tertiary">@{username}</div>
+        <div className="hidden min-w-0 lg:block">
+          <div className="max-w-[132px] truncate text-sm font-medium text-text-primary">{fullName}</div>
+          <div className="max-w-[132px] truncate text-xs text-text-tertiary">@{username}</div>
         </div>
         <ChevronDown className="h-4 w-4 text-text-tertiary" />
       </DropdownMenuTrigger>

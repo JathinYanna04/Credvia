@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { AuthFormShell } from '@/components/marketing/AuthFormShell';
+import { AuthShowcasePanel } from '@/components/marketing/AuthShowcasePanel';
 import { LoginForm } from '@/components/auth/LoginForm';
 
 interface LoginPageProps {
@@ -11,50 +13,41 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const initialError = Array.isArray(rawError) ? rawError[0] : rawError ?? null;
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-2">
-      <section className="hidden border-r border-border-subtle bg-bg-surface px-10 py-12 lg:flex lg:flex-col lg:justify-between">
-        <div className="font-display text-2xl font-semibold">Credvia</div>
-        <div>
-          <blockquote className="max-w-xl text-3xl font-semibold">
-            Proof of work should feel heavier than profile polish.
-          </blockquote>
-          <p className="mt-4 text-sm text-text-secondary">
-            Build identity through questions, answers, projects, and visible contribution.
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-6 text-sm">
-          <div>
-            <div className="font-display text-2xl text-accent">Proof</div>
-            <div className="text-text-tertiary">Work over polish</div>
-          </div>
-          <div>
-            <div className="font-display text-2xl text-accent">Signal</div>
-            <div className="text-text-tertiary">Earned in public</div>
-          </div>
-          <div>
-            <div className="font-display text-2xl text-accent">Depth</div>
-            <div className="text-text-tertiary">Communities that compound</div>
-          </div>
-        </div>
-      </section>
+    <div className="marketing-page min-h-screen lg:grid lg:grid-cols-2">
+      <AuthShowcasePanel
+        eyebrow="Career momentum"
+        title="Your next opportunity should be grounded in signal, not guesswork."
+        description="Resume intelligence, ATS scoring, career match, and community reputation all live in one premium workspace."
+        highlights={[
+          {
+            title: 'AI-powered resume workspace',
+            description: 'Truthful diagnostics, review, and downstream scoring in one flow.',
+          },
+          {
+            title: 'Professional identity graph',
+            description: 'Contribution, reputation, and visible proof-of-work compound together.',
+          },
+          {
+            title: 'Career-first product system',
+            description: 'Upload, improve, match, and grow without bouncing across disconnected tools.',
+          },
+        ]}
+      />
 
-      <section className="flex items-center justify-center px-4 py-10">
-        <div className="surface-panel w-full max-w-md p-6 sm:p-8">
-          <h1 className="text-3xl font-semibold">Welcome back</h1>
-          <p className="mt-2 text-sm text-text-secondary">
-            Continue where your last contribution left off.
-          </p>
-          <div className="mt-8">
-            <LoginForm initialError={initialError} />
-          </div>
-          <p className="mt-8 text-sm text-text-secondary">
+      <AuthFormShell
+        title="Welcome back"
+        description="Continue where your last contribution left off."
+        footer={
+          <>
             Need a public view first?{' '}
-            <Link href="/" className="text-accent">
+            <Link href="/" className="text-primary-300 transition-colors hover:text-white">
               Visit landing page
             </Link>
-          </p>
-        </div>
-      </section>
+          </>
+        }
+      >
+        <LoginForm initialError={initialError} />
+      </AuthFormShell>
     </div>
   );
 }

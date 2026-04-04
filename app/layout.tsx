@@ -1,14 +1,13 @@
 import type { Metadata } from 'next';
-import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
-import { DM_Sans } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import Script from 'next/script';
 import '@/app/globals.css';
 import { PostHogInit } from '@/components/analytics/PostHogInit';
 
-const dmSans = DM_Sans({
+const inter = Inter({
   subsets: ['latin'],
-  variable: '--font-dm-sans',
+  variable: '--font-inter',
   display: 'swap',
 });
 
@@ -24,13 +23,20 @@ export const metadata: Metadata = {
 const themeScript = `
 (() => {
   try {
-    const theme = localStorage.getItem('credvia-theme');
-    const resolvedTheme = theme === 'dark' ? 'dark' : 'light';
+    const storedTheme = localStorage.getItem('credvia-theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const resolvedTheme =
+      storedTheme === 'light' || storedTheme === 'dark'
+        ? storedTheme
+        : prefersDark
+          ? 'dark'
+          : 'light';
     document.documentElement.classList.toggle('dark', resolvedTheme === 'dark');
     document.documentElement.style.colorScheme = resolvedTheme;
   } catch {
-    document.documentElement.classList.remove('dark');
-    document.documentElement.style.colorScheme = 'light';
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.classList.toggle('dark', prefersDark);
+    document.documentElement.style.colorScheme = prefersDark ? 'dark' : 'light';
   }
 })();
 `;
@@ -43,7 +49,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${GeistSans.variable} ${GeistMono.variable} ${dmSans.variable}`}
+      className={`${inter.variable} ${GeistMono.variable}`}
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-bg-base font-body text-text-primary antialiased">

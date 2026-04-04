@@ -33,8 +33,8 @@ export default function FeedPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-feed space-y-4 pb-24 sm:space-y-6 sm:pb-8">
-      <header className="space-y-2 px-1">
+    <div className="mx-auto max-w-feed space-y-6 pb-24 sm:space-y-7 sm:pb-8">
+      <header className="premium-soft-gradient rounded-[28px] border border-border-subtle px-5 py-6 shadow-sm sm:px-6 sm:py-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold sm:text-3xl">Home</h1>
@@ -45,6 +45,18 @@ export default function FeedPage() {
           <Button asChild className="hidden sm:inline-flex">
             <Link href="/post/new">Ask or share</Link>
           </Button>
+        </div>
+        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          {[
+            ['Your network', 'Follow conversations where you can add real value'],
+            ['Trending topics', 'See what technical communities are discussing today'],
+            ['Career signal', 'Share work that strengthens both feed presence and profile identity'],
+          ].map(([title, copy]) => (
+            <div key={title} className="rounded-[20px] bg-bg-surface/80 p-4 shadow-sm">
+              <div className="text-sm font-semibold text-text-primary">{title}</div>
+              <div className="mt-2 text-sm leading-6 text-text-secondary">{copy}</div>
+            </div>
+          ))}
         </div>
       </header>
 

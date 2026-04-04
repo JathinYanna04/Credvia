@@ -1,41 +1,45 @@
 import Link from 'next/link';
+import { AuthFormShell } from '@/components/marketing/AuthFormShell';
+import { AuthShowcasePanel } from '@/components/marketing/AuthShowcasePanel';
 import { SignupForm } from '@/components/auth/SignupForm';
 
 export default function SignupPage() {
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-2">
-      <section className="hidden border-r border-border-subtle bg-bg-surface px-10 py-12 lg:flex lg:flex-col lg:justify-between">
-        <div className="font-display text-2xl font-semibold">Credvia</div>
-        <div>
-          <blockquote className="max-w-xl text-3xl font-semibold">
-            Contribution creates signal. Signal creates opportunity.
-          </blockquote>
-          <p className="mt-4 text-sm text-text-secondary">
-            Start with communities, earn reputation, and leave a body of work worth discovering.
-          </p>
-        </div>
-        <div className="text-sm text-text-secondary">
-          Web Dev, AI / ML, Internship Prep, Open Source, Startups, Resume Review, Hackathons.
-        </div>
-      </section>
+    <div className="marketing-page min-h-screen lg:grid lg:grid-cols-2">
+      <AuthShowcasePanel
+        eyebrow="Contribution-led identity"
+        title="Contribution creates signal. Signal creates opportunity."
+        description="Build a profile shaped by useful work, then turn that signal into better career outcomes."
+        highlights={[
+          {
+            title: 'Communities that compound',
+            description: 'Join technical spaces that sharpen what people see first.',
+          },
+          {
+            title: 'Career intelligence built in',
+            description: 'Analyze your resume and improve it with grounded, useful evidence.',
+          },
+          {
+            title: 'Professional reputation layer',
+            description: 'Your identity grows every time your work helps someone else move forward.',
+          },
+        ]}
+      />
 
-      <section className="flex items-center justify-center px-4 py-10">
-        <div className="surface-panel w-full max-w-md p-6 sm:p-8">
-          <h1 className="text-3xl font-semibold">Create your account</h1>
-          <p className="mt-2 text-sm text-text-secondary">
-            Build a profile backed by contribution, not polish.
-          </p>
-          <div className="mt-8">
-            <SignupForm />
-          </div>
-          <p className="mt-8 text-sm text-text-secondary">
+      <AuthFormShell
+        title="Create your account"
+        description="Build a profile backed by contribution, not polish."
+        footer={
+          <>
             Already inside?{' '}
-            <Link href="/login" className="text-accent">
+            <Link href="/login" className="text-primary-300 transition-colors hover:text-white">
               Sign in
             </Link>
-          </p>
-        </div>
-      </section>
+          </>
+        }
+      >
+        <SignupForm />
+      </AuthFormShell>
     </div>
   );
 }

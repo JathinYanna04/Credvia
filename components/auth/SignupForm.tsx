@@ -82,10 +82,10 @@ export function SignupForm() {
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-border-subtle" />
+          <span className="w-full border-t border-white/10" />
         </div>
         <div className="relative flex justify-center">
-          <span className="bg-bg-surface px-3 text-xs uppercase tracking-[0.18em] text-text-tertiary">
+          <span className="bg-[rgba(10,18,34,0.88)] px-3 text-xs uppercase tracking-[0.18em] text-slate-400">
             Or create with email
           </span>
         </div>
@@ -95,18 +95,30 @@ export function SignupForm() {
         <label htmlFor="signup-email" className="sr-only">
           Email
         </label>
-        <Input id="signup-email" type="email" placeholder="Email" {...register('email')} />
+        <Input
+          id="signup-email"
+          type="email"
+          placeholder="Email"
+          className="h-11 rounded-2xl border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:ring-primary-500 focus-visible:ring-offset-[#0A1222]"
+          {...register('email')}
+        />
         <label htmlFor="signup-password" className="sr-only">
           Password
         </label>
-        <Input id="signup-password" type="password" placeholder="Password" {...register('password')} />
+        <Input
+          id="signup-password"
+          type="password"
+          placeholder="Password"
+          className="h-11 rounded-2xl border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:ring-primary-500 focus-visible:ring-offset-[#0A1222]"
+          {...register('password')}
+        />
         <label htmlFor="account-type" className="sr-only">
           Account type
         </label>
         <select
           id="account-type"
           {...register('accountType')}
-          className="flex h-11 w-full rounded-xl border border-border-default bg-bg-surface px-4 text-sm text-text-primary"
+          className="flex h-11 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-sm text-white outline-none transition hover:border-white/20 focus:border-primary-500"
         >
           <option value="student">Student</option>
           <option value="professional">Professional</option>
@@ -129,7 +141,7 @@ export function SignupForm() {
           <p className="border-l-2 border-danger pl-3 text-sm text-danger">{error}</p>
         ) : null}
         {message ? (
-          <p className="border-l-2 border-accent pl-3 text-sm text-accent">{message}</p>
+          <p className="border-l-2 border-accent pl-3 text-sm text-primary-300">{message}</p>
         ) : null}
 
         <Button className="w-full" disabled={loading}>
@@ -137,9 +149,9 @@ export function SignupForm() {
         </Button>
       </form>
 
-      <div className="flex items-center justify-between text-sm text-text-secondary">
+      <div className="flex items-center justify-between text-sm text-slate-300">
         <span>Already have access?</span>
-        <Link href="/login" className="text-accent">
+        <Link href="/login" className="text-primary-300 transition-colors hover:text-white">
           Sign in
         </Link>
       </div>

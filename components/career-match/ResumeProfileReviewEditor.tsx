@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import type { CareerResumeDetail } from '@/components/career-match/types';
+import { EducationEditor } from '@/components/resume/EducationEditor';
+import { ProjectsEditor } from '@/components/resume/ProjectsEditor';
+import { SkillsEditor } from '@/components/resume/SkillsEditor';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,17 +16,6 @@ import {
 } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-
-function toLineList(value: string) {
-  return value
-    .split('\n')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-function serializeLineList(values: string[] | undefined) {
-  return (values ?? []).join('\n');
-}
 
 function serializeExperience(
   values: NonNullable<CareerResumeDetail['effectiveProfile']>['experience'] | undefined,
@@ -69,84 +61,6 @@ function parseExperience(value: string) {
     });
 }
 
-function serializeProjects(
-  values: NonNullable<CareerResumeDetail['effectiveProfile']>['projects'] | undefined,
-) {
-  return (values ?? [])
-    .map((entry) =>
-      [
-        entry.name ?? '',
-        entry.description ?? '',
-        (entry.bullets ?? []).join('; '),
-        (entry.technologies ?? []).join(', '),
-        (entry.links ?? []).join(', '),
-      ].join(' | '),
-    )
-    .join('\n\n');
-}
-
-function parseProjects(value: string) {
-  return value
-    .split(/\n\s*\n/)
-    .map((row) => row.trim())
-    .filter(Boolean)
-    .map((row) => {
-      const [name, description, bullets, technologies, links] = row
-        .split('|')
-        .map((part) => part.trim());
-      return {
-        name: name || null,
-        description: description || null,
-        bullets: bullets ? bullets.split(';').map((entry) => entry.trim()).filter(Boolean) : [],
-        technologies: technologies
-          ? technologies.split(',').map((entry) => entry.trim()).filter(Boolean)
-          : [],
-        links: links ? links.split(',').map((entry) => entry.trim()).filter(Boolean) : [],
-      };
-    });
-}
-
-function serializeEducation(
-  values: NonNullable<CareerResumeDetail['effectiveProfile']>['education'] | undefined,
-) {
-  return (values ?? [])
-    .map((entry) =>
-      [
-        entry.degree ?? '',
-        entry.institution ?? '',
-        entry.field_of_study ?? '',
-        entry.start_date ?? '',
-        entry.end_date ?? '',
-        entry.grade ?? '',
-        entry.location ?? '',
-        entry.description ?? '',
-      ].join(' | '),
-    )
-    .join('\n\n');
-}
-
-function parseEducation(value: string) {
-  return value
-    .split(/\n\s*\n/)
-    .map((row) => row.trim())
-    .filter(Boolean)
-    .map((row) => {
-      const [degree, institution, field_of_study, start_date, end_date, grade, location, description] = row
-        .split('|')
-        .map((part) => part.trim());
-      return {
-        degree: degree || null,
-        institution: institution || null,
-        field_of_study: field_of_study || null,
-        start_date: start_date || null,
-        end_date: end_date || null,
-        grade: grade || null,
-        location: location || null,
-        description: description || null,
-      };
-    });
-}
-
 export interface ResumeProfileReviewEditorProps {
   detail: CareerResumeDetail;
   open: boolean;
@@ -174,20 +88,20 @@ export function ResumeProfileReviewEditor({
     github: '',
     portfolio: '',
     summary: '',
-    skills_languages: '',
-    skills_frameworks: '',
-    skills_tools: '',
-    skills_databases: '',
-    skills_cloud: '',
-    skills_others: '',
-    skills_spoken: '',
+    skills_languages: [] as string[],
+    skills_frameworks: [] as string[],
+    skills_tools: [] as string[],
+    skills_databases: [] as string[],
+    skills_cloud: [] as string[],
+    skills_others: [] as string[],
+    skills_spoken: [] as string[],
     experience: '',
-    projects: '',
-    education: '',
-    certifications: '',
-    achievements: '',
-    positions: '',
-    volunteering: '',
+    projects: effectiveProfile?.projects ?? [],
+    education: effectiveProfile?.education ?? [],
+    certifications: [] as string[],
+    achievements: [] as string[],
+    positions: [] as string[],
+    volunteering: [] as string[],
   });
 
   useEffect(() => {
@@ -202,20 +116,20 @@ export function ResumeProfileReviewEditor({
       github: candidate?.github ?? '',
       portfolio: candidate?.portfolio ?? '',
       summary: candidate?.summary ?? '',
-      skills_languages: serializeLineList(effectiveProfile?.skills.languages),
-      skills_frameworks: serializeLineList(effectiveProfile?.skills.frameworks),
-      skills_tools: serializeLineList(effectiveProfile?.skills.tools),
-      skills_databases: serializeLineList(effectiveProfile?.skills.databases),
-      skills_cloud: serializeLineList(effectiveProfile?.skills.cloud),
-      skills_others: serializeLineList(effectiveProfile?.skills.others),
-      skills_spoken: serializeLineList(effectiveProfile?.skills.spoken_languages),
+      skills_languages: effectiveProfile?.skills.languages ?? [],
+      skills_frameworks: effectiveProfile?.skills.frameworks ?? [],
+      skills_tools: effectiveProfile?.skills.tools ?? [],
+      skills_databases: effectiveProfile?.skills.databases ?? [],
+      skills_cloud: effectiveProfile?.skills.cloud ?? [],
+      skills_others: effectiveProfile?.skills.others ?? [],
+      skills_spoken: effectiveProfile?.skills.spoken_languages ?? [],
       experience: serializeExperience(effectiveProfile?.experience),
-      projects: serializeProjects(effectiveProfile?.projects),
-      education: serializeEducation(effectiveProfile?.education),
-      certifications: serializeLineList(effectiveProfile?.additional.certifications),
-      achievements: serializeLineList(effectiveProfile?.additional.achievements),
-      positions: serializeLineList(effectiveProfile?.additional.positions_of_responsibility),
-      volunteering: serializeLineList(effectiveProfile?.additional.volunteering),
+      projects: effectiveProfile?.projects ?? [],
+      education: effectiveProfile?.education ?? [],
+      certifications: effectiveProfile?.additional.certifications ?? [],
+      achievements: effectiveProfile?.additional.achievements ?? [],
+      positions: effectiveProfile?.additional.positions_of_responsibility ?? [],
+      volunteering: effectiveProfile?.additional.volunteering ?? [],
     });
     setError(null);
   }, [candidate, effectiveProfile, open]);
@@ -241,22 +155,22 @@ export function ResumeProfileReviewEditor({
               summary: form.summary || null,
             },
             skills: {
-              languages: toLineList(form.skills_languages),
-              frameworks: toLineList(form.skills_frameworks),
-              tools: toLineList(form.skills_tools),
-              databases: toLineList(form.skills_databases),
-              cloud: toLineList(form.skills_cloud),
-              others: toLineList(form.skills_others),
-              spoken_languages: toLineList(form.skills_spoken),
+              languages: form.skills_languages,
+              frameworks: form.skills_frameworks,
+              tools: form.skills_tools,
+              databases: form.skills_databases,
+              cloud: form.skills_cloud,
+              others: form.skills_others,
+              spoken_languages: form.skills_spoken,
             },
             experience: parseExperience(form.experience),
-            projects: parseProjects(form.projects),
-            education: parseEducation(form.education),
+            projects: form.projects,
+            education: form.education,
             additional: {
-              certifications: toLineList(form.certifications),
-              achievements: toLineList(form.achievements),
-              positions_of_responsibility: toLineList(form.positions),
-              volunteering: toLineList(form.volunteering),
+              certifications: form.certifications,
+              achievements: form.achievements,
+              positions_of_responsibility: form.positions,
+              volunteering: form.volunteering,
             },
           },
         }),
@@ -357,100 +271,45 @@ export function ResumeProfileReviewEditor({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="skills_languages">
-              Languages
-            </label>
-            <Textarea id="skills_languages" value={form.skills_languages} onChange={(event) => setForm((current) => ({ ...current, skills_languages: event.target.value }))} className="min-h-[120px]" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="skills_frameworks">
-              Frameworks
-            </label>
-            <Textarea id="skills_frameworks" value={form.skills_frameworks} onChange={(event) => setForm((current) => ({ ...current, skills_frameworks: event.target.value }))} className="min-h-[120px]" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="skills_tools">
-              Tools
-            </label>
-            <Textarea id="skills_tools" value={form.skills_tools} onChange={(event) => setForm((current) => ({ ...current, skills_tools: event.target.value }))} className="min-h-[120px]" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="skills_databases">
-              Databases
-            </label>
-            <Textarea id="skills_databases" value={form.skills_databases} onChange={(event) => setForm((current) => ({ ...current, skills_databases: event.target.value }))} className="min-h-[120px]" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="skills_cloud">
-              Cloud and platforms
-            </label>
-            <Textarea id="skills_cloud" value={form.skills_cloud} onChange={(event) => setForm((current) => ({ ...current, skills_cloud: event.target.value }))} className="min-h-[120px]" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="skills_others">
-              Other strengths
-            </label>
-            <Textarea id="skills_others" value={form.skills_others} onChange={(event) => setForm((current) => ({ ...current, skills_others: event.target.value }))} className="min-h-[120px]" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="skills_spoken">
-              Spoken languages
-            </label>
-            <Textarea id="skills_spoken" value={form.skills_spoken} onChange={(event) => setForm((current) => ({ ...current, skills_spoken: event.target.value }))} className="min-h-[120px]" />
-          </div>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="experience">
-              Experience entries
-            </label>
-            <Textarea id="experience" value={form.experience} onChange={(event) => setForm((current) => ({ ...current, experience: event.target.value }))} className="min-h-[180px]" />
-            <p className="text-xs text-text-tertiary">Format: `Title | Company | Location | Start | End | Bullet 1; Bullet 2 | Tech 1, Tech 2`</p>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="projects">
-              Project entries
-            </label>
-            <Textarea id="projects" value={form.projects} onChange={(event) => setForm((current) => ({ ...current, projects: event.target.value }))} className="min-h-[180px]" />
-            <p className="text-xs text-text-tertiary">Format: `Name | Description | Bullet 1; Bullet 2 | Tech 1, Tech 2 | Link 1, Link 2`</p>
-          </div>
+          <SkillsEditor title="Languages" values={form.skills_languages} onChange={(values) => setForm((current) => ({ ...current, skills_languages: values }))} />
+          <SkillsEditor title="Frameworks" values={form.skills_frameworks} onChange={(values) => setForm((current) => ({ ...current, skills_frameworks: values }))} />
+          <SkillsEditor title="Tools" values={form.skills_tools} onChange={(values) => setForm((current) => ({ ...current, skills_tools: values }))} />
+          <SkillsEditor title="Databases" values={form.skills_databases} onChange={(values) => setForm((current) => ({ ...current, skills_databases: values }))} />
+          <SkillsEditor title="Cloud and platforms" values={form.skills_cloud} onChange={(values) => setForm((current) => ({ ...current, skills_cloud: values }))} />
+          <SkillsEditor title="Other strengths" values={form.skills_others} onChange={(values) => setForm((current) => ({ ...current, skills_others: values }))} />
+          <SkillsEditor title="Spoken languages" values={form.skills_spoken} onChange={(values) => setForm((current) => ({ ...current, skills_spoken: values }))} />
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-text-primary" htmlFor="education">
-            Education entries
+          <label className="text-sm font-medium text-text-primary" htmlFor="experience">
+            Experience entries
           </label>
-          <Textarea id="education" value={form.education} onChange={(event) => setForm((current) => ({ ...current, education: event.target.value }))} className="min-h-[160px]" />
-          <p className="text-xs text-text-tertiary">Format: `Degree | Institution | Field | Start | End | Grade | Location | Description`</p>
+          <Textarea
+            id="experience"
+            value={form.experience}
+            onChange={(event) => setForm((current) => ({ ...current, experience: event.target.value }))}
+            className="min-h-[180px]"
+          />
+          <p className="text-xs text-text-tertiary">
+            Format: `Title | Company | Location | Start | End | Bullet 1; Bullet 2 | Tech 1, Tech 2`
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-sm font-medium text-text-primary">Projects</label>
+          <ProjectsEditor projects={form.projects} onChange={(projects) => setForm((current) => ({ ...current, projects }))} />
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-sm font-medium text-text-primary">Education</label>
+          <EducationEditor education={form.education} onChange={(education) => setForm((current) => ({ ...current, education }))} />
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="certifications">
-              Certifications
-            </label>
-            <Textarea id="certifications" value={form.certifications} onChange={(event) => setForm((current) => ({ ...current, certifications: event.target.value }))} className="min-h-[120px]" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="achievements">
-              Achievements
-            </label>
-            <Textarea id="achievements" value={form.achievements} onChange={(event) => setForm((current) => ({ ...current, achievements: event.target.value }))} className="min-h-[120px]" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="positions">
-              Positions of responsibility
-            </label>
-            <Textarea id="positions" value={form.positions} onChange={(event) => setForm((current) => ({ ...current, positions: event.target.value }))} className="min-h-[120px]" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-text-primary" htmlFor="volunteering">
-              Volunteering
-            </label>
-            <Textarea id="volunteering" value={form.volunteering} onChange={(event) => setForm((current) => ({ ...current, volunteering: event.target.value }))} className="min-h-[120px]" />
-          </div>
+          <SkillsEditor title="Certifications" values={form.certifications} onChange={(values) => setForm((current) => ({ ...current, certifications: values }))} />
+          <SkillsEditor title="Achievements" values={form.achievements} onChange={(values) => setForm((current) => ({ ...current, achievements: values }))} />
+          <SkillsEditor title="Positions of responsibility" values={form.positions} onChange={(values) => setForm((current) => ({ ...current, positions: values }))} />
+          <SkillsEditor title="Volunteering" values={form.volunteering} onChange={(values) => setForm((current) => ({ ...current, volunteering: values }))} />
         </div>
 
         {error ? <div className="text-sm text-danger">{error}</div> : null}

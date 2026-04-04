@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { BriefcaseBusiness, Lightbulb } from 'lucide-react';
+import { Bell, BookMarked, BriefcaseBusiness, Compass, Lightbulb, Search } from 'lucide-react';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { PrimaryNav } from '@/components/layout/PrimaryNav';
 import type { PrimaryNavItem } from '@/components/layout/PrimaryNav';
@@ -18,51 +18,50 @@ export async function Sidebar() {
     { href: '/feed', label: 'Home', icon: 'home' },
     { href: '/explore', label: 'Explore', icon: 'explore' },
     { href: '/career', label: 'Career', icon: 'career' },
-    { href: '/communities', label: 'My Communities', icon: 'communities' },
     { href: '/notifications', label: 'Notifications', icon: 'notifications', badge: unreadNotifications },
     { href: `/u/${currentUser.username}`, label: 'Profile', icon: 'profile' },
   ];
   const topReputation = currentUser.reputation[0];
 
   return (
-    <aside className="hidden h-screen w-[280px] shrink-0 border-r border-border-subtle px-5 py-5 lg:flex lg:flex-col">
-      <Link href="/feed" className="mb-8 space-y-1">
+    <aside className="shell-sidebar-surface hidden h-screen w-[252px] shrink-0 border-r border-border-subtle px-4 py-5 xl:w-[264px] xl:px-5 lg:flex lg:flex-col">
+      <Link href="/feed" className="mb-8 rounded-[22px] border border-border-subtle bg-bg-surface px-4 py-4 shadow-sm">
         <div className="font-display text-xl font-semibold tracking-tight text-text-primary">Credvia</div>
-        <p className="text-xs text-text-tertiary">Build reputation through contribution.</p>
+        <p className="mt-1 text-xs text-text-tertiary">Build reputation through contribution.</p>
       </Link>
 
       <PrimaryNav items={primaryItems} />
 
-      <div className="mt-5 rounded-2xl border border-border-subtle bg-bg-surface p-4">
+      <div className="mt-6 rounded-[22px] border border-border-subtle bg-bg-surface p-4 shadow-sm">
         <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Career tools</div>
-        <div className="mt-3 space-y-1">
+        <div className="mt-4 space-y-1.5">
           <Link
             href="/resume"
-            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary transition-colors hover:bg-bg-overlay hover:text-text-primary"
           >
-            <BriefcaseBusiness className="h-4 w-4" />
+            <BookMarked className="h-4 w-4" />
             Resume
           </Link>
           <Link
             href="/career/jobs"
-            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary transition-colors hover:bg-bg-overlay hover:text-text-primary"
           >
-            <BriefcaseBusiness className="h-4 w-4" />
+            <Search className="h-4 w-4" />
             Job Search
           </Link>
           <Link
             href="/career-match"
-            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary transition-colors hover:bg-bg-overlay hover:text-text-primary"
           >
             <BriefcaseBusiness className="h-4 w-4" />
             Career Match
           </Link>
           <Link
             href="/career#saved"
-            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary transition-colors hover:bg-bg-overlay hover:text-text-primary"
           >
-            <BriefcaseBusiness className="h-4 w-4" />
-            Saved roles
+            <Bell className="h-4 w-4" />
+            Saved Jobs
           </Link>
         </div>
       </div>
@@ -107,7 +106,7 @@ export async function Sidebar() {
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-border-subtle bg-bg-surface p-4">
+      <div className="mt-6 rounded-[22px] border border-border-subtle bg-bg-surface p-4 shadow-sm">
         <div className="space-y-3">
           <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">More from Credvia</div>
           <div className="space-y-1">
@@ -115,12 +114,16 @@ export async function Sidebar() {
               <Lightbulb className="h-4 w-4" />
               Startup Ideas
             </Link>
+            <Link href="/communities" className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
+              <Compass className="h-4 w-4" />
+              Communities
+            </Link>
           </div>
         </div>
       </div>
 
-      <div className="mt-auto rounded-3xl border border-border-subtle bg-bg-surface p-4">
-        <div className="flex items-center gap-3">
+      <div className="mt-auto rounded-[24px] border border-border-subtle bg-bg-surface p-4 shadow-sm">
+        <div className="flex items-start gap-3">
           <Avatar className="h-10 w-10">
             <AvatarFallback className="bg-accent/10 text-sm font-semibold text-accent">
               {currentUser.fullName
@@ -130,20 +133,20 @@ export async function Sidebar() {
                 .slice(0, 2)}
             </AvatarFallback>
           </Avatar>
-          <div>
-            <div className="text-sm font-semibold text-text-primary">{currentUser.fullName}</div>
-            <div className="text-xs text-text-tertiary">@{currentUser.username}</div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold text-text-primary">{currentUser.fullName}</div>
+            <div className="truncate text-xs text-text-tertiary">@{currentUser.username}</div>
           </div>
         </div>
         <div className="mt-4 rounded-2xl bg-bg-overlay px-3 py-3">
           <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Growth</div>
-          <p className="mt-1 text-sm text-text-primary">
+          <p className="mt-1 text-sm leading-6 text-text-primary">
             {topReputation
               ? `${topReputation.score} reputation in ${topReputation.communityName}`
               : 'Ask or answer to start earning reputation.'}
           </p>
         </div>
-        <div className="mt-4 flex items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <ThemeToggle compact />
           <Link href="/settings" className="inline-flex h-10 items-center rounded-xl px-3 text-sm font-medium text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
             Settings

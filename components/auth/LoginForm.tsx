@@ -74,10 +74,10 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-border-subtle" />
+          <span className="w-full border-t border-white/10" />
         </div>
         <div className="relative flex justify-center">
-          <span className="bg-bg-surface px-3 text-xs uppercase tracking-[0.18em] text-text-tertiary">
+          <span className="bg-[rgba(10,18,34,0.88)] px-3 text-xs uppercase tracking-[0.18em] text-slate-400">
             Or continue with email
           </span>
         </div>
@@ -88,7 +88,13 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
           <label htmlFor="email" className="sr-only">
             Email
           </label>
-          <Input id="email" type="email" placeholder="Email" {...register('email')} />
+          <Input
+            id="email"
+            type="email"
+            placeholder="Email"
+            className="h-11 rounded-2xl border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:ring-primary-500 focus-visible:ring-offset-[#0A1222]"
+            {...register('email')}
+          />
           {formState.errors.email ? (
             <p className="border-l-2 border-danger pl-3 text-sm text-danger">
               {formState.errors.email.message}
@@ -100,7 +106,13 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
           <label htmlFor="password" className="sr-only">
             Password
           </label>
-          <Input id="password" type="password" placeholder="Password" {...register('password')} />
+          <Input
+            id="password"
+            type="password"
+            placeholder="Password"
+            className="h-11 rounded-2xl border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:ring-primary-500 focus-visible:ring-offset-[#0A1222]"
+            {...register('password')}
+          />
           {formState.errors.password ? (
             <p className="border-l-2 border-danger pl-3 text-sm text-danger">
               {formState.errors.password.message}
@@ -120,9 +132,9 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
         </Button>
       </form>
 
-      <div className="flex items-center justify-between text-sm text-text-secondary">
+      <div className="flex items-center justify-between text-sm text-slate-300">
         <span>New to Credvia?</span>
-        <Link href="/signup" className="text-accent">
+        <Link href="/signup" className="text-primary-300 transition-colors hover:text-white">
           Create account
         </Link>
       </div>

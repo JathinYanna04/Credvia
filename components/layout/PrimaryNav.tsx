@@ -2,17 +2,17 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, BriefcaseBusiness, Compass, Home, Plus, User, Users } from 'lucide-react';
+import { Bell, BookMarked, BriefcaseBusiness, Compass, Home, Search, User } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 const iconMap = {
   home: Home,
   explore: Compass,
-  create: Plus,
   career: BriefcaseBusiness,
-  communities: Users,
   notifications: Bell,
   profile: User,
+  resume: BookMarked,
+  jobs: Search,
 } as const;
 
 type PrimaryNavIcon = keyof typeof iconMap;
@@ -51,28 +51,22 @@ export function PrimaryNav({
               aria-label={item.label}
               className={cn(
                 'relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[11px] font-medium transition-all duration-200 active:scale-[0.97]',
-                item.accent
+                active
                   ? 'text-accent'
-                  : active
-                    ? 'bg-accent/12 text-accent shadow-sm'
-                    : 'text-text-secondary hover:bg-bg-surface hover:text-text-primary',
+                  : 'text-text-secondary hover:bg-bg-surface hover:text-text-primary',
               )}
             >
               <div
                 className={cn(
                   'relative flex h-11 w-11 items-center justify-center rounded-2xl transition-all duration-200',
-                  item.accent
-                    ? 'bg-accent text-white shadow-[0_12px_28px_rgba(79,70,229,0.28)]'
-                    : active
-                      ? 'bg-accent/12 text-accent'
-                      : 'bg-transparent',
+                  active
+                    ? 'bg-accent/12 text-accent'
+                    : 'bg-transparent',
                 )}
               >
-                <Icon className={cn('h-5 w-5', item.accent && 'h-5 w-5')} />
+                <Icon className="h-5 w-5" />
               </div>
-              <span className={cn('truncate', item.accent && 'font-semibold text-text-primary')}>
-                {item.label}
-              </span>
+              <span className="truncate">{item.label}</span>
               {item.badge && item.badge > 0 ? (
                 <span className="absolute right-2 top-1 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] font-semibold text-white">
                   {item.badge > 9 ? '9+' : item.badge}
@@ -98,14 +92,14 @@ export function PrimaryNav({
             key={item.href}
             href={item.href}
             className={cn(
-              'flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-colors',
+              'flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-all duration-200 xl:px-3.5',
               active
-                ? 'bg-accent/10 text-accent'
-                : 'text-text-secondary hover:bg-bg-surface hover:text-text-primary',
+                ? 'bg-accent/10 text-accent shadow-sm'
+                : 'text-text-secondary hover:bg-bg-overlay hover:text-text-primary',
             )}
           >
             <Icon className="h-4 w-4" />
-            <span>{item.label}</span>
+            <span className="truncate">{item.label}</span>
             {item.badge && item.badge > 0 ? (
               <span className="ml-auto rounded-full bg-accent/12 px-2 py-0.5 text-[11px] font-semibold text-accent">
                 {item.badge}

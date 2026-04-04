@@ -78,13 +78,13 @@ export default async function ExplorePage({
   );
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
-      <header className="space-y-3">
+    <div className="mx-auto max-w-5xl space-y-9">
+      <header className="premium-soft-gradient rounded-[28px] border border-border-subtle px-6 py-6 shadow-sm sm:px-7 sm:py-7">
         <h1 className="text-3xl font-semibold">Explore</h1>
-        <p className="max-w-2xl text-sm text-text-secondary">
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-text-secondary">
           Discover communities first, then branch into the people and posts worth your attention.
         </p>
-        <form action="/explore" className="flex flex-col gap-3 sm:flex-row">
+        <form action="/explore" className="mt-5 flex flex-col gap-3 sm:flex-row">
           <label htmlFor="explore-query" className="sr-only">
             Search Credvia
           </label>
@@ -108,7 +108,7 @@ export default async function ExplorePage({
       </header>
 
       {query.length >= 2 ? (
-        <section className="space-y-8">
+        <section className="space-y-9">
           <section className="space-y-4">
             <div>
               <h2 className="text-xl font-semibold">Communities</h2>
@@ -123,7 +123,7 @@ export default async function ExplorePage({
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {matchingCommunities.map((community) => (
-                  <Link key={community.id} href={`/c/${community.slug}`} className="surface-panel card-lift block p-5">
+                  <Link key={community.id} href={`/c/${community.slug}`} className="surface-panel premium-card-lift block p-5">
                     <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Community</div>
                     <h3 className="mt-3 text-lg font-semibold text-text-primary">{community.name}</h3>
                     <p className="mt-2 text-sm text-text-secondary">{community.description}</p>
@@ -160,7 +160,7 @@ export default async function ExplorePage({
             ) : (
               <div className="grid gap-4 lg:grid-cols-2">
                 {people.map((person) => (
-                  <Link key={person.user_id} href={`/u/${person.username}`} className="surface-panel card-lift block p-5">
+                  <Link key={person.user_id} href={`/u/${person.username}`} className="surface-panel premium-card-lift block p-5">
                     <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Person</div>
                     <h3 className="mt-3 text-lg font-semibold text-text-primary">
                       {person.full_name ?? person.username}
@@ -211,7 +211,7 @@ export default async function ExplorePage({
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             {communities.map((community) => (
-              <Link key={community.id} href={`/c/${community.slug}`} className="surface-panel card-lift block p-5">
+              <Link key={community.id} href={`/c/${community.slug}`} className="surface-panel premium-card-lift block p-5">
                 <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Community</div>
                 <h3 className="mt-3 text-lg font-semibold text-text-primary">{community.name}</h3>
                 <p className="mt-2 text-sm text-text-secondary">{community.description}</p>

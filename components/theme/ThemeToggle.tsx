@@ -13,13 +13,21 @@ function applyTheme(nextTheme: 'light' | 'dark') {
   window.localStorage.setItem(STORAGE_KEY, nextTheme);
 }
 
+function resolveInitialTheme(): 'light' | 'dark' {
+  const storedTheme = window.localStorage.getItem(STORAGE_KEY);
+  if (storedTheme === 'light' || storedTheme === 'dark') {
+    return storedTheme;
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const storedTheme = window.localStorage.getItem(STORAGE_KEY);
-    const nextTheme = storedTheme === 'dark' ? 'dark' : 'light';
+    const nextTheme = resolveInitialTheme();
     setTheme(nextTheme);
     applyTheme(nextTheme);
     setReady(true);

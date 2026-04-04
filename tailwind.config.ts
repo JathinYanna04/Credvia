@@ -45,8 +45,8 @@ const config: Config = {
         'rep-diamond': 'var(--rep-diamond)',
       },
       fontFamily: {
-        display: ['var(--font-geist-sans)', 'var(--font-dm-sans)', 'sans-serif'],
-        body: ['var(--font-dm-sans)', 'sans-serif'],
+        display: ['var(--font-inter)', 'sans-serif'],
+        body: ['var(--font-inter)', 'sans-serif'],
         mono: ['var(--font-geist-mono)', 'monospace'],
       },
       fontSize: {

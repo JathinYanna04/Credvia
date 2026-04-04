@@ -31,7 +31,12 @@ export function OAuthButton({ mode, onError }: OAuthButtonProps) {
   };
 
   return (
-    <Button type="button" variant="secondary" className="w-full justify-center" onClick={onClick}>
+    <Button
+      type="button"
+      variant="secondary"
+      className="w-full justify-center border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08]"
+      onClick={onClick}
+    >
       <Chrome className="h-4 w-4" />
       {mode === 'login' ? 'Continue with Google' : 'Sign up with Google'}
     </Button>

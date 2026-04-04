@@ -1,12 +1,8 @@
 'use client';
 
 import {
-  FileText,
-  Loader2,
-  PencilLine,
   RefreshCcw,
   ShieldCheck,
-  Sparkles,
   Trash2,
   Wand2,
 } from 'lucide-react';
@@ -18,7 +14,6 @@ import { ResumeAtsAnalysisPanel } from '@/components/career-match/ResumeAtsAnaly
 import { ResumeProfileReviewEditor } from '@/components/career-match/ResumeProfileReviewEditor';
 import { ResumeUploadCard } from '@/components/career-match/ResumeUploadCard';
 import type {
-  CareerResumeAtsAnalysis,
   CareerResumeDetail,
   CareerResumeSummary,
   CareerResumeVersionSummary,
@@ -27,11 +22,16 @@ import {
   canAnalyzeFromStatus,
   formatDateTime,
   humanizeParseStatus,
-  parseStatusVariant,
 } from '@/components/career-match/utils';
+import { AtsImprovements } from '@/components/ats/AtsImprovements';
+import { JobMatchCard } from '@/components/match/JobMatchCard';
+import { PipelineTimeline } from '@/components/resume/PipelineTimeline';
+import { ResumeHeader } from '@/components/resume/ResumeHeader';
+import { ResumeSummaryCard } from '@/components/resume/ResumeSummaryCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ScrollablePillTabs } from '@/components/ui/ScrollablePillTabs';
+import { Card } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { normalizeResumeLifecycleStatus } from '@/lib/resume/lifecycle';
 import type {
   AnalyzeResumeRequest,
@@ -46,35 +46,45 @@ type ResumeAnalyzeErrorState = {
   suggestedAction?: string;
 };
 
-type ResumeWorkspaceTab =
-  | 'overview'
-  | 'profile'
-  | 'analysis'
-  | 'match'
-  | 'suggestions'
-  | 'versions';
+type ResumeWorkspaceTab = 'overview' | 'profile' | 'ats' | 'match' | 'suggestions';
 
-function scoreTone(score: number | null | undefined) {
+const tabs: Array<{ value: ResumeWorkspaceTab; label: string }> = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'profile', label: 'Parsed Profile' },
+  { value: 'ats', label: 'ATS' },
+  { value: 'match', label: 'Match' },
+  { value: 'suggestions', label: 'Suggestions' },
+];
+
+function scoreLabel(score: number | null | undefined) {
+  if (typeof score !== 'number') return 'Pending';
+  if (score >= 80) return 'Ready';
+  if (score >= 60) return 'Good';
+  return 'Needs improvement';
+}
+
+function scoreVariant(score: number | null | undefined) {
   if (typeof score !== 'number') return 'secondary' as const;
   if (score >= 80) return 'success' as const;
   if (score >= 60) return 'warning' as const;
   return 'danger' as const;
 }
 
-function scoreLabel(score: number | null | undefined) {
-  if (typeof score !== 'number') return 'Pending';
-  if (score >= 80) return 'Strong';
-  if (score >= 60) return 'Needs work';
-  return 'Weak';
-}
-
-function summaryMetric(label: string, value: string | number, helper?: string) {
+function WorkspaceMetric({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string | number;
+  helper: string;
+}) {
   return (
-    <article key={label} className="surface-panel rounded-2xl p-5">
+    <Card padding="md">
       <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">{label}</div>
-      <div className="mt-3 text-2xl font-semibold text-text-primary">{value}</div>
-      {helper ? <div className="mt-1 text-sm text-text-secondary">{helper}</div> : null}
-    </article>
+      <div className="mt-3 text-3xl font-bold tracking-tight text-text-primary">{value}</div>
+      <p className="mt-2 text-sm text-text-secondary">{helper}</p>
+    </Card>
   );
 }
 
@@ -89,7 +99,6 @@ export default function ResumePage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [reviewEditorOpen, setReviewEditorOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ResumeWorkspaceTab>('overview');
-  const forceOCR = false;
   const [actionInFlight, setActionInFlight] = useState<
     | {
         resumeId: string;
@@ -123,17 +132,12 @@ export default function ResumePage() {
 
         const nextResumes = payload.data ?? [];
         setResumes(nextResumes);
-        const activeResume =
-          nextResumes.find((resume) => resume.is_active) ?? nextResumes[0] ?? null;
+        const activeResume = nextResumes.find((resume) => resume.is_active) ?? nextResumes[0] ?? null;
         setSelectedResumeId((current) => current ?? activeResume?.id ?? null);
       })
       .catch((fetchError) => {
         setResumes([]);
-        setError(
-          fetchError instanceof Error
-            ? fetchError.message
-            : 'Could not load your resumes.',
-        );
+        setError(fetchError instanceof Error ? fetchError.message : 'Could not load your resumes.');
       });
   }, [refreshKey]);
 
@@ -166,11 +170,7 @@ export default function ResumePage() {
         setDetail(payload.data);
       })
       .catch((fetchError) => {
-        setDetailError(
-          fetchError instanceof Error
-            ? fetchError.message
-            : 'Could not load this resume.',
-        );
+        setDetailError(fetchError instanceof Error ? fetchError.message : 'Could not load this resume.');
       });
   }, [selectedResumeId, refreshKey]);
 
@@ -188,17 +188,17 @@ export default function ResumePage() {
     } as const);
 
   const selectedStatus = normalizeResumeLifecycleStatus(selectedResume?.parse_status ?? null);
-  const canAnalyzeSelected = selectedResume
-    ? canAnalyzeFromStatus(selectedResume.parse_status)
-    : false;
-  const selectedExtractionMeta = detail?.profile?.raw_sections?.__meta ?? null;
-  const discourageForceOcr =
-    selectedResume?.mime_type === 'application/pdf' &&
-    selectedExtractionMeta?.usedOcr !== true &&
-    selectedExtractionMeta?.ocrNeeded === false &&
-    selectedExtractionMeta?.extractionQuality?.confidenceTier === 'high';
+  const canAnalyzeSelected = selectedResume ? canAnalyzeFromStatus(selectedResume.parse_status) : false;
   const effectiveProfile = detail?.effectiveProfile ?? null;
   const atsAnalysis = detail?.atsAnalysis ?? null;
+  const diagnostics = effectiveProfile?.diagnostics ?? null;
+  const extractionMeta = detail?.profile?.raw_sections?.__meta ?? null;
+  const discourageForceOcr =
+    selectedResume?.mime_type === 'application/pdf' &&
+    extractionMeta?.usedOcr !== true &&
+    extractionMeta?.ocrNeeded === false &&
+    extractionMeta?.extractionQuality?.confidenceTier === 'high';
+
   const versionSummaries: CareerResumeVersionSummary[] =
     detail?.versions ??
     (resumes ?? []).map((resume) => ({
@@ -212,23 +212,11 @@ export default function ResumePage() {
       confidenceTier: null,
     }));
 
-  const tabItems = [
-    { value: 'overview', label: 'Overview' },
-    { value: 'profile', label: 'Parsed Profile' },
-    { value: 'analysis', label: 'Analysis' },
-    { value: 'match', label: 'Job Match', badge: detail?.topMatches.length ?? 0 },
-    { value: 'suggestions', label: 'Suggestions', badge: atsAnalysis?.suggestedActions.length ?? 0 },
-    { value: 'versions', label: 'Versions', badge: versionSummaries.length },
-  ] satisfies Array<{ value: ResumeWorkspaceTab; label: string; badge?: number }>;
-
   function isActionRunning(
     action: 'analyze' | 'retry' | 'force-ocr' | 'delete' | 'set-active',
     resumeId: string | null,
   ) {
-    if (!resumeId || !actionInFlight) {
-      return false;
-    }
-
+    if (!resumeId || !actionInFlight) return false;
     return actionInFlight.resumeId === resumeId && actionInFlight.action === action;
   }
 
@@ -249,7 +237,6 @@ export default function ResumePage() {
 
   async function handleAnalyze() {
     if (!selectedResumeId || !selectedResume) return;
-
     if (!canAnalyzeSelected) {
       setDetailError(analysisReadiness.message ?? 'Resume is not ready for analysis.');
       return;
@@ -264,7 +251,6 @@ export default function ResumePage() {
         const analyzeRequest: AnalyzeResumeRequest = {
           rerun: selectedStatus === 'ANALYZED',
         };
-
         const response = await fetch(`/api/v1/resumes/${selectedResumeId}/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -291,10 +277,7 @@ export default function ResumePage() {
       } catch (analyzeFailure) {
         setAnalyzeError({
           code: 'ANALYSIS_FAILED',
-          message:
-            analyzeFailure instanceof Error
-              ? analyzeFailure.message
-              : 'Could not analyze this resume.',
+          message: analyzeFailure instanceof Error ? analyzeFailure.message : 'Could not analyze this resume.',
         });
       } finally {
         setAnalyzing(false);
@@ -305,52 +288,41 @@ export default function ResumePage() {
   async function handleRetryExtraction(useForceOCR: boolean) {
     if (!selectedResumeId) return;
 
-    await withResumeAction(
-      useForceOCR ? 'force-ocr' : 'retry',
-      selectedResumeId,
-      async () => {
-        setDetailError(null);
-        setAnalyzeError(null);
+    await withResumeAction(useForceOCR ? 'force-ocr' : 'retry', selectedResumeId, async () => {
+      setDetailError(null);
+      setAnalyzeError(null);
 
-        try {
-          const response = await fetch(`/api/v1/resumes/${selectedResumeId}/extract`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              retry: true,
-              forceOCR: useForceOCR || forceOCR,
-            }),
-          });
+      try {
+        const response = await fetch(`/api/v1/resumes/${selectedResumeId}/extract`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ retry: true, forceOCR: useForceOCR }),
+        });
 
-          const payload = (await response.json()) as ApiResponse<{ extracted: boolean }>;
-
-          if (response.status === 401) {
-            setAuthExpired(true);
-            return;
-          }
-
-          if (!response.ok) {
-            setAnalyzeError({
-              code: payload.error?.code ?? 'EXTRACTION_FAILED',
-              message: payload.error?.message ?? 'Could not retry extraction.',
-              details: payload.error?.details,
-              suggestedAction: payload.error?.suggestedAction,
-            });
-            return;
-          }
-
-          setRefreshKey((current) => current + 1);
-        } catch (retryFailure) {
-          setAnalyzeError({
-            code: 'EXTRACTION_FAILED',
-            message:
-              retryFailure instanceof Error
-                ? retryFailure.message
-                : 'Could not retry extraction.',
-          });
+        const payload = (await response.json()) as ApiResponse<{ extracted: boolean }>;
+        if (response.status === 401) {
+          setAuthExpired(true);
+          return;
         }
-      },
-    );
+
+        if (!response.ok) {
+          setAnalyzeError({
+            code: payload.error?.code ?? 'EXTRACTION_FAILED',
+            message: payload.error?.message ?? 'Could not retry extraction.',
+            details: payload.error?.details,
+            suggestedAction: payload.error?.suggestedAction,
+          });
+          return;
+        }
+
+        setRefreshKey((current) => current + 1);
+      } catch (retryFailure) {
+        setAnalyzeError({
+          code: 'EXTRACTION_FAILED',
+          message: retryFailure instanceof Error ? retryFailure.message : 'Could not retry extraction.',
+        });
+      }
+    });
   }
 
   async function handleSetActive(resumeId: string) {
@@ -361,7 +333,6 @@ export default function ResumePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ isActive: true }),
         });
-
         const payload = (await response.json()) as ApiResponse<{ updated: boolean }>;
 
         if (response.status === 401) {
@@ -376,30 +347,18 @@ export default function ResumePage() {
 
         setRefreshKey((current) => current + 1);
       } catch (setActiveError) {
-        setDetailError(
-          setActiveError instanceof Error
-            ? setActiveError.message
-            : 'Could not set this resume as active.',
-        );
+        setDetailError(setActiveError instanceof Error ? setActiveError.message : 'Could not set this resume as active.');
       }
     });
   }
 
   async function handleDeleteResume(resumeId: string) {
-    const confirmed = window.confirm(
-      'Delete this resume and all derived profile data? This cannot be undone.',
-    );
-
-    if (!confirmed) {
-      return;
-    }
+    const confirmed = window.confirm('Delete this resume and all derived profile data? This cannot be undone.');
+    if (!confirmed) return;
 
     await withResumeAction('delete', resumeId, async () => {
       try {
-        const response = await fetch(`/api/v1/resumes/${resumeId}`, {
-          method: 'DELETE',
-        });
-
+        const response = await fetch(`/api/v1/resumes/${resumeId}`, { method: 'DELETE' });
         const payload = (await response.json()) as ApiResponse<{ deleted: boolean }>;
 
         if (response.status === 401) {
@@ -418,261 +377,51 @@ export default function ResumePage() {
 
         setRefreshKey((current) => current + 1);
       } catch (deleteError) {
-        setDetailError(
-          deleteError instanceof Error
-            ? deleteError.message
-            : 'Could not delete this resume.',
-        );
+        setDetailError(deleteError instanceof Error ? deleteError.message : 'Could not delete this resume.');
       }
     });
   }
 
-  function renderOverview(analysis: CareerResumeAtsAnalysis | null) {
+  function renderOverview() {
     return (
-      <div className="space-y-6">
-        <section className="grid gap-6 xl:grid-cols-[1.45fr_1fr]">
-          <article className="surface-panel rounded-2xl p-6">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
-                  Active resume
-                </div>
-                <div className="mt-2 text-xl font-semibold text-text-primary">
-                  {selectedResume ? selectedResume.file_name : 'No resume uploaded yet'}
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {selectedResume ? (
-                    <Badge variant={parseStatusVariant(selectedResume.parse_status)}>
-                      {humanizeParseStatus(selectedResume.parse_status)}
-                    </Badge>
-                  ) : null}
-                  {analysis ? (
-                    <Badge variant={scoreTone(analysis.overallScore)}>
-                      {analysis.overallScore}/100 ATS
-                    </Badge>
-                  ) : null}
-                  {selectedExtractionMeta?.extractionMethod ? (
-                    <Badge variant="secondary">{selectedExtractionMeta.extractionMethod}</Badge>
-                  ) : null}
-                  {selectedExtractionMeta?.extractionQuality?.confidenceTier ? (
-                    <Badge variant="secondary">
-                      Confidence {selectedExtractionMeta.extractionQuality.confidenceTier}
-                    </Badge>
-                  ) : null}
-                </div>
-                <div className="mt-3 text-sm text-text-secondary">
-                  {selectedResume
-                    ? `${selectedResume.mime_type} • Uploaded ${formatDateTime(selectedResume.uploaded_at)}`
-                    : 'Upload one resume to build your ATS profile, analysis summary, and match workspace.'}
-                </div>
-              </div>
+      <div className="page-section">
+        <ResumeSummaryCard analysis={atsAnalysis} />
 
-              <div className="flex flex-wrap gap-2">
-                {!selectedResume?.is_active && selectedResumeId ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void handleSetActive(selectedResumeId)}
-                    disabled={isActionRunning('set-active', selectedResumeId)}
-                  >
-                    {isActionRunning('set-active', selectedResumeId) ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ShieldCheck className="h-4 w-4" />
-                    )}
-                    Set active
-                  </Button>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => selectedResumeId && void handleDeleteResume(selectedResumeId)}
-                  disabled={!selectedResumeId || isActionRunning('delete', selectedResumeId)}
-                >
-                  {selectedResumeId && isActionRunning('delete', selectedResumeId) ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                  Delete
-                </Button>
-              </div>
-            </div>
+        <PipelineTimeline
+          diagnostics={diagnostics ?? extractionMeta ?? null}
+          uploaded={Boolean(selectedResume)}
+          analysisReady={Boolean(detail?.topMatches || atsAnalysis)}
+        />
 
-            <div className="mt-6 flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void handleAnalyze()}
-                disabled={
-                  !canAnalyzeSelected ||
-                  !selectedResumeId ||
-                  isActionRunning('analyze', selectedResumeId)
-                }
-              >
-                {isActionRunning('analyze', selectedResumeId) ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                Reanalyze
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setActiveTab('profile')}
-                disabled={!detail}
-              >
-                <FileText className="h-4 w-4" />
-                Review parsed profile
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setActiveTab('match')}
-                disabled={!detail}
-              >
-                Match to jobs
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void handleRetryExtraction(false)}
-                disabled={!selectedResumeId || isActionRunning('retry', selectedResumeId)}
-              >
-                {isActionRunning('retry', selectedResumeId) ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCcw className="h-4 w-4" />
-                )}
-                Retry extraction
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void handleRetryExtraction(true)}
-                disabled={
-                  !selectedResumeId ||
-                  discourageForceOcr ||
-                  isActionRunning('force-ocr', selectedResumeId)
-                }
-              >
-                {isActionRunning('force-ocr', selectedResumeId) ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Wand2 className="h-4 w-4" />
-                )}
-                Retry with OCR
-              </Button>
-            </div>
-
-            {discourageForceOcr ? (
-              <p className="mt-3 text-xs text-text-tertiary">
-                This file already contains readable text. OCR is unlikely to improve results.
-              </p>
-            ) : null}
-          </article>
-
-          <div className="space-y-6">
-            <ResumeUploadCard
-              title={selectedResume ? 'Upload new version' : 'Upload your resume'}
-              description="Upload a private PDF or DOCX. Credvia keeps the original file private and builds a structured ATS profile from it."
-              actionLabel={selectedResume ? 'Upload new version' : 'Upload resume'}
-              compact
-              onUploaded={async () => setRefreshKey((current) => current + 1)}
-            />
-
-            <article className="surface-panel rounded-2xl p-5">
-              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
-                Quick warnings
-              </div>
-              <div className="mt-3 space-y-2 text-sm text-text-secondary">
-                {analysis?.warnings?.length ? (
-                  analysis.warnings.slice(0, 4).map((warning) => (
-                    <div key={warning}>{warning}</div>
-                  ))
-                ) : (
-                  <div>No urgent ATS warnings detected yet.</div>
-                )}
-              </div>
-            </article>
-          </div>
-        </section>
-
-        {selectedResume || detail ? (
-          <ResumeAnalysisStatus
-            resume={selectedResume ?? detail!.resume}
-            latestRun={detail?.analysisRuns?.[0] ?? null}
-            extractionMeta={detail?.profile?.raw_sections?.__meta ?? null}
-            analysisReadiness={analysisReadiness}
-            analyzing={analyzing}
-            analyzeError={analyzeError}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <WorkspaceMetric
+            label="ATS score"
+            value={atsAnalysis?.overallScore ?? '--'}
+            helper={atsAnalysis ? scoreLabel(atsAnalysis.overallScore) : 'Run analysis to score this resume.'}
           />
-        ) : (
-          <div className="rounded-2xl bg-bg-surface/70 px-5 py-4 text-sm text-text-secondary shadow-sm">
-            Upload a resume to start the review workspace.
-          </div>
-        )}
+          <WorkspaceMetric
+            label="Top skills"
+            value={
+              [
+                ...(effectiveProfile?.skills.languages ?? []),
+                ...(effectiveProfile?.skills.frameworks ?? []),
+                ...(effectiveProfile?.skills.databases ?? []),
+              ].length
+            }
+            helper="Normalized technical signals detected."
+          />
+          <WorkspaceMetric
+            label="Education"
+            value={effectiveProfile?.education.length ?? 0}
+            helper="Structured education entries ready."
+          />
+          <WorkspaceMetric
+            label="Projects"
+            value={effectiveProfile?.projects.length ?? 0}
+            helper="Project evidence available for ATS and matching."
+          />
+        </div>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {summaryMetric(
-            'ATS score',
-            analysis?.overallScore ?? 'Pending',
-            analysis ? scoreLabel(analysis.overallScore) : 'Run analysis to score this resume.',
-          )}
-          {summaryMetric(
-            'Top skills',
-            [
-              ...(effectiveProfile?.skills.languages ?? []),
-              ...(effectiveProfile?.skills.frameworks ?? []),
-              ...(effectiveProfile?.skills.databases ?? []),
-            ].length,
-            'Structured technical signals currently detected.',
-          )}
-          {summaryMetric(
-            'Education',
-            effectiveProfile?.education.length ?? 0,
-            'Structured education entries available.',
-          )}
-          {summaryMetric(
-            'Projects',
-            effectiveProfile?.projects.length ?? 0,
-            'Portfolio-style projects currently parsed.',
-          )}
-        </section>
-      </div>
-    );
-  }
-
-  function renderProfileTab() {
-    return detail ? (
-      <div className="space-y-6">
-        <section className="surface-panel rounded-2xl p-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold">Parsed profile review</h2>
-              <p className="mt-2 text-sm text-text-secondary">
-                Review the effective ATS profile. Manual corrections always win over parsed values.
-              </p>
-            </div>
-            <Button type="button" variant="outline" onClick={() => setReviewEditorOpen(true)}>
-              <PencilLine className="h-4 w-4" />
-              Edit core fields
-            </Button>
-          </div>
-        </section>
-        <ParsedResumeInsights detail={detail} />
-      </div>
-    ) : (
-      <div className="surface-panel rounded-2xl p-6 text-sm text-text-secondary">
-        Upload and extract a resume to review the parsed ATS profile.
-      </div>
-    );
-  }
-
-  function renderAnalysisTab() {
-    return (
-      <div className="space-y-6">
         {selectedResume || detail ? (
           <ResumeAnalysisStatus
             resume={selectedResume ?? detail!.resume}
@@ -683,262 +432,185 @@ export default function ResumePage() {
             analyzeError={analyzeError}
           />
         ) : null}
-        <ResumeAtsAnalysisPanel analysis={atsAnalysis} />
+
+        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <Card padding="lg" className="space-y-5">
+            <SectionHeader
+              title="Resume versions"
+              description="Switch versions confidently without losing the full ATS and match context."
+            />
+            <div className="space-y-3">
+              {versionSummaries.length > 0 ? (
+                versionSummaries.map((version) => (
+                  <div
+                    key={version.id}
+                    className="flex flex-col gap-4 rounded-2xl border border-border-subtle bg-bg-surface p-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-medium text-text-primary">{version.file_name}</div>
+                        {version.is_active ? <Badge variant="success">Active</Badge> : null}
+                        <Badge variant={scoreVariant(version.score)}>{humanizeParseStatus(version.parse_status)}</Badge>
+                      </div>
+                      <div className="mt-2 text-sm text-text-secondary">
+                        Uploaded {formatDateTime(version.uploaded_at)} · Updated {formatDateTime(version.updated_at)}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {!version.is_active ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => void handleSetActive(version.id)}
+                          disabled={isActionRunning('set-active', version.id)}
+                          loading={isActionRunning('set-active', version.id)}
+                        >
+                          <ShieldCheck className="h-4 w-4" />
+                          Set active
+                        </Button>
+                      ) : null}
+                      <Button type="button" variant="ghost" onClick={() => setSelectedResumeId(version.id)}>
+                        View
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border-subtle px-4 py-5 text-sm text-text-secondary">
+                  No resume versions are available yet.
+                </div>
+              )}
+            </div>
+          </Card>
+
+          <div className="space-y-6">
+            <ResumeUploadCard
+              title={selectedResume ? 'Upload new version' : 'Upload your resume'}
+              description="Upload a private PDF or DOCX. Credvia keeps the original file private and builds a structured ATS profile from it."
+              actionLabel={selectedResume ? 'Upload new version' : 'Upload resume'}
+              compact
+              onUploaded={async () => setRefreshKey((current) => current + 1)}
+            />
+
+            <Card padding="lg">
+              <SectionHeader title="Quick actions" description="Use the actions below when you want to reprocess or clean up this version." />
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleRetryExtraction(false)}
+                  disabled={!selectedResumeId || isActionRunning('retry', selectedResumeId)}
+                  loading={selectedResumeId ? isActionRunning('retry', selectedResumeId) : false}
+                >
+                  <RefreshCcw className="h-4 w-4" />
+                  Retry extraction
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleRetryExtraction(true)}
+                  disabled={!selectedResumeId || discourageForceOcr || isActionRunning('force-ocr', selectedResumeId)}
+                  loading={selectedResumeId ? isActionRunning('force-ocr', selectedResumeId) : false}
+                >
+                  <Wand2 className="h-4 w-4" />
+                  Retry with OCR
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => selectedResumeId && void handleDeleteResume(selectedResumeId)}
+                  disabled={!selectedResumeId || isActionRunning('delete', selectedResumeId)}
+                  loading={selectedResumeId ? isActionRunning('delete', selectedResumeId) : false}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete version
+                </Button>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderProfileTab() {
+    if (!detail) {
+      return <Card padding="lg">Upload and extract a resume to review the parsed ATS profile.</Card>;
+    }
+
+    return (
+      <div className="page-section">
+        <Card padding="lg">
+          <SectionHeader
+            title="Parsed profile review"
+            description="This view always uses the effective profile: canonical extraction plus any manual corrections."
+            action={
+              <Button type="button" variant="secondary" onClick={() => setReviewEditorOpen(true)}>
+                Improve Resume
+              </Button>
+            }
+          />
+        </Card>
+        <ParsedResumeInsights detail={detail} />
+      </div>
+    );
+  }
+
+  function renderAtsTab() {
+    return (
+      <div className="page-section">
+        {selectedResume || detail ? (
+          <ResumeAnalysisStatus
+            resume={selectedResume ?? detail!.resume}
+            latestRun={detail?.analysisRuns?.[0] ?? null}
+            extractionMeta={detail?.profile?.raw_sections?.__meta ?? null}
+            analysisReadiness={analysisReadiness}
+            analyzing={analyzing}
+            analyzeError={analyzeError}
+          />
+        ) : null}
+        <ResumeAtsAnalysisPanel analysis={atsAnalysis} onFix={() => setReviewEditorOpen(true)} />
       </div>
     );
   }
 
   function renderMatchTab() {
     return (
-      <div className="space-y-6">
-        <section className="grid gap-4 xl:grid-cols-3">
-          <article className="surface-panel rounded-2xl p-5">
-            <h2 className="text-base font-semibold">Current internal jobs</h2>
-            <p className="mt-2 text-sm text-text-secondary">
-              Credvia’s saved job cards matched against your active ATS profile.
-            </p>
-          </article>
-          <article className="surface-panel rounded-2xl p-5">
-            <h2 className="text-base font-semibold">Paste a job description</h2>
-            <p className="mt-2 text-sm text-text-secondary">
-              Phase 1 foundation is ready. Direct JD comparison can layer onto this view next.
-            </p>
-            <Badge variant="secondary" className="mt-3">
-              Coming soon
-            </Badge>
-          </article>
-          <article className="surface-panel rounded-2xl p-5">
-            <h2 className="text-base font-semibold">Target role archetype</h2>
-            <p className="mt-2 text-sm text-text-secondary">
-              Compare this resume against role templates such as frontend engineer or product analyst.
-            </p>
-            <Badge variant="secondary" className="mt-3">
-              Coming soon
-            </Badge>
-          </article>
-        </section>
-
-        <section className="surface-panel rounded-2xl p-6">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-semibold">Job match overview</h2>
-              <p className="mt-2 text-sm text-text-secondary">
-                Your current internal job matches and ATS fit signals.
-              </p>
-            </div>
+      <div className="page-section">
+        <Card padding="lg">
+          <SectionHeader
+            title="Job match overview"
+            description="These matches are grounded in your current effective profile, not stale fallback data."
+          />
+        </Card>
+        {detail && detail.topMatches.length > 0 ? (
+          <div className="grid gap-5 xl:grid-cols-2">
+            {detail.topMatches.map((match) => (
+              <JobMatchCard key={match.id} match={match} />
+            ))}
           </div>
-
-          {detail && detail.topMatches.length > 0 ? (
-            <div className="mt-6 grid gap-4 lg:grid-cols-2">
-              {detail.topMatches.map((match) => (
-                <article
-                  key={match.id}
-                  className="rounded-2xl border border-border-subtle bg-bg-surface p-5"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-base font-semibold text-text-primary">
-                        {match.job?.title ?? 'Startup role'}
-                      </div>
-                      <div className="mt-1 text-sm text-text-secondary">
-                        {match.job?.company?.company_name ?? 'Unknown company'}
-                      </div>
-                    </div>
-                    <Badge variant={scoreTone(match.overall_score)}>
-                      {Math.round(match.overall_score)}% fit
-                    </Badge>
-                  </div>
-                  <div className="mt-4 h-2 w-full rounded-full bg-bg-overlay">
-                    <div
-                      className="h-2 rounded-full bg-accent"
-                      style={{ width: `${Math.min(100, Math.round(match.overall_score))}%` }}
-                    />
-                  </div>
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-text-tertiary">
-                        Strengths
-                      </div>
-                      <ul className="mt-2 space-y-1 text-sm text-text-secondary">
-                        {(match.strengths ?? []).slice(0, 3).map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                        {(match.strengths ?? []).length === 0 ? (
-                          <li>No strengths captured yet.</li>
-                        ) : null}
-                      </ul>
-                    </div>
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-text-tertiary">Missing skills</div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-sm text-text-secondary">
-                        {(match.missing_skills ?? []).slice(0, 6).map((item) => (
-                          <span
-                            key={item}
-                            className="rounded-full border border-border-subtle px-2.5 py-1"
-                          >
-                            {item}
-                          </span>
-                        ))}
-                        {(match.missing_skills ?? []).length === 0 ? (
-                          <span>No major skill gaps detected.</span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                  {Array.isArray(match.explanation?.matchedEvidence) &&
-                  match.explanation.matchedEvidence.length > 0 ? (
-                    <div className="mt-4">
-                      <div className="text-xs uppercase tracking-[0.14em] text-text-tertiary">
-                        Supporting evidence
-                      </div>
-                      <div className="mt-2 space-y-2 text-sm text-text-secondary">
-                        {match.explanation.matchedEvidence.slice(0, 3).map((item, index) => (
-                          <div key={`${match.id}-evidence-${index}`} className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-3">
-                            {item.text}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {Array.isArray(match.explanation?.breakdown) && match.explanation.breakdown.length > 0 ? (
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      {match.explanation.breakdown.slice(0, 4).map((item) => (
-                        <div key={`${match.id}-${item.key}`} className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-sm font-medium text-text-primary">{item.label}</div>
-                            <Badge variant={scoreTone(item.score)}>{item.score}</Badge>
-                          </div>
-                          <div className="mt-1 text-xs text-text-tertiary">{item.rationale}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-text-secondary">
-              Run analysis to activate job match scoring for this resume.
-            </p>
-          )}
-        </section>
+        ) : (
+          <Card padding="lg">
+            <p className="text-sm text-text-secondary">Run analysis to activate job match scoring for this resume.</p>
+          </Card>
+        )}
       </div>
     );
   }
 
   function renderSuggestionsTab() {
-    const suggestions = atsAnalysis?.suggestedActions ?? [];
+    if (!atsAnalysis) {
+      return (
+        <Card padding="lg">
+          <p className="text-sm text-text-secondary">Run analysis to unlock targeted improvement suggestions.</p>
+        </Card>
+      );
+    }
+
     return (
-      <section className="space-y-6">
-        <article className="surface-panel rounded-2xl p-6">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-semibold">Improvement suggestions</h2>
-              <p className="mt-2 text-sm text-text-secondary">
-                Actionable resume improvements grouped by impact. Auto-apply can land after the review workspace is stable.
-              </p>
-            </div>
-            <Badge variant="secondary">Phase 1</Badge>
-          </div>
-        </article>
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          {[
-            { label: 'Must Fix', key: 'must_fix' },
-            { label: 'High Impact', key: 'high' },
-            { label: 'Nice to Have', key: 'nice_to_have' },
-          ].map((bucket) => {
-            const items = suggestions.filter((item) => item.impact === bucket.key);
-            return (
-              <article key={bucket.key} className="surface-panel rounded-2xl p-5">
-                <h3 className="text-base font-semibold">{bucket.label}</h3>
-                <div className="mt-4 space-y-3">
-                  {items.length > 0 ? (
-                    items.map((item) => (
-                      <div
-                        key={`${bucket.key}-${item.title}`}
-                        className="rounded-xl border border-border-subtle bg-bg-surface p-4"
-                      >
-                        <div className="text-sm font-medium text-text-primary">{item.title}</div>
-                        <p className="mt-2 text-sm text-text-secondary">{item.reason}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-text-secondary">
-                      No items in this bucket right now.
-                    </p>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </section>
-    );
-  }
-
-  function renderVersionsTab() {
-    return (
-      <section className="surface-panel rounded-2xl p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold">Resume versions</h2>
-            <p className="mt-2 text-sm text-text-secondary">
-              Track active uploads, parsing confidence, and ATS score progression over time.
-            </p>
-          </div>
-          <Badge variant="secondary">{versionSummaries.length} versions</Badge>
-        </div>
-
-        <div className="mt-6 space-y-3">
-          {versionSummaries.length > 0 ? (
-            versionSummaries.map((version) => (
-              <article
-                key={version.id}
-                className="flex flex-col gap-4 rounded-2xl border border-border-subtle bg-bg-surface p-4 md:flex-row md:items-center md:justify-between"
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="font-medium text-text-primary">{version.file_name}</div>
-                    {version.is_active ? <Badge variant="accent">Active</Badge> : null}
-                    <Badge variant={parseStatusVariant(version.parse_status)}>
-                      {humanizeParseStatus(version.parse_status)}
-                    </Badge>
-                    {version.score !== null ? (
-                      <Badge variant={scoreTone(version.score)}>{version.score}/100 ATS</Badge>
-                    ) : null}
-                  </div>
-                  <div className="mt-2 text-sm text-text-secondary">
-                    Uploaded {formatDateTime(version.uploaded_at)} • Updated {formatDateTime(version.updated_at)}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {!version.is_active ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => void handleSetActive(version.id)}
-                      disabled={isActionRunning('set-active', version.id)}
-                    >
-                      Set active
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setSelectedResumeId(version.id)}
-                  >
-                    View
-                  </Button>
-                </div>
-              </article>
-            ))
-          ) : (
-            <p className="text-sm text-text-secondary">No resume versions are available yet.</p>
-          )}
-        </div>
-      </section>
+      <div className="page-section">
+        <AtsImprovements analysis={atsAnalysis} onFix={() => setReviewEditorOpen(true)} />
+      </div>
     );
   }
 
@@ -947,8 +619,8 @@ export default function ResumePage() {
     case 'profile':
       tabContent = renderProfileTab();
       break;
-    case 'analysis':
-      tabContent = renderAnalysisTab();
+    case 'ats':
+      tabContent = renderAtsTab();
       break;
     case 'match':
       tabContent = renderMatchTab();
@@ -956,127 +628,92 @@ export default function ResumePage() {
     case 'suggestions':
       tabContent = renderSuggestionsTab();
       break;
-    case 'versions':
-      tabContent = renderVersionsTab();
-      break;
     case 'overview':
     default:
-      tabContent = renderOverview(atsAnalysis);
+      tabContent = renderOverview();
       break;
   }
 
+  const pageTitle = selectedResume?.file_name ?? 'Resume Intelligence';
+  const pageSubtitle = selectedResume
+    ? `Last updated ${formatDateTime(selectedResume.updated_at ?? selectedResume.uploaded_at)} · ${selectedResume.mime_type}`
+    : 'Upload a resume to build one truthful profile for parsing, ATS scoring, and job matching.';
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <header className="rounded-3xl bg-bg-surface/70 px-6 py-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-3xl font-semibold">Resume Intelligence</h1>
-              {selectedResume ? (
-                <Badge variant={parseStatusVariant(selectedResume.parse_status)}>
-                  {humanizeParseStatus(selectedResume.parse_status)}
-                </Badge>
-              ) : null}
-              {atsAnalysis ? (
-                <Badge variant={scoreTone(atsAnalysis.overallScore)}>
-                  {scoreLabel(atsAnalysis.overallScore)}
-                </Badge>
-              ) : null}
-            </div>
-            <p className="max-w-3xl text-sm text-text-secondary">
-              A phased ATS-grade workspace for extraction, structured review, analysis, and job fit insights.
-            </p>
-            {selectedResume ? (
-              <div className="text-xs text-text-tertiary">
-                Last updated {formatDateTime(selectedResume.updated_at ?? selectedResume.uploaded_at)}
-              </div>
-            ) : null}
-          </div>
+    <div className="page-section">
+      <ResumeHeader
+        resumeName={pageTitle}
+        subtitle={pageSubtitle}
+        statusLabel={scoreLabel(atsAnalysis?.overallScore)}
+        statusVariant={scoreVariant(atsAnalysis?.overallScore)}
+        onImprove={() => setReviewEditorOpen(true)}
+        onReanalyze={() => void handleAnalyze()}
+        improveDisabled={!detail}
+        reanalyzeDisabled={!canAnalyzeSelected || !selectedResumeId || isActionRunning('analyze', selectedResumeId)}
+        reanalyzeLoading={selectedResumeId ? isActionRunning('analyze', selectedResumeId) : false}
+      />
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void handleAnalyze()}
-              disabled={
-                !canAnalyzeSelected ||
-                !selectedResumeId ||
-                isActionRunning('analyze', selectedResumeId)
-              }
-            >
-              {isActionRunning('analyze', selectedResumeId) ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              Analyze
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void handleRetryExtraction(true)}
-              disabled={
-                !selectedResumeId ||
-                discourageForceOcr ||
-                isActionRunning('force-ocr', selectedResumeId)
-              }
-            >
-              {isActionRunning('force-ocr', selectedResumeId) ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Wand2 className="h-4 w-4" />
-              )}
-              Force OCR
-            </Button>
-          </div>
-        </div>
-
-        <ScrollablePillTabs
-          className="mt-6"
-          items={tabItems}
-          value={activeTab}
-          onValueChange={setActiveTab}
-        />
-      </header>
-
-      {error ? (
-        <div className="rounded-2xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">
-          {error}
-        </div>
-      ) : null}
-      {detailError ? (
-        <div className="rounded-2xl border border-warning/20 bg-warning/5 px-4 py-3 text-sm text-warning">
-          {detailError}
-        </div>
-      ) : null}
-      {authExpired ? (
-        <div className="rounded-2xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">
-          Your session expired. Sign in again and retry.
-        </div>
-      ) : null}
+      {error ? <div className="rounded-2xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">{error}</div> : null}
+      {detailError ? <div className="rounded-2xl border border-warning/20 bg-warning/5 px-4 py-3 text-sm text-warning">{detailError}</div> : null}
+      {authExpired ? <div className="rounded-2xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">Your session expired. Sign in again and retry.</div> : null}
 
       {resumes && resumes.length > 0 ? (
-        <section className="surface-panel rounded-2xl p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            {resumes.map((resume) => (
-              <button
-                key={resume.id}
-                type="button"
-                onClick={() => setSelectedResumeId(resume.id)}
-                className={`rounded-full border px-3 py-2 text-sm transition-colors ${
-                  resume.id === selectedResumeId
-                    ? 'border-accent bg-accent/10 text-text-primary'
-                    : 'border-border-subtle bg-bg-surface text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                {resume.file_name}
-              </button>
-            ))}
-          </div>
-        </section>
+        <div className="flex flex-wrap gap-2">
+          {resumes.map((resume) => (
+            <button
+              key={resume.id}
+              type="button"
+              onClick={() => setSelectedResumeId(resume.id)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 ${
+                resume.id === selectedResumeId
+                  ? 'bg-accent/10 text-accent shadow-sm'
+                  : 'bg-bg-surface text-text-secondary hover:bg-bg-overlay hover:text-text-primary'
+              }`}
+            >
+              {resume.file_name}
+            </button>
+          ))}
+        </div>
       ) : null}
 
+      <Card padding="sm">
+        <div className="flex flex-wrap gap-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setActiveTab(tab.value)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 ${
+                tab.value === activeTab
+                  ? 'bg-accent text-white shadow-[0_12px_24px_rgba(99,102,241,0.2)]'
+                  : 'text-text-secondary hover:bg-bg-overlay hover:text-text-primary'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </Card>
+
       {tabContent}
+
+      {!selectedResume && !detail ? (
+        <Card padding="lg">
+          <SectionHeader
+            title="Start with your first resume"
+            description="Upload a PDF or DOCX to unlock the review workspace, ATS scoring, and evidence-based job matching."
+          />
+          <div className="mt-5">
+            <ResumeUploadCard
+              title="Upload your resume"
+              description="Credvia keeps the original file private and builds a structured ATS profile from it."
+              actionLabel="Upload resume"
+              compact
+              onUploaded={async () => setRefreshKey((current) => current + 1)}
+            />
+          </div>
+        </Card>
+      ) : null}
 
       {detail ? (
         <ResumeProfileReviewEditor
