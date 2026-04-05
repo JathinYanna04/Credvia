@@ -1,13 +1,13 @@
-import Link from 'next/link';
-import { ArrowUpRight, MessageSquare } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { PostTypeBadge } from '@/components/post/PostTypeBadge';
-import { ReputationBadge } from '@/components/reputation/ReputationBadge';
-import { VoteButtons } from '@/components/voting/VoteButtons';
-import { ValidationScoreBadge } from '@/components/startup-ideas/ValidationScoreBadge';
-import type { PostSummary } from '@/lib/types';
-import { formatRelativeTime } from '@/lib/utils/format';
+import Link from "next/link";
+import { ArrowUpRight, MessageSquare } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { PostTypeBadge } from "@/components/post/PostTypeBadge";
+import { ReputationBadge } from "@/components/reputation/ReputationBadge";
+import { VoteButtons } from "@/components/voting/VoteButtons";
+import { ValidationScoreBadge } from "@/components/startup-ideas/ValidationScoreBadge";
+import type { PostSummary } from "@/lib/types";
+import { formatRelativeTime } from "@/lib/utils/format";
 
 export interface PostCardProps {
   post: PostSummary;
@@ -16,7 +16,7 @@ export interface PostCardProps {
 export function PostCard({ post }: PostCardProps) {
   const topRep = post.author.reputation[0];
   const detailHref =
-    post.postType === 'startup_idea' ? `/ideas/${post.id}` : `/post/${post.id}`;
+    post.postType === "startup_idea" ? `/ideas/${post.id}` : `/post/${post.id}`;
 
   return (
     <article className="surface-panel card-lift overflow-hidden p-4 sm:p-5">
@@ -24,9 +24,9 @@ export function PostCard({ post }: PostCardProps) {
         <Avatar className="mt-0.5 h-10 w-10 shrink-0">
           <AvatarFallback className="bg-accent/10 text-xs font-semibold text-accent">
             {post.author.fullName
-              .split(' ')
+              .split(" ")
               .map((chunk) => chunk[0])
-              .join('')
+              .join("")
               .slice(0, 2)}
           </AvatarFallback>
         </Avatar>
@@ -64,7 +64,9 @@ export function PostCard({ post }: PostCardProps) {
               </Badge>
             </Link>
             <PostTypeBadge type={post.postType} />
-            {post.unanswered ? <Badge variant="warning">Needs an answer</Badge> : null}
+            {post.unanswered ? (
+              <Badge variant="warning">Needs an answer</Badge>
+            ) : null}
           </div>
         </div>
       </div>
@@ -77,7 +79,10 @@ export function PostCard({ post }: PostCardProps) {
             </h3>
           </Link>
           {post.startupIdea ? (
-            <ValidationScoreBadge score={post.startupIdea.validationScore} compact />
+            <ValidationScoreBadge
+              score={post.startupIdea.validationScore}
+              compact
+            />
           ) : null}
         </div>
 
@@ -88,7 +93,7 @@ export function PostCard({ post }: PostCardProps) {
         {post.startupIdea ? (
           <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
             <Badge variant="secondary">
-              {post.startupIdea.stage.replaceAll('_', ' ')}
+              {post.startupIdea.stage.replaceAll("_", " ")}
             </Badge>
             <Badge variant="secondary">{post.startupIdea.marketCategory}</Badge>
             <Badge variant="secondary">
@@ -116,6 +121,7 @@ export function PostCard({ post }: PostCardProps) {
         <div className="min-w-0">
           <VoteButtons
             score={post.voteScore}
+            initialVote={post.viewerVote ?? 0}
             endpoint={`/api/v1/posts/${post.id}/vote`}
             className="h-11 w-full justify-between rounded-2xl px-2 sm:w-auto"
           />

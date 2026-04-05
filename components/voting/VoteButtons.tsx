@@ -1,26 +1,36 @@
-'use client';
+"use client";
 
-import { ArrowBigDown, ArrowBigUp } from 'lucide-react';
-import { useState } from 'react';
-import { cn } from '@/lib/utils/cn';
+import { ArrowBigDown, ArrowBigUp } from "lucide-react";
+import { useEffect, useState } from "react";
+import { cn } from "@/lib/utils/cn";
 
 export interface VoteButtonsProps {
   score: number;
-  orientation?: 'vertical' | 'horizontal';
+  initialVote?: -1 | 0 | 1;
+  orientation?: "vertical" | "horizontal";
   className?: string;
   endpoint?: string;
 }
 
 export function VoteButtons({
   score,
-  orientation = 'horizontal',
+  initialVote = 0,
+  orientation = "horizontal",
   className,
   endpoint,
 }: VoteButtonsProps) {
   const [localScore, setLocalScore] = useState(score);
-  const [vote, setVote] = useState<-1 | 0 | 1>(0);
+  const [vote, setVote] = useState<-1 | 0 | 1>(initialVote);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLocalScore(score);
+  }, [score]);
+
+  useEffect(() => {
+    setVote(initialVote);
+  }, [initialVote]);
 
   const applyVote = async (nextVote: -1 | 1) => {
     if (loading) {
@@ -40,22 +50,29 @@ export function VoteButtons({
 
     setLoading(true);
     const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ value: resolvedVote }),
     });
 
     if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+      const payload = (await response.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
       setVote(vote);
       setLocalScore(localScore);
-      setError(payload?.error?.message ?? 'Could not save your vote.');
+      setError(payload?.error?.message ?? "Could not save your vote.");
       setLoading(false);
       return;
     }
 
-    const payload = (await response.json()) as { data?: { score?: number } };
-    if (typeof payload.data?.score === 'number') {
+    const payload = (await response.json()) as {
+      data?: { score?: number; value?: -1 | 0 | 1 };
+    };
+    if (typeof payload.data?.value === "number") {
+      setVote(payload.data.value);
+    }
+    if (typeof payload.data?.score === "number") {
       setLocalScore(payload.data.score);
     }
 
@@ -66,8 +83,8 @@ export function VoteButtons({
     <>
       <div
         className={cn(
-          'flex items-center gap-1 rounded-full border border-border-subtle bg-bg-base p-1',
-          orientation === 'vertical' && 'flex-col rounded-2xl p-2',
+          "flex items-center gap-1 rounded-full border border-border-subtle bg-bg-base p-1",
+          orientation === "vertical" && "flex-col rounded-2xl p-2",
           className,
         )}
       >
@@ -75,8 +92,8 @@ export function VoteButtons({
           type="button"
           disabled={loading}
           className={cn(
-            'flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition hover:bg-bg-overlay hover:text-accent active:scale-[0.97]',
-            vote === 1 && 'bg-[rgba(34,211,238,0.12)] text-accent',
+            "flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition hover:bg-bg-overlay hover:text-accent active:scale-[0.97]",
+            vote === 1 && "bg-[rgba(34,211,238,0.12)] text-accent",
           )}
           onClick={() => void applyVote(1)}
           aria-label="Upvote post"
@@ -86,8 +103,8 @@ export function VoteButtons({
         <span
           aria-live="polite"
           className={cn(
-            'min-w-[2rem] text-center font-mono text-xs',
-            localScore > 0 ? 'text-accent' : 'text-text-tertiary',
+            "min-w-[2rem] text-center font-mono text-xs",
+            localScore > 0 ? "text-accent" : "text-text-tertiary",
           )}
         >
           {localScore}
@@ -96,8 +113,8 @@ export function VoteButtons({
           type="button"
           disabled={loading}
           className={cn(
-            'flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition hover:bg-bg-overlay hover:text-danger active:scale-[0.97]',
-            vote === -1 && 'bg-[rgba(248,113,113,0.12)] text-danger',
+            "flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition hover:bg-bg-overlay hover:text-danger active:scale-[0.97]",
+            vote === -1 && "bg-[rgba(248,113,113,0.12)] text-danger",
           )}
           onClick={() => void applyVote(-1)}
           aria-label="Downvote post"
