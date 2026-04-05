@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowUpRight, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +13,13 @@ import { formatRelativeTime } from "@/lib/utils/format";
 
 export interface PostCardProps {
   post: PostSummary;
+  onVoteChange?: (
+    postId: string,
+    next: { score: number; vote: -1 | 0 | 1 },
+  ) => void;
 }
 
-export function PostCard({ post }: PostCardProps) {
+export function PostCard({ post, onVoteChange }: PostCardProps) {
   const topRep = post.author.reputation[0];
   const detailHref =
     post.postType === "startup_idea" ? `/ideas/${post.id}` : `/post/${post.id}`;
@@ -123,6 +129,7 @@ export function PostCard({ post }: PostCardProps) {
             score={post.voteScore}
             initialVote={post.viewerVote ?? 0}
             endpoint={`/api/v1/posts/${post.id}/vote`}
+            onVoteChange={(next) => onVoteChange?.(post.id, next)}
             className="h-11 w-full justify-between rounded-2xl px-2 sm:w-auto"
           />
         </div>

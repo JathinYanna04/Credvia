@@ -10,6 +10,7 @@ export interface VoteButtonsProps {
   orientation?: "vertical" | "horizontal";
   className?: string;
   endpoint?: string;
+  onVoteChange?: (next: { score: number; vote: -1 | 0 | 1 }) => void;
 }
 
 export function VoteButtons({
@@ -18,6 +19,7 @@ export function VoteButtons({
   orientation = "horizontal",
   className,
   endpoint,
+  onVoteChange,
 }: VoteButtonsProps) {
   const [localScore, setLocalScore] = useState(score);
   const [vote, setVote] = useState<-1 | 0 | 1>(initialVote);
@@ -26,11 +28,9 @@ export function VoteButtons({
 
   useEffect(() => {
     setLocalScore(score);
-  }, [score]);
-
-  useEffect(() => {
     setVote(initialVote);
-  }, [initialVote]);
+    setError(null);
+  }, [endpoint]);
 
   const applyVote = async (nextVote: -1 | 1) => {
     if (loading) {
@@ -43,6 +43,7 @@ export function VoteButtons({
     setVote(resolvedVote);
     setLocalScore(optimisticScore);
     setError(null);
+    onVoteChange?.({ score: optimisticScore, vote: resolvedVote });
 
     if (!endpoint) {
       return;
@@ -62,6 +63,7 @@ export function VoteButtons({
       setVote(vote);
       setLocalScore(localScore);
       setError(payload?.error?.message ?? "Could not save your vote.");
+      onVoteChange?.({ score: localScore, vote });
       setLoading(false);
       return;
     }
@@ -74,6 +76,13 @@ export function VoteButtons({
     }
     if (typeof payload.data?.score === "number") {
       setLocalScore(payload.data.score);
+      onVoteChange?.({
+        score: payload.data.score,
+        vote:
+          typeof payload.data?.value === "number"
+            ? payload.data.value
+            : resolvedVote,
+      });
     }
 
     setLoading(false);
