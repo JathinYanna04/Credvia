@@ -36,7 +36,7 @@ export default function FeedPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-feed space-y-6 pb-24 sm:space-y-7 sm:pb-8">
+    <div className="w-full space-y-6 pb-24 sm:space-y-7 sm:pb-8">
       <header className="premium-soft-gradient rounded-[28px] border border-border-subtle px-5 py-6 shadow-sm sm:px-6 sm:py-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
