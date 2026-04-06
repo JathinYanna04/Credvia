@@ -1,16 +1,20 @@
-import Link from 'next/link';
-import { ExternalLink } from 'lucide-react';
-import { CommentEditor } from '@/components/comments/CommentEditor';
-import { CommentThread } from '@/components/comments/CommentThread';
-import { PostTypeBadge } from '@/components/post/PostTypeBadge';
-import { IdeaFollowButton } from '@/components/startup-ideas/IdeaFollowButton';
-import { IdeaRevisionForm } from '@/components/startup-ideas/IdeaRevisionForm';
-import { IdeaRevisionTimeline } from '@/components/startup-ideas/IdeaRevisionTimeline';
-import { ReportIdeaButton } from '@/components/startup-ideas/ReportIdeaButton';
-import { ValidationScoreBadge } from '@/components/startup-ideas/ValidationScoreBadge';
-import { VoteButtons } from '@/components/voting/VoteButtons';
-import type { CommentSummary, PostSummary, StartupIdeaRevisionSummary } from '@/lib/types';
-import { formatRelativeTime } from '@/lib/utils/format';
+import Link from "next/link";
+import { ExternalLink } from "lucide-react";
+import { CommentEditor } from "@/components/comments/CommentEditor";
+import { CommentThread } from "@/components/comments/CommentThread";
+import { PostTypeBadge } from "@/components/post/PostTypeBadge";
+import { IdeaFollowButton } from "@/components/startup-ideas/IdeaFollowButton";
+import { IdeaRevisionForm } from "@/components/startup-ideas/IdeaRevisionForm";
+import { IdeaRevisionTimeline } from "@/components/startup-ideas/IdeaRevisionTimeline";
+import { ReportIdeaButton } from "@/components/startup-ideas/ReportIdeaButton";
+import { ValidationScoreBadge } from "@/components/startup-ideas/ValidationScoreBadge";
+import { VoteButtons } from "@/components/voting/VoteButtons";
+import type {
+  CommentSummary,
+  PostSummary,
+  StartupIdeaRevisionSummary,
+} from "@/lib/types";
+import { formatRelativeTime } from "@/lib/utils/format";
 
 export interface PostDetailProps {
   post: PostSummary;
@@ -23,7 +27,11 @@ export interface PostDetailProps {
   };
 }
 
-export function PostDetail({ post, comments, startupIdeaContext }: PostDetailProps) {
+export function PostDetail({
+  post,
+  comments,
+  startupIdeaContext,
+}: PostDetailProps) {
   const topRep = post.author.reputation[0];
 
   return (
@@ -47,50 +55,74 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
         </div>
         <div className="surface-panel flex flex-col gap-4 p-4 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="font-medium text-text-primary">@{post.author.username}</div>
-          {topRep ? (
-            <div className="rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
-              {topRep.score} rep in {topRep.communityName}
+            <div className="font-medium text-text-primary">
+              @{post.author.username}
             </div>
-          ) : (
-            <div className="rounded-full bg-bg-overlay px-3 py-1 text-xs">
-              Reputation grows when people upvote useful work
-            </div>
-          )}
+            {topRep ? (
+              <div className="rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+                {topRep.score} rep in {topRep.communityName}
+              </div>
+            ) : (
+              <div className="rounded-full bg-bg-overlay px-3 py-1 text-xs">
+                Reputation grows when people upvote useful work
+              </div>
+            )}
           </div>
           <div className="rounded-full bg-bg-base px-3 py-1.5 text-xs font-medium text-text-secondary">
             {post.commentCount} replies
           </div>
         </div>
-        <p className="max-w-3xl text-base leading-8 text-text-secondary">{post.body}</p>
+        <p className="max-w-3xl text-base leading-8 text-text-secondary">
+          {post.body}
+        </p>
         {post.startupIdea ? (
           <div className="grid gap-4 rounded-3xl border border-border-subtle bg-bg-surface p-5 md:grid-cols-2">
             <div>
-              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Problem</div>
-              <p className="mt-2 text-sm leading-6 text-text-secondary">{post.startupIdea.problem}</p>
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
+                Problem
+              </div>
+              <p className="mt-2 text-sm leading-6 text-text-secondary">
+                {post.startupIdea.problem}
+              </p>
             </div>
             <div>
-              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Target Audience</div>
-              <p className="mt-2 text-sm leading-6 text-text-secondary">{post.startupIdea.targetAudience}</p>
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
+                Target Audience
+              </div>
+              <p className="mt-2 text-sm leading-6 text-text-secondary">
+                {post.startupIdea.targetAudience}
+              </p>
             </div>
             <div>
-              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Solution</div>
-              <p className="mt-2 text-sm leading-6 text-text-secondary">{post.startupIdea.solution}</p>
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
+                Solution
+              </div>
+              <p className="mt-2 text-sm leading-6 text-text-secondary">
+                {post.startupIdea.solution}
+              </p>
             </div>
             <div className="space-y-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Stage</div>
+                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
+                  Stage
+                </div>
                 <p className="mt-2 text-sm leading-6 text-text-secondary">
-                  {post.startupIdea.stage.replaceAll('_', ' ')}
+                  {post.startupIdea.stage.replaceAll("_", " ")}
                 </p>
               </div>
               <div>
-                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Market Category</div>
-                <p className="mt-2 text-sm leading-6 text-text-secondary">{post.startupIdea.marketCategory}</p>
+                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
+                  Market Category
+                </div>
+                <p className="mt-2 text-sm leading-6 text-text-secondary">
+                  {post.startupIdea.marketCategory}
+                </p>
               </div>
               {post.startupIdea.monetizationModel ? (
                 <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Monetization</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
+                    Monetization
+                  </div>
                   <p className="mt-2 text-sm leading-6 text-text-secondary">
                     {post.startupIdea.monetizationModel}
                   </p>
@@ -101,8 +133,9 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
         ) : null}
         {post.startupIdea ? (
           <div className="rounded-2xl border border-border-subtle bg-bg-base px-4 py-3 text-sm text-text-secondary">
-            Startup ideas stay append-only. Founders can publish revisions without overwriting earlier
-            thinking, so the validation trail remains transparent.
+            Startup ideas stay append-only. Founders can publish revisions
+            without overwriting earlier thinking, so the validation trail
+            remains transparent.
           </div>
         ) : null}
       </header>
@@ -110,6 +143,7 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
       <div className="flex flex-col gap-6 rounded-3xl border border-border-subtle bg-bg-surface p-5 sm:flex-row">
         <VoteButtons
           score={post.voteScore}
+          initialVote={post.viewerVote ?? 0}
           endpoint={`/api/v1/posts/${post.id}/vote`}
           orientation="vertical"
         />
@@ -141,19 +175,27 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
 
       {post.startupIdea && startupIdeaContext?.advancedFeaturesEnabled ? (
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <IdeaRevisionTimeline revisions={startupIdeaContext?.revisions ?? []} />
+          <IdeaRevisionTimeline
+            revisions={startupIdeaContext?.revisions ?? []}
+          />
           <div className="space-y-4">
             <div className="surface-panel p-5">
-              <h2 className="text-lg font-semibold text-text-primary">Idea momentum</h2>
+              <h2 className="text-lg font-semibold text-text-primary">
+                Idea momentum
+              </h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Followers</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
+                    Followers
+                  </div>
                   <p className="mt-1 text-2xl font-semibold text-text-primary">
                     {post.startupIdea.followerCount}
                   </p>
                 </div>
                 <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Revisions</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
+                    Revisions
+                  </div>
                   <p className="mt-1 text-2xl font-semibold text-text-primary">
                     {post.startupIdea.revisionCount}
                   </p>
@@ -161,7 +203,8 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
               </div>
               {post.startupIdea.lastRevisionAt ? (
                 <p className="mt-4 text-sm text-text-secondary">
-                  Last revised {formatRelativeTime(post.startupIdea.lastRevisionAt)}
+                  Last revised{" "}
+                  {formatRelativeTime(post.startupIdea.lastRevisionAt)}
                 </p>
               ) : null}
             </div>
@@ -170,7 +213,8 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
               <IdeaRevisionForm post={post} />
             ) : (
               <div className="surface-panel p-5 text-sm text-text-secondary">
-                Follow this idea to get notified when the founder publishes a revision.
+                Follow this idea to get notified when the founder publishes a
+                revision.
               </div>
             )}
           </div>
@@ -185,13 +229,18 @@ export function PostDetail({ post, comments, startupIdeaContext }: PostDetailPro
               Add a concrete answer, useful context, or a sharper follow-up.
             </p>
           </div>
-          <div className="rounded-full bg-bg-overlay px-3 py-1.5 text-sm text-text-secondary">Answer this</div>
+          <div className="rounded-full bg-bg-overlay px-3 py-1.5 text-sm text-text-secondary">
+            Answer this
+          </div>
         </div>
         <CommentEditor postId={post.id} />
         {comments.length === 0 ? (
           <div className="surface-panel space-y-3 p-5 text-sm text-text-secondary">
             <p>No feedback yet.</p>
-            <p>Be the first person to pressure-test this with a concrete answer or a useful follow-up question.</p>
+            <p>
+              Be the first person to pressure-test this with a concrete answer
+              or a useful follow-up question.
+            </p>
           </div>
         ) : null}
         <CommentThread comments={comments} />

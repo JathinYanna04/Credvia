@@ -1,41 +1,51 @@
-import { handleApiError, ok } from '@/lib/api';
-import { IdeaSearchSchema } from '@/lib/schemas/community';
-import { isMissingStartupIdeaAdvancedSchemaError } from '@/lib/supabase/startup-idea-schema';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { toPostSummaries } from '@/lib/supabase/query-helpers';
+import { handleApiError, ok } from "@/lib/api";
+import { IdeaSearchSchema } from "@/lib/schemas/community";
+import { isMissingStartupIdeaAdvancedSchemaError } from "@/lib/supabase/startup-idea-schema";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { toPostSummaries } from "@/lib/supabase/query-helpers";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const filters = IdeaSearchSchema.parse({
-      query: searchParams.get('q') ?? undefined,
-      sort: searchParams.get('sort') ?? undefined,
-      stage: searchParams.get('stage') ?? undefined,
-      category: searchParams.get('category') ?? undefined,
+      query: searchParams.get("q") ?? undefined,
+      sort: searchParams.get("sort") ?? undefined,
+      stage: searchParams.get("stage") ?? undefined,
+      category: searchParams.get("category") ?? undefined,
     });
     const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
     let ideaQuery = supabase
-      .from('startup_ideas')
-      .select('post_id, problem, target_audience, solution, market_category, stage, created_at')
-      .order('created_at', { ascending: false })
+      .from("startup_ideas")
+      .select(
+        "post_id, problem, target_audience, solution, market_category, stage, created_at",
+      )
+      .order("created_at", { ascending: false })
       .limit(100);
 
     if (filters.stage) {
-      ideaQuery = ideaQuery.eq('stage', filters.stage);
+      ideaQuery = ideaQuery.eq("stage", filters.stage);
     }
 
     if (filters.category) {
-      ideaQuery = ideaQuery.ilike('market_category', `%${filters.category}%`);
+      ideaQuery = ideaQuery.ilike("market_category", `%${filters.category}%`);
     }
 
     let ideaIdsResult = await ideaQuery;
 
-    if (ideaIdsResult.error && isMissingStartupIdeaAdvancedSchemaError(ideaIdsResult.error)) {
+    if (
+      ideaIdsResult.error &&
+      isMissingStartupIdeaAdvancedSchemaError(ideaIdsResult.error)
+    ) {
       ideaIdsResult = await supabase
-        .from('startup_ideas')
-        .select('post_id, problem, target_audience, solution, market_category, stage, created_at')
-        .order('created_at', { ascending: false })
+        .from("startup_ideas")
+        .select(
+          "post_id, problem, target_audience, solution, market_category, stage, created_at",
+        )
+        .order("created_at", { ascending: false })
         .limit(100);
     }
 
@@ -49,10 +59,10 @@ export async function GET(request: Request) {
     if (filters.query) {
       const pattern = `%${filters.query}%`;
       const titleBodyMatches = await supabase
-        .from('posts')
-        .select('id')
-        .eq('post_type', 'startup_idea')
-        .eq('status', 'published')
+        .from("posts")
+        .select("id")
+        .eq("post_type", "startup_idea")
+        .eq("status", "published")
         .or(`title.ilike.${pattern},body_md.ilike.${pattern}`)
         .limit(100);
 
@@ -72,18 +82,22 @@ export async function GET(request: Request) {
     }
 
     const postsResult = await supabase
-      .from('posts')
-      .select('*')
-      .in('id', postIds)
-      .eq('post_type', 'startup_idea')
-      .eq('status', 'published')
-      .order('created_at', { ascending: false });
+      .from("posts")
+      .select("*")
+      .in("id", postIds)
+      .eq("post_type", "startup_idea")
+      .eq("status", "published")
+      .order("created_at", { ascending: false });
 
     if (postsResult.error) {
       throw new Error(postsResult.error.message);
     }
 
-    let ideas = await toPostSummaries(supabase, postsResult.data ?? []);
+    let ideas = await toPostSummaries(
+      supabase,
+      postsResult.data ?? [],
+      user?.id,
+    );
 
     if (filters.query) {
       const normalized = filters.query.toLowerCase();
@@ -103,18 +117,25 @@ export async function GET(request: Request) {
     }
 
     const sorted = [...ideas].sort((left, right) => {
-      if (filters.sort === 'traction') {
-        return (right.startupIdea?.validationScore ?? 0) - (left.startupIdea?.validationScore ?? 0);
+      if (filters.sort === "traction") {
+        return (
+          (right.startupIdea?.validationScore ?? 0) -
+          (left.startupIdea?.validationScore ?? 0)
+        );
       }
 
-      if (filters.sort === 'active') {
+      if (filters.sort === "active") {
         return (
-          new Date(right.startupIdea?.lastRevisionAt ?? right.createdAt).getTime() -
+          new Date(
+            right.startupIdea?.lastRevisionAt ?? right.createdAt,
+          ).getTime() -
           new Date(left.startupIdea?.lastRevisionAt ?? left.createdAt).getTime()
         );
       }
 
-      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+      return (
+        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+      );
     });
 
     return ok(sorted);

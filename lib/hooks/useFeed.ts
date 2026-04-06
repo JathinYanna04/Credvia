@@ -1,7 +1,8 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import type { FeedTab, PostSummary } from '@/lib/types';
+import { useEffect, useState } from "react";
+import { computeIdeaValidationScore } from "@/lib/utils/idea-score";
+import type { FeedTab, PostSummary } from "@/lib/types";
 
 export function useFeed(tab: FeedTab) {
   const [posts, setPosts] = useState<PostSummary[] | undefined>(undefined);
@@ -28,13 +29,17 @@ export function useFeed(tab: FeedTab) {
         }
 
         if (!response.ok) {
-          throw new Error(payload.error?.message ?? 'Failed to load feed.');
+          throw new Error(payload.error?.message ?? "Failed to load feed.");
         }
 
         setPosts(payload.data ?? []);
       })
       .catch((fetchError) =>
-        setError(fetchError instanceof Error ? fetchError.message : 'Failed to load feed.'),
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : "Failed to load feed.",
+        ),
       );
   }, [tab, refreshKey]);
 
@@ -44,6 +49,33 @@ export function useFeed(tab: FeedTab) {
     authExpired,
     isLoading: posts === undefined && !error,
     isEmpty: Array.isArray(posts) && posts.length === 0,
+    updateVote: (postId: string, next: { score: number; vote: -1 | 0 | 1 }) =>
+      setPosts(
+        (current) =>
+          current?.map((post) => {
+            if (post.id !== postId) {
+              return post;
+            }
+
+            return {
+              ...post,
+              voteScore: next.score,
+              viewerVote: next.vote,
+              startupIdea: post.startupIdea
+                ? {
+                    ...post.startupIdea,
+                    validationScore: computeIdeaValidationScore({
+                      voteScore: next.score,
+                      commentCount: post.commentCount,
+                      saveCount: post.saveCount,
+                      uniqueCommenters: post.startupIdea.uniqueCommenters,
+                      createdAt: post.createdAt,
+                    }),
+                  }
+                : undefined,
+            };
+          }) ?? current,
+      ),
     retry: () => setRefreshKey((current) => current + 1),
   };
 }

@@ -1,1 +1,1 @@
-export { default } from '@/app/(public)/communities/page';
+export { default } from '@/app/(app)/communities/page';
