@@ -1,9 +1,7 @@
 import Link from 'next/link';
 import { Bell, BookMarked, BriefcaseBusiness, Compass, Lightbulb, Search } from 'lucide-react';
-import { LogoutButton } from '@/components/auth/LogoutButton';
 import { PrimaryNav } from '@/components/layout/PrimaryNav';
 import type { PrimaryNavItem } from '@/components/layout/PrimaryNav';
-import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getAppShellData } from '@/lib/supabase/app-shell';
 
@@ -19,7 +17,6 @@ export async function Sidebar() {
     { href: '/explore', label: 'Explore', icon: 'explore' },
     { href: '/career', label: 'Career', icon: 'career' },
     { href: '/notifications', label: 'Notifications', icon: 'notifications', badge: unreadNotifications },
-    { href: `/u/${currentUser.username}`, label: 'Profile', icon: 'profile' },
   ];
   const topReputation = currentUser.reputation[0];
 
@@ -145,13 +142,6 @@ export async function Sidebar() {
               ? `${topReputation.score} reputation in ${topReputation.communityName}`
               : 'Ask or answer to start earning reputation.'}
           </p>
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <ThemeToggle compact />
-          <Link href="/settings" className="inline-flex h-10 items-center rounded-xl px-3 text-sm font-medium text-text-secondary hover:bg-bg-overlay hover:text-text-primary">
-            Settings
-          </Link>
-          <LogoutButton compact className="ml-auto h-10 px-3 text-sm" />
         </div>
       </div>
     </aside>
