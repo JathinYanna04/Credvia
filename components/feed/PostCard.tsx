@@ -8,21 +8,44 @@ import { PostTypeBadge } from "@/components/post/PostTypeBadge";
 import { ReputationBadge } from "@/components/reputation/ReputationBadge";
 import { VoteButtons } from "@/components/voting/VoteButtons";
 import { ValidationScoreBadge } from "@/components/startup-ideas/ValidationScoreBadge";
+import { useVoteSnapshot } from '@/lib/hooks/useVoteSnapshot';
 import type { PostSummary } from "@/lib/types";
+import { toVoteEntityTypeFromPostType } from '@/lib/voting';
+import { computeIdeaValidationScore } from '@/lib/utils/idea-score';
 import { formatRelativeTime } from "@/lib/utils/format";
 
 export interface PostCardProps {
   post: PostSummary;
-  onVoteChange?: (
-    postId: string,
-    next: { score: number; vote: -1 | 0 | 1; updatedAt?: string },
-  ) => void;
 }
 
-export function PostCard({ post, onVoteChange }: PostCardProps) {
+export function PostCard({ post }: PostCardProps) {
   const topRep = post.author.reputation[0];
+  const voteEntityType = toVoteEntityTypeFromPostType(post.postType);
+  const voteSnapshot = useVoteSnapshot(voteEntityType, post.id, {
+    score: post.voteScore,
+    upvoteCount: post.upvoteCount,
+    downvoteCount: post.downvoteCount,
+    currentUserVote: post.currentUserVote,
+    version: post.version,
+    updatedAt: post.updatedAt,
+  });
+
+  const startupValidationScore = post.startupIdea
+    ? computeIdeaValidationScore({
+        voteScore: voteSnapshot.score,
+        commentCount: post.commentCount,
+        saveCount: post.saveCount,
+        uniqueCommenters: post.startupIdea.uniqueCommenters,
+        createdAt: post.createdAt,
+      })
+    : null;
+
   const detailHref =
     post.postType === "startup_idea" ? `/ideas/${post.id}` : `/post/${post.id}`;
+  const voteEndpoint =
+    post.postType === "startup_idea"
+      ? `/api/v1/startup-ideas/${post.id}/vote`
+      : `/api/v1/posts/${post.id}/vote`;
   const trackOpen = () => {
     void fetch('/api/v1/feed/signals', {
       method: 'POST',
@@ -99,7 +122,7 @@ export function PostCard({ post, onVoteChange }: PostCardProps) {
           </Link>
           {post.startupIdea ? (
             <ValidationScoreBadge
-              score={post.startupIdea.validationScore}
+              score={startupValidationScore ?? post.startupIdea.validationScore}
               compact
             />
           ) : null}
@@ -146,11 +169,17 @@ export function PostCard({ post, onVoteChange }: PostCardProps) {
       <div className="mt-4 grid grid-cols-3 gap-2 border-t border-border-subtle pt-4">
         <div className="min-w-0">
           <VoteButtons
-            score={post.voteScore}
-            initialVote={post.viewerVote ?? 0}
-            updatedAt={post.updatedAt}
-            endpoint={`/api/v1/posts/${post.id}/vote`}
-            onVoteChange={(next) => onVoteChange?.(post.id, next)}
+            entityType={voteEntityType}
+            entityId={post.id}
+            initialVoteState={{
+              score: post.voteScore,
+              upvoteCount: post.upvoteCount,
+              downvoteCount: post.downvoteCount,
+              currentUserVote: post.currentUserVote,
+              version: post.version,
+              updatedAt: post.updatedAt,
+            }}
+            endpoint={voteEndpoint}
             className="h-11 w-full justify-between rounded-2xl px-2 sm:w-auto"
           />
         </div>

@@ -14,6 +14,7 @@ import type {
   PostSummary,
   StartupIdeaRevisionSummary,
 } from "@/lib/types";
+import { toVoteEntityTypeFromPostType } from '@/lib/voting';
 import { formatRelativeTime } from "@/lib/utils/format";
 
 export interface PostDetailProps {
@@ -33,6 +34,11 @@ export function PostDetail({
   startupIdeaContext,
 }: PostDetailProps) {
   const topRep = post.author.reputation[0];
+  const voteEntityType = toVoteEntityTypeFromPostType(post.postType);
+  const voteEndpoint =
+    post.postType === 'startup_idea'
+      ? `/api/v1/startup-ideas/${post.id}/vote`
+      : `/api/v1/posts/${post.id}/vote`;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -148,10 +154,17 @@ export function PostDetail({
 
       <div className="flex flex-col gap-6 rounded-3xl border border-border-subtle bg-bg-surface p-5 sm:flex-row">
         <VoteButtons
-          score={post.voteScore}
-          initialVote={post.viewerVote ?? 0}
-          updatedAt={post.updatedAt}
-          endpoint={`/api/v1/posts/${post.id}/vote`}
+          entityType={voteEntityType}
+          entityId={post.id}
+          initialVoteState={{
+            score: post.voteScore,
+            upvoteCount: post.upvoteCount,
+            downvoteCount: post.downvoteCount,
+            currentUserVote: post.currentUserVote,
+            version: post.version,
+            updatedAt: post.updatedAt,
+          }}
+          endpoint={voteEndpoint}
           orientation="vertical"
         />
         <div className="min-w-0 flex-1">

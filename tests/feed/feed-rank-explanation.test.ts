@@ -12,7 +12,7 @@ describe('buildFeedExplanation', () => {
       updatedAt: new Date().toISOString(),
       postType: 'startup_idea',
       voteScore: 8,
-      viewerVote: 0,
+      currentUserVote: 0,
       commentCount: 4,
       saveCount: 2,
       tags: ['startup'],

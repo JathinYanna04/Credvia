@@ -1,5 +1,5 @@
 import { fail, handleApiError, ok, parseJson } from "@/lib/api";
-import type { VoteValue } from '@/lib/voting';
+import { buildServerVersion, type VoteDirection, type VoteValue } from '@/lib/voting';
 import { VoteCommentSchema } from "@/lib/schemas/comment";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -19,12 +19,18 @@ export async function POST(
     const user = await getRequiredUser(supabase);
     authUserId = user.id;
     const body = await parseJson(request, VoteCommentSchema);
+    const requestedDirection =
+      body.direction ??
+      (body.value === 1 || body.value === -1
+        ? (body.value as VoteDirection)
+        : undefined);
 
     if (verboseLogging) {
       logInfo('api-vote-comment', 'Vote request received', {
         userId: user.id,
         commentId: params.id,
-        desiredVote: body.value,
+        requestedDirection: requestedDirection ?? null,
+        requestedValue: body.value ?? null,
       });
     }
 
@@ -65,8 +71,14 @@ export async function POST(
     }
 
     const previousVote = (previousVoteResult.data?.value ?? 0) as VoteValue;
+    const desiredVote =
+      requestedDirection === undefined
+        ? (body.value ?? 0)
+        : previousVote === requestedDirection
+          ? 0
+          : requestedDirection;
 
-    if (body.value === 0) {
+    if (desiredVote === 0) {
       const deleteResult = await supabase
         .from("votes")
         .delete()
@@ -83,7 +95,7 @@ export async function POST(
           user_id: user.id,
           entity_type: "comment",
           entity_id: params.id,
-          value: body.value,
+          value: desiredVote,
         },
         {
           onConflict: "user_id,entity_type,entity_id",
@@ -361,6 +373,7 @@ export async function POST(
       upvoteCount: upvoteCountResult.count ?? 0,
       downvoteCount: downvoteCountResult.count ?? 0,
       currentUserVote: nextVote,
+      version: buildServerVersion(refreshedComment.data.updated_at),
       updatedAt: refreshedComment.data.updated_at,
       contributionDelta,
       rankDeltaHint: contributionDelta,

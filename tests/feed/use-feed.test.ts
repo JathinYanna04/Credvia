@@ -10,7 +10,7 @@ const basePost: PostSummary = {
   updatedAt: '2026-04-06T09:00:00.000Z',
   postType: 'discussion',
   voteScore: 3,
-  viewerVote: 1,
+  currentUserVote: 1,
   commentCount: 2,
   saveCount: 0,
   author: {
@@ -41,7 +41,7 @@ describe('mergeFeedPosts', () => {
       {
         ...basePost,
         voteScore: 5,
-        viewerVote: 1 as const,
+        currentUserVote: 1 as const,
         updatedAt: '2026-04-06T10:00:00.000Z',
       },
     ];
@@ -49,7 +49,7 @@ describe('mergeFeedPosts', () => {
       {
         ...basePost,
         voteScore: 3,
-        viewerVote: 0 as const,
+        currentUserVote: 0 as const,
         updatedAt: '2026-04-06T09:30:00.000Z',
       },
     ];
@@ -60,7 +60,35 @@ describe('mergeFeedPosts', () => {
       throw new Error('Expected merged post');
     }
     expect(merged.voteScore).toBe(5);
-    expect(merged.viewerVote).toBe(1);
+    expect(merged.currentUserVote).toBe(1);
     expect(merged.updatedAt).toBe('2026-04-06T10:00:00.000Z');
+  });
+
+  it('accepts canonical server state when it is fresher than optimistic local state', () => {
+    const current = [
+      {
+        ...basePost,
+        voteScore: 5,
+        currentUserVote: 1 as const,
+        updatedAt: 'optimistic:8:1712397600000',
+      },
+    ];
+    const incoming = [
+      {
+        ...basePost,
+        voteScore: 6,
+        currentUserVote: 1 as const,
+        updatedAt: '2026-04-06T10:00:02.000Z',
+      },
+    ];
+
+    const [merged] = mergeFeedPosts(current, incoming);
+
+    if (!merged) {
+      throw new Error('Expected merged post');
+    }
+    expect(merged.voteScore).toBe(6);
+    expect(merged.currentUserVote).toBe(1);
+    expect(merged.updatedAt).toBe('2026-04-06T10:00:02.000Z');
   });
 });

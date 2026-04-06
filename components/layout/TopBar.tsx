@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Bell, Plus, Search } from 'lucide-react';
+import { Bell, MessageCircle, Plus, Search } from 'lucide-react';
 import { ShellUserMenu } from '@/components/layout/ShellUserMenu';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { getAppShellData } from '@/lib/supabase/app-shell';
@@ -50,6 +50,13 @@ export async function TopBar() {
                 {unreadNotifications > 9 ? '9+' : unreadNotifications}
               </span>
             ) : null}
+          </Link>
+          <Link
+            href="/messages"
+            className="hidden h-11 w-11 items-center justify-center rounded-2xl border border-border-subtle bg-bg-surface text-text-secondary shadow-sm transition-colors hover:border-border-default hover:text-text-primary md:inline-flex"
+            aria-label="Messages"
+          >
+            <MessageCircle className="h-4 w-4" />
           </Link>
           <div className="hidden xl:block">
             <ThemeToggle compact />

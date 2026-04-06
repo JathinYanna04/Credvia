@@ -10,9 +10,9 @@ async function login(page: import('@playwright/test').Page, email: string, passw
   await page.waitForURL(/\/feed/, { timeout: 30_000 });
 }
 
-test('homepage post vote stays visible and persists after reload', async ({ page }) => {
-  const nonce = Date.now().toString(36);
-  const postTitle = `Homepage vote persistence test post ${nonce}`;
+async function createFeedVoteFixture(titlePrefix: string) {
+  const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  const postTitle = `${titlePrefix} ${nonce}`;
   const user = await createRuntimeUser({
     fullName: 'Credvia Feed Vote User',
     onboardingComplete: true,
@@ -45,30 +45,52 @@ test('homepage post vote stays visible and persists after reload', async ({ page
     throw new Error('Expected homepage vote test post to be created.');
   }
 
-  await login(page, user.email, user.password);
+  return {
+    user,
+    postId: postInsert.data.id,
+    postTitle,
+  };
+}
+
+async function waitForVoteResponse(
+  page: import('@playwright/test').Page,
+  postId: string,
+  click: () => Promise<void>,
+) {
+  const voteRequestPath = `/api/v1/posts/${postId}/vote`;
+  const voteResponsePromise = page.waitForResponse((response) => {
+    return (
+      response.request().method() === 'POST' &&
+      response.url().includes(voteRequestPath) &&
+      response.status() === 200
+    );
+  });
+
+  await click();
+  const voteResponse = await voteResponsePromise;
+  return voteResponse.json().catch(() => null);
+}
+
+test('homepage post vote stays visible and persists after reload', async ({ page }) => {
+  const fixture = await createFeedVoteFixture('Homepage vote persistence test post');
+
+  await login(page, fixture.user.email, fixture.user.password);
   await page.goto('/feed');
   await page.waitForLoadState('networkidle');
 
-  const card = page.locator('article').filter({ hasText: postTitle }).first();
+  const card = page.locator('article').filter({ hasText: fixture.postTitle }).first();
   await expect(card).toBeVisible();
 
   const score = card.locator('span[aria-live="polite"]').first();
   const upvoteButton = card.getByRole('button', { name: 'Upvote post' }).first();
   await expect(score).toHaveText('0');
 
-  await upvoteButton.click();
+  const votePayload = await waitForVoteResponse(page, fixture.postId, async () => {
+    await upvoteButton.click();
+  });
 
-  await expect.poll(async () => {
-    const result = await adminSupabase
-      .from('votes')
-      .select('value')
-      .eq('user_id', user.userId)
-      .eq('entity_type', 'post')
-      .eq('entity_id', postInsert.data.id)
-      .maybeSingle();
-
-    return result.data?.value ?? null;
-  }).toBe(1);
+  expect(votePayload?.data?.currentUserVote).toBe(1);
+  await expect(upvoteButton).toHaveAttribute('aria-busy', 'false', { timeout: 20_000 });
 
   await expect(score).toHaveText('1');
   await expect(upvoteButton).toHaveClass(/text-accent/);
@@ -76,9 +98,83 @@ test('homepage post vote stays visible and persists after reload', async ({ page
   await page.reload();
   await page.waitForLoadState('networkidle');
 
-  const reloadedCard = page.locator('article').filter({ hasText: postTitle }).first();
+  const reloadedCard = page.locator('article').filter({ hasText: fixture.postTitle }).first();
   const reloadedUpvoteButton = reloadedCard.getByRole('button', { name: 'Upvote post' }).first();
   await expect(reloadedCard).toBeVisible();
   await expect(reloadedCard.locator('span[aria-live="polite"]').first()).toHaveText('1');
   await expect(reloadedUpvoteButton).toHaveClass(/text-accent/);
+});
+
+test('homepage downvote stays visible and persists after reload', async ({ page }) => {
+  const fixture = await createFeedVoteFixture('Homepage downvote persistence test post');
+
+  await login(page, fixture.user.email, fixture.user.password);
+  await page.goto('/feed');
+  await page.waitForLoadState('networkidle');
+
+  const card = page.locator('article').filter({ hasText: fixture.postTitle }).first();
+  await expect(card).toBeVisible();
+
+  const score = card.locator('span[aria-live="polite"]').first();
+  const downvoteButton = card.getByRole('button', { name: 'Downvote post' }).first();
+  await expect(score).toHaveText('0');
+
+  const votePayload = await waitForVoteResponse(page, fixture.postId, async () => {
+    await downvoteButton.click();
+  });
+
+  expect(votePayload?.data?.currentUserVote).toBe(-1);
+  await expect(downvoteButton).toHaveAttribute('aria-busy', 'false', { timeout: 20_000 });
+  await expect(score).toHaveText('-1');
+  await expect(downvoteButton).toHaveClass(/text-danger/);
+
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+
+  const reloadedCard = page.locator('article').filter({ hasText: fixture.postTitle }).first();
+  const reloadedDownvoteButton = reloadedCard.getByRole('button', { name: 'Downvote post' }).first();
+  await expect(reloadedCard).toBeVisible();
+  await expect(reloadedCard.locator('span[aria-live="polite"]').first()).toHaveText('-1');
+  await expect(reloadedDownvoteButton).toHaveClass(/text-danger/);
+});
+
+test('homepage toggled neutral vote persists after reload', async ({ page }) => {
+  const fixture = await createFeedVoteFixture('Homepage neutral toggle persistence test post');
+
+  await login(page, fixture.user.email, fixture.user.password);
+  await page.goto('/feed');
+  await page.waitForLoadState('networkidle');
+
+  const card = page.locator('article').filter({ hasText: fixture.postTitle }).first();
+  await expect(card).toBeVisible();
+
+  const score = card.locator('span[aria-live="polite"]').first();
+  const upvoteButton = card.getByRole('button', { name: 'Upvote post' }).first();
+  await expect(score).toHaveText('0');
+
+  const firstVotePayload = await waitForVoteResponse(page, fixture.postId, async () => {
+    await upvoteButton.click();
+  });
+
+  expect(firstVotePayload?.data?.currentUserVote).toBe(1);
+  await expect(upvoteButton).toHaveAttribute('aria-busy', 'false', { timeout: 20_000 });
+  await expect(score).toHaveText('1');
+
+  const secondVotePayload = await waitForVoteResponse(page, fixture.postId, async () => {
+    await upvoteButton.click();
+  });
+
+  expect(secondVotePayload?.data?.currentUserVote).toBe(0);
+  await expect(upvoteButton).toHaveAttribute('aria-busy', 'false', { timeout: 20_000 });
+  await expect(score).toHaveText('0');
+  await expect(upvoteButton).not.toHaveClass(/text-accent/);
+
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+
+  const reloadedCard = page.locator('article').filter({ hasText: fixture.postTitle }).first();
+  const reloadedUpvoteButton = reloadedCard.getByRole('button', { name: 'Upvote post' }).first();
+  await expect(reloadedCard).toBeVisible();
+  await expect(reloadedCard.locator('span[aria-live="polite"]').first()).toHaveText('0');
+  await expect(reloadedUpvoteButton).not.toHaveClass(/text-accent/);
 });

@@ -67,9 +67,19 @@ export const CreatePostSchema = z
 
 export const VotePostSchema = z
   .object({
-    value: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
+    value: z.union([z.literal(-1), z.literal(0), z.literal(1)]).optional(),
+    direction: z.union([z.literal(-1), z.literal(1)]).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.direction === undefined && value.value === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["direction"],
+        message: "Either direction or value is required.",
+      });
+    }
+  });
 
 export const SavePostSchema = z
   .object({

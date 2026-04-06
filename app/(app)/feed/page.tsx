@@ -19,7 +19,7 @@ export default function FeedPage() {
   const [showOnboardingPrompt, setShowOnboardingPrompt] = useState(false);
   const [persona, setPersona] = useState<PersonaSlug | null>(null);
   const [profileCompletion, setProfileCompletion] = useState<ProfileCompletionState | null>(null);
-  const { posts, isLoading, isEmpty, error, authExpired, retry, updateVote } =
+  const { posts, isLoading, isEmpty, error, authExpired, retry } =
     useFeed(tab);
 
   useEffect(() => {
@@ -162,7 +162,7 @@ export default function FeedPage() {
         ) : null}
         {isEmpty ? <FeedEmpty persona={persona} /> : null}
         {posts?.map((post) => (
-          <PostCard key={post.id} post={post} onVoteChange={updateVote} />
+          <PostCard key={post.id} post={post} />
         ))}
       </div>
 

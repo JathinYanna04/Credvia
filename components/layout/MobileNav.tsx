@@ -9,6 +9,7 @@ export async function MobileNav() {
     { href: '/feed', label: 'Home', icon: 'home' },
     { href: '/explore', label: 'Explore', icon: 'explore' },
     { href: '/career', label: 'Career', icon: 'career' },
+    { href: '/messages', label: 'Messages', icon: 'messages' },
     { href: '/notifications', label: 'Notifications', icon: 'notifications', badge: unreadNotifications },
     { href: currentUser ? `/u/${currentUser.username}` : '/login', label: 'Profile', icon: 'profile' },
   ];

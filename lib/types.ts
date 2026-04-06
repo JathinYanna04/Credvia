@@ -114,9 +114,12 @@ export interface PostSummary {
   body: string;
   createdAt: string;
   updatedAt: string;
+  version?: string;
   postType: PostType;
   voteScore: number;
-  viewerVote?: -1 | 0 | 1;
+  upvoteCount?: number;
+  downvoteCount?: number;
+  currentUserVote?: -1 | 0 | 1;
   commentCount: number;
   saveCount: number;
   author: UserSummary;
@@ -147,8 +150,11 @@ export interface CommentSummary {
   body: string;
   createdAt: string;
   updatedAt: string;
+  version?: string;
   voteScore: number;
-  viewerVote?: -1 | 0 | 1;
+  upvoteCount?: number;
+  downvoteCount?: number;
+  currentUserVote?: -1 | 0 | 1;
   isBestAnswer?: boolean;
   replies?: CommentSummary[];
 }

@@ -42,10 +42,17 @@ export function StartupIdeaCard({ idea }: StartupIdeaCardProps) {
 
       <div className="flex flex-col gap-4 sm:flex-row">
         <VoteButtons
-          score={idea.voteScore}
-          initialVote={idea.viewerVote ?? 0}
-          updatedAt={idea.updatedAt}
-          endpoint={`/api/v1/posts/${idea.id}/vote`}
+          entityType="startup_idea"
+          entityId={idea.id}
+          initialVoteState={{
+            score: idea.voteScore,
+            upvoteCount: idea.upvoteCount,
+            downvoteCount: idea.downvoteCount,
+            currentUserVote: idea.currentUserVote,
+            version: idea.version,
+            updatedAt: idea.updatedAt,
+          }}
+          endpoint={`/api/v1/startup-ideas/${idea.id}/vote`}
           orientation="vertical"
           className="hidden sm:flex"
         />
@@ -78,10 +85,17 @@ export function StartupIdeaCard({ idea }: StartupIdeaCardProps) {
 
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-text-secondary sm:hidden">
             <VoteButtons
-              score={idea.voteScore}
-              initialVote={idea.viewerVote ?? 0}
-              updatedAt={idea.updatedAt}
-              endpoint={`/api/v1/posts/${idea.id}/vote`}
+              entityType="startup_idea"
+              entityId={idea.id}
+              initialVoteState={{
+                score: idea.voteScore,
+                upvoteCount: idea.upvoteCount,
+                downvoteCount: idea.downvoteCount,
+                currentUserVote: idea.currentUserVote,
+                version: idea.version,
+                updatedAt: idea.updatedAt,
+              }}
+              endpoint={`/api/v1/startup-ideas/${idea.id}/vote`}
             />
           </div>
 

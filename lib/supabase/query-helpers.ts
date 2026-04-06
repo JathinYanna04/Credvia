@@ -19,6 +19,7 @@ import type {
 } from "@/lib/types";
 import { isMissingStartupIdeaAdvancedSchemaError } from "@/lib/supabase/startup-idea-schema";
 import { computeIdeaValidationScore } from "@/lib/utils/idea-score";
+import { buildServerVersion } from '@/lib/voting';
 
 export type TypedSupabaseClient = SupabaseClient<Database>;
 
@@ -34,6 +35,11 @@ type StartupIdeaRevisionRow =
 type NotificationRow = Database["public"]["Tables"]["notifications"]["Row"];
 type StartupIdeaStage = NonNullable<PostSummary["startupIdea"]>["stage"];
 type VoteRow = Database["public"]["Tables"]["votes"]["Row"];
+
+interface VoteCounterSummary {
+  upvoteCount: number;
+  downvoteCount: number;
+}
 
 function unique(values: string[]) {
   return [...new Set(values.filter(Boolean))];
@@ -193,7 +199,7 @@ export async function getStartupIdeaRevisionsByPostIds(
   return revisions;
 }
 
-export async function getViewerVotesByEntityIds(
+export async function getCurrentUserVotesByEntityIds(
   supabase: TypedSupabaseClient,
   viewerId: string | null | undefined,
   entityType: "post" | "comment",
@@ -222,6 +228,49 @@ export async function getViewerVotesByEntityIds(
       vote.value as -1 | 1,
     ]),
   );
+}
+
+export async function getVoteCountersByEntityIds(
+  supabase: TypedSupabaseClient,
+  entityType: "post" | "comment",
+  entityIds: string[],
+) {
+  const ids = unique(entityIds);
+
+  if (ids.length === 0) {
+    return new Map<string, VoteCounterSummary>();
+  }
+
+  const { data, error } = await supabase
+    .from("votes")
+    .select("entity_id, value")
+    .eq("entity_type", entityType)
+    .in("entity_id", ids);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const counters = new Map<string, VoteCounterSummary>();
+
+  for (const vote of (data ?? []) as Pick<VoteRow, "entity_id" | "value">[]) {
+    const existing = counters.get(vote.entity_id) ?? {
+      upvoteCount: 0,
+      downvoteCount: 0,
+    };
+
+    if (vote.value === 1) {
+      existing.upvoteCount += 1;
+    }
+
+    if (vote.value === -1) {
+      existing.downvoteCount += 1;
+    }
+
+    counters.set(vote.entity_id, existing);
+  }
+
+  return counters;
 }
 
 export async function getUniqueCommenterCounts(
@@ -369,7 +418,8 @@ export async function toPostSummaries(
     communityRep,
     startupIdeas,
     uniqueCommenterCounts,
-    viewerVotes,
+    currentUserVotes,
+    voteCounters,
   ] = await Promise.all([
     getProfilesByUserIds(
       supabase,
@@ -392,9 +442,14 @@ export async function toPostSummaries(
       supabase,
       posts.map((post) => post.id),
     ),
-    getViewerVotesByEntityIds(
+    getCurrentUserVotesByEntityIds(
       supabase,
       viewerId,
+      "post",
+      posts.map((post) => post.id),
+    ),
+    getVoteCountersByEntityIds(
+      supabase,
       "post",
       posts.map((post) => post.id),
     ),
@@ -405,6 +460,7 @@ export async function toPostSummaries(
     const authorProfile = profiles.get(post.author_id);
     const startupIdea = startupIdeas.get(post.id);
     const uniqueCommenters = uniqueCommenterCounts.get(post.id) ?? 0;
+    const voteCounter = voteCounters.get(post.id);
 
     return {
       id: post.id,
@@ -412,9 +468,12 @@ export async function toPostSummaries(
       body: post.body_md ?? "",
       createdAt: post.created_at,
       updatedAt: post.updated_at,
+      version: buildServerVersion(post.updated_at),
       postType: post.post_type as PostSummary["postType"],
       voteScore: post.vote_score,
-      viewerVote: viewerVotes.get(post.id) ?? 0,
+      upvoteCount: voteCounter?.upvoteCount,
+      downvoteCount: voteCounter?.downvoteCount,
+      currentUserVote: currentUserVotes.get(post.id) ?? 0,
       commentCount: post.comment_count,
       saveCount: post.save_count,
       author: toUserSummary(
@@ -470,7 +529,7 @@ export async function toCommentSummaries(
   communityId: string,
   viewerId?: string | null,
 ): Promise<CommentSummary[]> {
-  const [profiles, communities, reputation, viewerVotes] = await Promise.all([
+  const [profiles, communities, reputation, currentUserVotes, voteCounters] = await Promise.all([
     getProfilesByUserIds(
       supabase,
       comments.map((comment) => comment.author_id),
@@ -481,9 +540,14 @@ export async function toCommentSummaries(
       comments.map((comment) => comment.author_id),
       [communityId],
     ),
-    getViewerVotesByEntityIds(
+    getCurrentUserVotesByEntityIds(
       supabase,
       viewerId,
+      'comment',
+      comments.map((comment) => comment.id),
+    ),
+    getVoteCountersByEntityIds(
+      supabase,
       'comment',
       comments.map((comment) => comment.id),
     ),
@@ -493,6 +557,8 @@ export async function toCommentSummaries(
   const commentMap = new Map<string, CommentSummary & { parentId?: string }>();
 
   comments.forEach((comment) => {
+    const voteCounter = voteCounters.get(comment.id);
+
     commentMap.set(comment.id, {
       id: comment.id,
       author: toUserSummary(
@@ -504,8 +570,11 @@ export async function toCommentSummaries(
       body: comment.body_md,
       createdAt: comment.created_at,
       updatedAt: comment.updated_at,
+      version: buildServerVersion(comment.updated_at),
       voteScore: comment.vote_score,
-      viewerVote: viewerVotes.get(comment.id) ?? 0,
+      upvoteCount: voteCounter?.upvoteCount,
+      downvoteCount: voteCounter?.downvoteCount,
+      currentUserVote: currentUserVotes.get(comment.id) ?? 0,
       isBestAnswer: comment.is_best_answer,
       replies: [],
       parentId: comment.parent_comment_id ?? undefined,

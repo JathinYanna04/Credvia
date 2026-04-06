@@ -189,7 +189,7 @@ export async function GET(request: Request) {
         postCount: candidatePosts.length,
         filteredPostCount: filteredPosts.length,
         summaryCount: summaries.length,
-        viewerVoteCount: summaries.filter((post) => (post.viewerVote ?? 0) !== 0).length,
+        currentUserVoteCount: summaries.filter((post) => (post.currentUserVote ?? 0) !== 0).length,
       });
     }
 

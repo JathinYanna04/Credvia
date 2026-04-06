@@ -14,9 +14,16 @@ export function CommentItem({ comment, depth = 0 }: CommentItemProps) {
     <div className="space-y-4">
       <div className="flex gap-3">
         <VoteButtons
-          score={comment.voteScore}
-          initialVote={comment.viewerVote ?? 0}
-          updatedAt={comment.updatedAt}
+          entityType="comment"
+          entityId={comment.id}
+          initialVoteState={{
+            score: comment.voteScore,
+            upvoteCount: comment.upvoteCount,
+            downvoteCount: comment.downvoteCount,
+            currentUserVote: comment.currentUserVote,
+            version: comment.version,
+            updatedAt: comment.updatedAt,
+          }}
           endpoint={`/api/v1/comments/${comment.id}/vote`}
           orientation="vertical"
           className="hidden sm:flex"
@@ -39,9 +46,16 @@ export function CommentItem({ comment, depth = 0 }: CommentItemProps) {
           <p className="mt-3 text-sm leading-6 text-text-secondary">{comment.body}</p>
           <div className="mt-4 sm:hidden">
             <VoteButtons
-              score={comment.voteScore}
-              initialVote={comment.viewerVote ?? 0}
-              updatedAt={comment.updatedAt}
+              entityType="comment"
+              entityId={comment.id}
+              initialVoteState={{
+                score: comment.voteScore,
+                upvoteCount: comment.upvoteCount,
+                downvoteCount: comment.downvoteCount,
+                currentUserVote: comment.currentUserVote,
+                version: comment.version,
+                updatedAt: comment.updatedAt,
+              }}
               endpoint={`/api/v1/comments/${comment.id}/vote`}
             />
           </div>

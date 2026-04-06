@@ -1138,6 +1138,174 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['startup_ideas']['Insert']>;
         Relationships: [];
       };
+      chat_conversations: {
+        Row: {
+          id: string;
+          type: string;
+          source_type: string | null;
+          source_id: string | null;
+          created_by: string;
+          title: string | null;
+          description: string | null;
+          is_archived: boolean;
+          dm_user_low: string | null;
+          dm_user_high: string | null;
+          last_message_at: string | null;
+          last_message_id: string | null;
+          message_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          type: string;
+          source_type?: string | null;
+          source_id?: string | null;
+          created_by: string;
+          title?: string | null;
+          description?: string | null;
+          is_archived?: boolean;
+          dm_user_low?: string | null;
+          dm_user_high?: string | null;
+          last_message_at?: string | null;
+          last_message_id?: string | null;
+          message_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_conversations']['Insert']>;
+        Relationships: [];
+      };
+      chat_participants: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          user_id: string;
+          role: string;
+          status: string;
+          joined_at: string;
+          left_at: string | null;
+          last_read_message_id: string | null;
+          last_read_at: string | null;
+          notifications_muted: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          user_id: string;
+          role?: string;
+          status?: string;
+          joined_at?: string;
+          left_at?: string | null;
+          last_read_message_id?: string | null;
+          last_read_at?: string | null;
+          notifications_muted?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_participants']['Insert']>;
+        Relationships: [];
+      };
+      chat_messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          sender_id: string | null;
+          message_type: string;
+          ciphertext: string | null;
+          iv: string | null;
+          algorithm: string | null;
+          key_version: number | null;
+          payload_meta: Json | null;
+          client_generated_id: string | null;
+          reply_to_message_id: string | null;
+          is_deleted: boolean;
+          deleted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          sender_id?: string | null;
+          message_type: string;
+          ciphertext?: string | null;
+          iv?: string | null;
+          algorithm?: string | null;
+          key_version?: number | null;
+          payload_meta?: Json | null;
+          client_generated_id?: string | null;
+          reply_to_message_id?: string | null;
+          is_deleted?: boolean;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_messages']['Insert']>;
+        Relationships: [];
+      };
+      chat_conversation_keys: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          user_id: string;
+          encrypted_conversation_key: string;
+          key_encryption_algorithm: string;
+          key_version: number;
+          created_at: string;
+          rotated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          user_id: string;
+          encrypted_conversation_key: string;
+          key_encryption_algorithm: string;
+          key_version?: number;
+          created_at?: string;
+          rotated_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['chat_conversation_keys']['Insert']>;
+        Relationships: [];
+      };
+      chat_user_keypairs: {
+        Row: {
+          user_id: string;
+          public_key: string;
+          algorithm: string;
+          key_version: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          public_key: string;
+          algorithm?: string;
+          key_version?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_user_keypairs']['Insert']>;
+        Relationships: [];
+      };
+      chat_blocks: {
+        Row: {
+          id: string;
+          blocker_id: string;
+          blocked_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          blocker_id: string;
+          blocked_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_blocks']['Insert']>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

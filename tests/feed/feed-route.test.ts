@@ -119,7 +119,7 @@ describe('feed route', () => {
         updatedAt: '2026-04-06T10:00:00.000Z',
         postType: 'discussion',
         voteScore: 0,
-        viewerVote: 0,
+        currentUserVote: 0,
         commentCount: 0,
         saveCount: 0,
         author: {
@@ -150,7 +150,7 @@ describe('feed route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.data[0]?.viewerVote).toBe(0);
+    expect(payload.data[0]?.currentUserVote).toBe(0);
   }, 20000);
 
   it('returns 200 with viewer vote state present', async () => {
@@ -164,7 +164,7 @@ describe('feed route', () => {
         updatedAt: '2026-04-06T10:00:00.000Z',
         postType: 'discussion',
         voteScore: 1,
-        viewerVote: 1,
+        currentUserVote: 1,
         commentCount: 0,
         saveCount: 0,
         author: {
@@ -195,7 +195,7 @@ describe('feed route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.data[0]?.viewerVote).toBe(1);
+    expect(payload.data[0]?.currentUserVote).toBe(1);
   });
 
   it('tolerates missing profile metadata columns without crashing', async () => {
