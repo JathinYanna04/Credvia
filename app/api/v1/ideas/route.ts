@@ -14,9 +14,18 @@ export async function GET(request: Request) {
       category: searchParams.get("category") ?? undefined,
     });
     const supabase = await createServerSupabaseClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    let userId: string | undefined;
+
+    if (supabase.auth?.getUser) {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        userId = user?.id;
+      } catch {
+        userId = undefined;
+      }
+    }
 
     let ideaQuery = supabase
       .from("startup_ideas")
@@ -96,7 +105,7 @@ export async function GET(request: Request) {
     let ideas = await toPostSummaries(
       supabase,
       postsResult.data ?? [],
-      user?.id,
+      userId,
     );
 
     if (filters.query) {
