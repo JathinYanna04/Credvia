@@ -1,6 +1,9 @@
-import { fail, ok, handleApiError } from '@/lib/api';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { toCommentSummaries, toPostSummaries } from '@/lib/supabase/query-helpers';
+import { fail, ok, handleApiError } from "@/lib/api";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {
+  toCommentSummaries,
+  toPostSummaries,
+} from "@/lib/supabase/query-helpers";
 
 export async function GET(
   _request: Request,
@@ -8,11 +11,14 @@ export async function GET(
 ) {
   try {
     const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     const postResult = await supabase
-      .from('posts')
-      .select('*')
-      .eq('id', params.id)
-      .eq('status', 'published')
+      .from("posts")
+      .select("*")
+      .eq("id", params.id)
+      .eq("status", "published")
       .maybeSingle();
 
     if (postResult.error) {
@@ -20,16 +26,16 @@ export async function GET(
     }
 
     if (!postResult.data) {
-      return fail('NOT_FOUND', 'Post not found.', 404);
+      return fail("NOT_FOUND", "Post not found.", 404);
     }
 
-    const [post] = await toPostSummaries(supabase, [postResult.data]);
+    const [post] = await toPostSummaries(supabase, [postResult.data], user?.id);
     const commentsResult = await supabase
-      .from('comments')
-      .select('*')
-      .eq('post_id', params.id)
-      .eq('status', 'published')
-      .order('created_at', { ascending: true });
+      .from("comments")
+      .select("*")
+      .eq("post_id", params.id)
+      .eq("status", "published")
+      .order("created_at", { ascending: true });
 
     if (commentsResult.error) {
       throw new Error(commentsResult.error.message);

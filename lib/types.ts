@@ -1,26 +1,31 @@
-export type AccountType = 'student' | 'professional' | 'recruiter' | 'founder' | 'mentor';
+export type AccountType =
+  | "student"
+  | "professional"
+  | "recruiter"
+  | "founder"
+  | "mentor";
 
 export type PostType =
-  | 'question'
-  | 'discussion'
-  | 'project_showcase'
-  | 'resource'
-  | 'opportunity'
-  | 'resume_review'
-  | 'looking_for_collaborator'
-  | 'startup_idea';
+  | "question"
+  | "discussion"
+  | "project_showcase"
+  | "resource"
+  | "opportunity"
+  | "resume_review"
+  | "looking_for_collaborator"
+  | "startup_idea";
 
-export type FeedTab = 'for-you' | 'communities' | 'following';
+export type FeedTab = "for-you" | "communities" | "following";
 
 export type NotificationType =
-  | 'reply'
-  | 'mention'
-  | 'vote'
-  | 'best_answer'
-  | 'follow'
-  | 'idea_revision'
-  | 'mod_action'
-  | 'reputation_gain';
+  | "reply"
+  | "mention"
+  | "vote"
+  | "best_answer"
+  | "follow"
+  | "idea_revision"
+  | "mod_action"
+  | "reputation_gain";
 
 export interface StartupIdeaRevisionSummary {
   id: string;
@@ -31,7 +36,7 @@ export interface StartupIdeaRevisionSummary {
   targetAudience: string;
   solution: string;
   marketCategory: string;
-  stage: 'idea' | 'problem_validation' | 'mvp_building' | 'early_users';
+  stage: "idea" | "problem_validation" | "mvp_building" | "early_users";
   monetizationModel?: string;
   changeSummary?: string;
   createdAt: string;
@@ -74,6 +79,7 @@ export interface PostSummary {
   createdAt: string;
   postType: PostType;
   voteScore: number;
+  viewerVote?: -1 | 0 | 1;
   commentCount: number;
   saveCount: number;
   author: UserSummary;
@@ -86,7 +92,7 @@ export interface PostSummary {
     targetAudience: string;
     solution: string;
     marketCategory: string;
-    stage: 'idea' | 'problem_validation' | 'mvp_building' | 'early_users';
+    stage: "idea" | "problem_validation" | "mvp_building" | "early_users";
     monetizationModel?: string;
     validationScore: number;
     uniqueCommenters: number;
@@ -120,26 +126,26 @@ export interface NotificationSummary {
 
 export interface ApiError {
   code:
-    | 'UNAUTHORIZED'
-    | 'FORBIDDEN'
-    | 'NOT_FOUND'
-    | 'VALIDATION_ERROR'
-    | 'ANALYSIS_IN_PROGRESS'
-    | 'RESUME_FILE_MISSING'
-    | 'RESUME_FILE_UNSUPPORTED'
-    | 'RESUME_TEXT_MISSING'
-    | 'EXTRACTION_FAILED'
-    | 'IMAGE_BASED_PDF'
-    | 'LOW_TEXT_CONFIDENCE'
-    | 'OCR_UNAVAILABLE'
-    | 'OCR_FAILED'
-    | 'EMPTY_EXTRACTED_TEXT'
-    | 'RESUME_NOT_READY'
-    | 'UNSUPPORTED_RESUME_FORMAT'
-    | 'RESUME_ANALYSIS_RUNS_RLS_BLOCKED'
-    | 'RATE_LIMITED'
-    | 'ANALYSIS_SERVICE_UNAVAILABLE'
-    | 'INTERNAL_ERROR';
+    | "UNAUTHORIZED"
+    | "FORBIDDEN"
+    | "NOT_FOUND"
+    | "VALIDATION_ERROR"
+    | "ANALYSIS_IN_PROGRESS"
+    | "RESUME_FILE_MISSING"
+    | "RESUME_FILE_UNSUPPORTED"
+    | "RESUME_TEXT_MISSING"
+    | "EXTRACTION_FAILED"
+    | "IMAGE_BASED_PDF"
+    | "LOW_TEXT_CONFIDENCE"
+    | "OCR_UNAVAILABLE"
+    | "OCR_FAILED"
+    | "EMPTY_EXTRACTED_TEXT"
+    | "RESUME_NOT_READY"
+    | "UNSUPPORTED_RESUME_FORMAT"
+    | "RESUME_ANALYSIS_RUNS_RLS_BLOCKED"
+    | "RATE_LIMITED"
+    | "ANALYSIS_SERVICE_UNAVAILABLE"
+    | "INTERNAL_ERROR";
   message: string;
   details?: unknown;
   suggestedAction?: string;
@@ -174,7 +180,7 @@ export interface ResumeExtractionQualitySummary {
   textLength: number;
   wordCount: number;
   confidenceScore: number;
-  confidenceTier: 'high' | 'medium' | 'low';
+  confidenceTier: "high" | "medium" | "low";
   detectedSectionCount: number;
   junkRatio: number;
   likelyScannedPdf: boolean;
@@ -196,11 +202,11 @@ export interface ResumeExtractionSummary {
   usedOcr: boolean;
   ocrNeeded?: boolean;
   ocrStatus?:
-    | 'skipped_unnecessary'
-    | 'attempted_no_gain'
-    | 'failed_preserved_previous'
-    | 'used_successfully'
-    | 'unavailable_preserved_previous'
+    | "skipped_unnecessary"
+    | "attempted_no_gain"
+    | "failed_preserved_previous"
+    | "used_successfully"
+    | "unavailable_preserved_previous"
     | null;
   ocrAttempted?: boolean;
   ocrImprovedQuality?: boolean | null;
@@ -209,11 +215,11 @@ export interface ResumeExtractionSummary {
   ocrUnavailableReason?: string | null;
   acceptedWithWarnings?: boolean;
   warningCode?:
-    | 'LOW_TEXT_CONFIDENCE'
-    | 'OCR_UNAVAILABLE'
-    | 'OCR_DID_NOT_IMPROVE'
-    | 'SALVAGED_FROM_NOISE'
-    | 'CLEANED_TEXT_LOW_SIGNAL'
+    | "LOW_TEXT_CONFIDENCE"
+    | "OCR_UNAVAILABLE"
+    | "OCR_DID_NOT_IMPROVE"
+    | "SALVAGED_FROM_NOISE"
+    | "CLEANED_TEXT_LOW_SIGNAL"
     | null;
   warningMessage?: string | null;
   textLength?: number;
@@ -221,7 +227,7 @@ export interface ResumeExtractionSummary {
   contaminationScore?: number;
   salvageScore?: number;
   cleaningActions?: string[];
-  readiness?: 'good' | 'partial' | 'poor' | 'failed';
+  readiness?: "good" | "partial" | "poor" | "failed";
   quality: ResumeExtractionQualitySummary;
 }
 
@@ -236,11 +242,11 @@ export interface ResumeExtractionErrorDetails {
   usedOcr: boolean;
   ocrNeeded?: boolean;
   ocrStatus?:
-    | 'skipped_unnecessary'
-    | 'attempted_no_gain'
-    | 'failed_preserved_previous'
-    | 'used_successfully'
-    | 'unavailable_preserved_previous'
+    | "skipped_unnecessary"
+    | "attempted_no_gain"
+    | "failed_preserved_previous"
+    | "used_successfully"
+    | "unavailable_preserved_previous"
     | null;
   ocrAttempted: boolean;
   ocrImprovedQuality: boolean | null;
@@ -250,9 +256,9 @@ export interface ResumeExtractionErrorDetails {
   textLength: number;
   cleanedTextLength?: number;
   wordCount: number;
-  readiness: 'good' | 'partial' | 'poor' | 'failed';
+  readiness: "good" | "partial" | "poor" | "failed";
   confidenceScore: number;
-  confidenceTier: 'high' | 'medium' | 'low';
+  confidenceTier: "high" | "medium" | "low";
   detectedSectionCount: number;
   junkRatio: number;
   likelyScannedPdf: boolean;

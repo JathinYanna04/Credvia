@@ -1,5 +1,5 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@/lib/supabase/types';
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import type {
   CommentSummary,
   CommunitySummary,
@@ -7,21 +7,24 @@ import type {
   PostSummary,
   StartupIdeaRevisionSummary,
   UserSummary,
-} from '@/lib/types';
-import { isMissingStartupIdeaAdvancedSchemaError } from '@/lib/supabase/startup-idea-schema';
-import { computeIdeaValidationScore } from '@/lib/utils/idea-score';
+} from "@/lib/types";
+import { isMissingStartupIdeaAdvancedSchemaError } from "@/lib/supabase/startup-idea-schema";
+import { computeIdeaValidationScore } from "@/lib/utils/idea-score";
 
 export type TypedSupabaseClient = SupabaseClient<Database>;
 
-type ProfileRow = Database['public']['Tables']['profiles']['Row'];
-type CommunityRow = Database['public']['Tables']['communities']['Row'];
-type PostRow = Database['public']['Tables']['posts']['Row'];
-type CommentRow = Database['public']['Tables']['comments']['Row'];
-type CommunityReputationRow = Database['public']['Tables']['community_reputation']['Row'];
-type StartupIdeaRow = Database['public']['Tables']['startup_ideas']['Row'];
-type StartupIdeaRevisionRow = Database['public']['Tables']['startup_idea_revisions']['Row'];
-type NotificationRow = Database['public']['Tables']['notifications']['Row'];
-type StartupIdeaStage = NonNullable<PostSummary['startupIdea']>['stage'];
+type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
+type CommunityRow = Database["public"]["Tables"]["communities"]["Row"];
+type PostRow = Database["public"]["Tables"]["posts"]["Row"];
+type CommentRow = Database["public"]["Tables"]["comments"]["Row"];
+type CommunityReputationRow =
+  Database["public"]["Tables"]["community_reputation"]["Row"];
+type StartupIdeaRow = Database["public"]["Tables"]["startup_ideas"]["Row"];
+type StartupIdeaRevisionRow =
+  Database["public"]["Tables"]["startup_idea_revisions"]["Row"];
+type NotificationRow = Database["public"]["Tables"]["notifications"]["Row"];
+type StartupIdeaStage = NonNullable<PostSummary["startupIdea"]>["stage"];
+type VoteRow = Database["public"]["Tables"]["votes"]["Row"];
 
 function unique(values: string[]) {
   return [...new Set(values.filter(Boolean))];
@@ -38,9 +41,9 @@ export async function getProfilesByUserIds(
   }
 
   const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .in('user_id', ids);
+    .from("profiles")
+    .select("*")
+    .in("user_id", ids);
 
   if (error) {
     throw new Error(error.message);
@@ -62,16 +65,19 @@ export async function getCommunitiesByIds(
   }
 
   const { data, error } = await supabase
-    .from('communities')
-    .select('*')
-    .in('id', ids);
+    .from("communities")
+    .select("*")
+    .in("id", ids);
 
   if (error) {
     throw new Error(error.message);
   }
 
   return new Map(
-    ((data ?? []) as CommunityRow[]).map((community) => [community.id, community]),
+    ((data ?? []) as CommunityRow[]).map((community) => [
+      community.id,
+      community,
+    ]),
   );
 }
 
@@ -88,10 +94,10 @@ export async function getCommunityReputation(
   }
 
   const { data, error } = await supabase
-    .from('community_reputation')
-    .select('*')
-    .in('user_id', resolvedUserIds)
-    .in('community_id', resolvedCommunityIds);
+    .from("community_reputation")
+    .select("*")
+    .in("user_id", resolvedUserIds)
+    .in("community_id", resolvedCommunityIds);
 
   if (error) {
     throw new Error(error.message);
@@ -116,9 +122,9 @@ export async function getStartupIdeasByPostIds(
   }
 
   const { data, error } = await supabase
-    .from('startup_ideas')
-    .select('*')
-    .in('post_id', ids);
+    .from("startup_ideas")
+    .select("*")
+    .in("post_id", ids);
 
   if (error) {
     throw new Error(error.message);
@@ -140,10 +146,10 @@ export async function getStartupIdeaRevisionsByPostIds(
   }
 
   const { data, error } = await supabase
-    .from('startup_idea_revisions')
-    .select('*')
-    .in('post_id', ids)
-    .order('revision_number', { ascending: false });
+    .from("startup_idea_revisions")
+    .select("*")
+    .in("post_id", ids)
+    .order("revision_number", { ascending: false });
 
   if (error) {
     if (isMissingStartupIdeaAdvancedSchemaError(error)) {
@@ -163,7 +169,7 @@ export async function getStartupIdeaRevisionsByPostIds(
       id: revision.id,
       revisionNumber: revision.revision_number,
       title: revision.title,
-      body: revision.body_md ?? '',
+      body: revision.body_md ?? "",
       problem: revision.problem,
       targetAudience: revision.target_audience,
       solution: revision.solution,
@@ -178,6 +184,37 @@ export async function getStartupIdeaRevisionsByPostIds(
   return revisions;
 }
 
+export async function getViewerVotesByEntityIds(
+  supabase: TypedSupabaseClient,
+  viewerId: string | null | undefined,
+  entityType: "post" | "comment",
+  entityIds: string[],
+) {
+  const ids = unique(entityIds);
+
+  if (!viewerId || ids.length === 0) {
+    return new Map<string, -1 | 0 | 1>();
+  }
+
+  const { data, error } = await supabase
+    .from("votes")
+    .select("*")
+    .eq("user_id", viewerId)
+    .eq("entity_type", entityType)
+    .in("entity_id", ids);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return new Map(
+    ((data ?? []) as VoteRow[]).map((vote) => [
+      vote.entity_id,
+      vote.value as -1 | 1,
+    ]),
+  );
+}
+
 export async function getUniqueCommenterCounts(
   supabase: TypedSupabaseClient,
   postIds: string[],
@@ -189,10 +226,10 @@ export async function getUniqueCommenterCounts(
   }
 
   const { data, error } = await supabase
-    .from('comments')
-    .select('post_id, author_id')
-    .in('post_id', ids)
-    .eq('status', 'published');
+    .from("comments")
+    .select("post_id, author_id")
+    .in("post_id", ids)
+    .eq("status", "published");
 
   if (error) {
     throw new Error(error.message);
@@ -209,7 +246,10 @@ export async function getUniqueCommenterCounts(
   });
 
   return new Map(
-    [...counts.entries()].map(([postId, authorIds]) => [postId, authorIds.size]),
+    [...counts.entries()].map(([postId, authorIds]) => [
+      postId,
+      authorIds.size,
+    ]),
   );
 }
 
@@ -218,16 +258,16 @@ function toCommunitySummary(community: CommunityRow): CommunitySummary {
     id: community.id,
     name: community.name,
     slug: community.slug,
-    description: community.description ?? '',
+    description: community.description ?? "",
     icon: community.name
-      .split(' ')
+      .split(" ")
       .map((chunk) => chunk[0])
-      .join('')
+      .join("")
       .slice(0, 2)
       .toUpperCase(),
     memberCount: community.member_count,
     postCount: community.post_count,
-    accent: 'var(--accent)',
+    accent: "var(--accent)",
   };
 }
 
@@ -237,15 +277,15 @@ function toUserSummary(
   community: CommunityRow | undefined,
   reputationMap: Map<string, CommunityReputationRow>,
 ): UserSummary {
-  const repKey = community ? `${userId}:${community.id}` : '';
+  const repKey = community ? `${userId}:${community.id}` : "";
   const rep = community ? reputationMap.get(repKey) : null;
 
   return {
     id: userId,
     username: profile?.username ?? `user_${userId.slice(0, 8)}`,
-    fullName: profile?.full_name ?? profile?.username ?? 'Credvia User',
-    headline: profile?.headline ?? '',
-    avatarUrl: profile?.avatar_url ?? '',
+    fullName: profile?.full_name ?? profile?.username ?? "Credvia User",
+    headline: profile?.headline ?? "",
+    avatarUrl: profile?.avatar_url ?? "",
     skills: [],
     location: profile?.location ?? undefined,
     currentCompany: profile?.current_company ?? undefined,
@@ -265,28 +305,44 @@ function toUserSummary(
 export async function toPostSummaries(
   supabase: TypedSupabaseClient,
   posts: PostRow[],
+  viewerId?: string | null,
 ): Promise<PostSummary[]> {
-  const profiles = await getProfilesByUserIds(
-    supabase,
-    posts.map((post) => post.author_id),
-  );
-  const communities = await getCommunitiesByIds(
-    supabase,
-    posts.map((post) => post.community_id),
-  );
-  const communityRep = await getCommunityReputation(
-    supabase,
-    posts.map((post) => post.author_id),
-    posts.map((post) => post.community_id),
-  );
-  const startupIdeas = await getStartupIdeasByPostIds(
-    supabase,
-    posts.map((post) => post.id),
-  );
-  const uniqueCommenterCounts = await getUniqueCommenterCounts(
-    supabase,
-    posts.map((post) => post.id),
-  );
+  const [
+    profiles,
+    communities,
+    communityRep,
+    startupIdeas,
+    uniqueCommenterCounts,
+    viewerVotes,
+  ] = await Promise.all([
+    getProfilesByUserIds(
+      supabase,
+      posts.map((post) => post.author_id),
+    ),
+    getCommunitiesByIds(
+      supabase,
+      posts.map((post) => post.community_id),
+    ),
+    getCommunityReputation(
+      supabase,
+      posts.map((post) => post.author_id),
+      posts.map((post) => post.community_id),
+    ),
+    getStartupIdeasByPostIds(
+      supabase,
+      posts.map((post) => post.id),
+    ),
+    getUniqueCommenterCounts(
+      supabase,
+      posts.map((post) => post.id),
+    ),
+    getViewerVotesByEntityIds(
+      supabase,
+      viewerId,
+      "post",
+      posts.map((post) => post.id),
+    ),
+  ]);
 
   return posts.map((post) => {
     const community = communities.get(post.community_id);
@@ -297,25 +353,33 @@ export async function toPostSummaries(
     return {
       id: post.id,
       title: post.title,
-      body: post.body_md ?? '',
+      body: post.body_md ?? "",
       createdAt: post.created_at,
-      postType: post.post_type as PostSummary['postType'],
+      postType: post.post_type as PostSummary["postType"],
       voteScore: post.vote_score,
+      viewerVote: viewerVotes.get(post.id) ?? 0,
       commentCount: post.comment_count,
       saveCount: post.save_count,
-      author: toUserSummary(post.author_id, authorProfile, community, communityRep),
-      community: community ? toCommunitySummary(community) : {
-        id: post.community_id,
-        name: 'Unknown Community',
-        slug: 'unknown',
-        description: '',
-        icon: 'UC',
-        memberCount: 0,
-        postCount: 0,
-        accent: 'var(--accent)',
-      },
+      author: toUserSummary(
+        post.author_id,
+        authorProfile,
+        community,
+        communityRep,
+      ),
+      community: community
+        ? toCommunitySummary(community)
+        : {
+            id: post.community_id,
+            name: "Unknown Community",
+            slug: "unknown",
+            description: "",
+            icon: "UC",
+            memberCount: 0,
+            postCount: 0,
+            accent: "var(--accent)",
+          },
       tags: [],
-      unanswered: post.post_type === 'question' && post.comment_count === 0,
+      unanswered: post.post_type === "question" && post.comment_count === 0,
       externalUrl: post.external_url ?? undefined,
       startupIdea: startupIdea
         ? {
@@ -397,20 +461,20 @@ export async function toCommentSummaries(
 
 function toNotificationDescription(notification: NotificationRow) {
   switch (notification.notif_type) {
-    case 'reply':
-      return 'replied to your post.';
-    case 'vote':
-      return 'voted on your post.';
-    case 'follow':
-      return notification.entity_type === 'post'
-        ? 'followed your startup idea.'
-        : 'followed your profile.';
-    case 'idea_revision':
-      return 'published a new startup idea revision.';
-    case 'mod_action':
-      return 'took moderation action on reported content.';
+    case "reply":
+      return "replied to your post.";
+    case "vote":
+      return "voted on your post.";
+    case "follow":
+      return notification.entity_type === "post"
+        ? "followed your startup idea."
+        : "followed your profile.";
+    case "idea_revision":
+      return "published a new startup idea revision.";
+    case "mod_action":
+      return "took moderation action on reported content.";
     default:
-      return 'interacted with your work.';
+      return "interacted with your work.";
   }
 }
 
@@ -424,19 +488,19 @@ export async function toNotificationSummaries(
   const profiles = await getProfilesByUserIds(supabase, actorIds);
 
   return notifications.map((notification) => {
-    const actorId = notification.actor_user_id ?? 'system';
+    const actorId = notification.actor_user_id ?? "system";
     const actorProfile = profiles.get(actorId);
 
     return {
       id: notification.id,
-      type: notification.notif_type as NotificationSummary['type'],
+      type: notification.notif_type as NotificationSummary["type"],
       actor: actorProfile
         ? {
             id: actorId,
             username: actorProfile.username,
             fullName: actorProfile.full_name ?? actorProfile.username,
-            headline: actorProfile.headline ?? '',
-            avatarUrl: actorProfile.avatar_url ?? '',
+            headline: actorProfile.headline ?? "",
+            avatarUrl: actorProfile.avatar_url ?? "",
             skills: [],
             location: actorProfile.location ?? undefined,
             currentCompany: actorProfile.current_company ?? undefined,
@@ -444,10 +508,10 @@ export async function toNotificationSummaries(
           }
         : {
             id: actorId,
-            username: 'credvia',
-            fullName: 'Credvia',
-            headline: '',
-            avatarUrl: '',
+            username: "credvia",
+            fullName: "Credvia",
+            headline: "",
+            avatarUrl: "",
             skills: [],
             reputation: [],
           },

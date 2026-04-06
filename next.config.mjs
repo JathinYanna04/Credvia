@@ -1,6 +1,6 @@
 const securityHeaders = [
   {
-    key: 'Content-Security-Policy',
+    key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
       "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
@@ -11,36 +11,37 @@ const securityHeaders = [
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
-    ].join('; '),
+    ].join("; "),
   },
-  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-  { key: 'X-Content-Type-Options', value: 'nosniff' },
-  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
 ];
 
 const nextConfig = {
   reactStrictMode: true,
   experimental: {
+    optimizePackageImports: ["lucide-react", "date-fns"],
     // Next.js 14 requires experimental.serverComponentsExternalPackages
     // to avoid bundling Node-native dependencies into route handlers.
     serverComponentsExternalPackages: [
-      '@napi-rs/canvas',
-      'tesseract.js',
-      'pdfjs-dist',
+      "@napi-rs/canvas",
+      "tesseract.js",
+      "pdfjs-dist",
     ],
   },
   images: {
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: '**.supabase.co',
+        protocol: "https",
+        hostname: "**.supabase.co",
       },
     ],
   },
   async headers() {
     return [
       {
-        source: '/:path*',
+        source: "/:path*",
         headers: securityHeaders,
       },
     ];
@@ -48,33 +49,33 @@ const nextConfig = {
   async redirects() {
     return [
       {
-        source: '/jobs',
-        destination: '/career/jobs',
+        source: "/jobs",
+        destination: "/career/jobs",
         permanent: false,
       },
       {
-        source: '/jobs/:path*',
-        destination: '/career/jobs/:path*',
+        source: "/jobs/:path*",
+        destination: "/career/jobs/:path*",
         permanent: false,
       },
       {
-        source: '/careers',
-        destination: '/career',
+        source: "/careers",
+        destination: "/career",
         permanent: false,
       },
       {
-        source: '/careers/:path*',
-        destination: '/career/:path*',
+        source: "/careers/:path*",
+        destination: "/career/:path*",
         permanent: false,
       },
       {
-        source: '/carreers',
-        destination: '/career',
+        source: "/carreers",
+        destination: "/career",
         permanent: false,
       },
       {
-        source: '/carreers/:path*',
-        destination: '/career/:path*',
+        source: "/carreers/:path*",
+        destination: "/career/:path*",
         permanent: false,
       },
     ];
