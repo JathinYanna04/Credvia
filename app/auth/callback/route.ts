@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { captureServerEvent } from '@/lib/analytics/capture-server-event';
 import { sendWelcomeEmail } from '@/lib/email/send-welcome-email';
+import { getPostAuthRedirectPath } from '@/lib/profile-state';
 import { getSupabaseEnvDebug } from '@/lib/supabase/env';
 import { ensureProfileRecord } from '@/lib/supabase/helpers';
 import { createServiceRoleClient } from '@/lib/supabase/service';
@@ -194,7 +195,7 @@ export async function GET(request: Request) {
     return redirectWithError(origin, message);
   }
 
-  const redirectPath = '/feed';
+  const redirectPath = getPostAuthRedirectPath(profile);
   await captureServerEvent({
     event: 'oauth_google_completed',
     distinctId: data.user.id,

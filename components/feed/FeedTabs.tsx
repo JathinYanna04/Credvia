@@ -16,6 +16,11 @@ export function FeedTabs({ value, onValueChange }: FeedTabsProps) {
       items={[
         { value: 'for-you', label: 'For You' },
         { value: 'communities', label: 'Communities' },
+        { value: 'trending', label: 'Trending' },
+        { value: 'founders', label: 'Founders' },
+        { value: 'careers', label: 'Careers' },
+        { value: 'mentors', label: 'Mentors' },
+        { value: 'recruiters', label: 'Recruiters' },
       ]}
     />
   );

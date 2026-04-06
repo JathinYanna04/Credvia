@@ -1,4 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  getCredibilityBadge,
+  getPersonaDetails,
+  normalizePersonaSlug,
+  type OpenToValue,
+  OPEN_TO_VALUES,
+  type ProfileIntent,
+  PROFILE_INTENT_VALUES,
+} from '@/lib/personas';
 import type { Database } from "@/lib/supabase/types";
 import type {
   CommentSummary,
@@ -286,9 +295,56 @@ function toUserSummary(
     fullName: profile?.full_name ?? profile?.username ?? "Credvia User",
     headline: profile?.headline ?? "",
     avatarUrl: profile?.avatar_url ?? "",
+    primaryPersona: normalizePersonaSlug(profile?.primary_persona) ?? undefined,
+    secondaryPersonas:
+      (profile?.secondary_personas ?? [])
+        .map((persona) => normalizePersonaSlug(persona))
+        .filter((persona): persona is NonNullable<typeof persona> => Boolean(persona)) ?? [],
+    profileIntent: (profile?.profile_intent ?? []).filter((item): item is ProfileIntent =>
+      PROFILE_INTENT_VALUES.includes(item as (typeof PROFILE_INTENT_VALUES)[number]),
+    ),
+    openTo: (profile?.open_to ?? []).filter((item): item is OpenToValue =>
+      OPEN_TO_VALUES.includes(item as (typeof OPEN_TO_VALUES)[number]),
+    ),
+    expertiseTags: profile?.expertise_tags ?? [],
+    interestTags: profile?.interest_tags ?? [],
+    personaDetails: getPersonaDetails(
+      profile?.metadata ?? null,
+      normalizePersonaSlug(profile?.primary_persona),
+    ),
     skills: [],
     location: profile?.location ?? undefined,
+    website: profile?.website ?? undefined,
     currentCompany: profile?.current_company ?? undefined,
+    scoreSummary: {
+      contribution_score: profile?.contribution_score ?? 0,
+      credibility_score: profile?.credibility_score ?? 0,
+      helpfulness_score: profile?.helpfulness_score ?? 0,
+      expertise_score: profile?.expertise_score ?? 0,
+      community_score: profile?.community_score ?? 0,
+      persona_completion_score: profile?.persona_completion_score ?? 0,
+    },
+    badge: getCredibilityBadge({
+      contributionScore: profile?.contribution_score,
+      credibilityScore: profile?.credibility_score,
+      helpfulnessScore: profile?.helpfulness_score,
+    }),
+    contributionProfile:
+      profile?.contribution_profile && typeof profile.contribution_profile === 'object'
+        ? (profile.contribution_profile as Record<string, unknown>)
+        : undefined,
+    trustProfile:
+      profile?.trust_profile && typeof profile.trust_profile === 'object'
+        ? (profile.trust_profile as Record<string, unknown>)
+        : undefined,
+    growthTrajectory:
+      profile?.growth_trajectory && typeof profile.growth_trajectory === 'object'
+        ? (profile.growth_trajectory as Record<string, unknown>)
+        : undefined,
+    behavioralSignals:
+      profile?.behavioral_signals && typeof profile.behavioral_signals === 'object'
+        ? (profile.behavioral_signals as Record<string, unknown>)
+        : undefined,
     reputation: community
       ? [
           {
@@ -355,6 +411,7 @@ export async function toPostSummaries(
       title: post.title,
       body: post.body_md ?? "",
       createdAt: post.created_at,
+      updatedAt: post.updated_at,
       postType: post.post_type as PostSummary["postType"],
       voteScore: post.vote_score,
       viewerVote: viewerVotes.get(post.id) ?? 0,
@@ -411,17 +468,26 @@ export async function toCommentSummaries(
   supabase: TypedSupabaseClient,
   comments: CommentRow[],
   communityId: string,
+  viewerId?: string | null,
 ): Promise<CommentSummary[]> {
-  const profiles = await getProfilesByUserIds(
-    supabase,
-    comments.map((comment) => comment.author_id),
-  );
-  const communities = await getCommunitiesByIds(supabase, [communityId]);
-  const reputation = await getCommunityReputation(
-    supabase,
-    comments.map((comment) => comment.author_id),
-    [communityId],
-  );
+  const [profiles, communities, reputation, viewerVotes] = await Promise.all([
+    getProfilesByUserIds(
+      supabase,
+      comments.map((comment) => comment.author_id),
+    ),
+    getCommunitiesByIds(supabase, [communityId]),
+    getCommunityReputation(
+      supabase,
+      comments.map((comment) => comment.author_id),
+      [communityId],
+    ),
+    getViewerVotesByEntityIds(
+      supabase,
+      viewerId,
+      'comment',
+      comments.map((comment) => comment.id),
+    ),
+  ]);
   const community = communities.get(communityId);
 
   const commentMap = new Map<string, CommentSummary & { parentId?: string }>();
@@ -437,7 +503,9 @@ export async function toCommentSummaries(
       ),
       body: comment.body_md,
       createdAt: comment.created_at,
+      updatedAt: comment.updated_at,
       voteScore: comment.vote_score,
+      viewerVote: viewerVotes.get(comment.id) ?? 0,
       isBestAnswer: comment.is_best_answer,
       replies: [],
       parentId: comment.parent_comment_id ?? undefined,

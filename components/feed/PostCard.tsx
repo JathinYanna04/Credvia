@@ -15,7 +15,7 @@ export interface PostCardProps {
   post: PostSummary;
   onVoteChange?: (
     postId: string,
-    next: { score: number; vote: -1 | 0 | 1 },
+    next: { score: number; vote: -1 | 0 | 1; updatedAt?: string },
   ) => void;
 }
 
@@ -23,6 +23,19 @@ export function PostCard({ post, onVoteChange }: PostCardProps) {
   const topRep = post.author.reputation[0];
   const detailHref =
     post.postType === "startup_idea" ? `/ideas/${post.id}` : `/post/${post.id}`;
+  const trackOpen = () => {
+    void fetch('/api/v1/feed/signals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        postId: post.id,
+        signalType: 'open',
+        metadata: {
+          postType: post.postType,
+        },
+      }),
+    }).catch(() => undefined);
+  };
 
   return (
     <article className="surface-panel card-lift overflow-hidden p-4 sm:p-5">
@@ -79,7 +92,7 @@ export function PostCard({ post, onVoteChange }: PostCardProps) {
 
       <div className="mt-4 space-y-3">
         <div className="flex flex-wrap items-start gap-2">
-          <Link href={detailHref} className="block min-w-0 flex-1">
+          <Link href={detailHref} className="block min-w-0 flex-1" onClick={trackOpen}>
             <h3 className="line-clamp-2 text-lg font-semibold leading-snug text-text-primary transition hover:text-accent sm:text-xl">
               {post.title}
             </h3>
@@ -108,6 +121,13 @@ export function PostCard({ post, onVoteChange }: PostCardProps) {
           </div>
         ) : null}
 
+        {post.feedExplanation ? (
+          <div className="rounded-2xl border border-border-subtle bg-bg-base px-3 py-2 text-xs text-text-secondary">
+            <span className="font-medium text-text-primary">Why this appears:</span>{' '}
+            {post.feedExplanation.reasons.join(' • ')}
+          </div>
+        ) : null}
+
         {!topRep ? (
           <div className="text-xs text-text-tertiary sm:hidden">
             Reputation grows with useful answers and votes.
@@ -128,6 +148,7 @@ export function PostCard({ post, onVoteChange }: PostCardProps) {
           <VoteButtons
             score={post.voteScore}
             initialVote={post.viewerVote ?? 0}
+            updatedAt={post.updatedAt}
             endpoint={`/api/v1/posts/${post.id}/vote`}
             onVoteChange={(next) => onVoteChange?.(post.id, next)}
             className="h-11 w-full justify-between rounded-2xl px-2 sm:w-auto"
@@ -135,6 +156,7 @@ export function PostCard({ post, onVoteChange }: PostCardProps) {
         </div>
         <Link
           href={detailHref}
+          onClick={trackOpen}
           className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-bg-base px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-overlay hover:text-text-primary active:scale-[0.98]"
         >
           <MessageSquare className="h-4 w-4" />

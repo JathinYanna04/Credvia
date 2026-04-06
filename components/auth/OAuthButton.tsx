@@ -34,7 +34,7 @@ export function OAuthButton({ mode, onError }: OAuthButtonProps) {
     <Button
       type="button"
       variant="secondary"
-      className="w-full justify-center border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08]"
+      className="w-full justify-center border-[var(--marketing-border)] bg-[var(--marketing-glass)] text-[var(--marketing-text-primary)] hover:bg-[var(--marketing-elevated)]"
       onClick={onClick}
     >
       <Chrome className="h-4 w-4" />

@@ -75,6 +75,12 @@ export function PostDetail({
         <p className="max-w-3xl text-base leading-8 text-text-secondary">
           {post.body}
         </p>
+        {post.feedExplanation ? (
+          <div className="rounded-2xl border border-border-subtle bg-bg-base px-4 py-3 text-sm text-text-secondary">
+            <span className="font-medium text-text-primary">Why this appears:</span>{' '}
+            {post.feedExplanation.reasons.join(' • ')}
+          </div>
+        ) : null}
         {post.startupIdea ? (
           <div className="grid gap-4 rounded-3xl border border-border-subtle bg-bg-surface p-5 md:grid-cols-2">
             <div>
@@ -144,6 +150,7 @@ export function PostDetail({
         <VoteButtons
           score={post.voteScore}
           initialVote={post.viewerVote ?? 0}
+          updatedAt={post.updatedAt}
           endpoint={`/api/v1/posts/${post.id}/vote`}
           orientation="vertical"
         />

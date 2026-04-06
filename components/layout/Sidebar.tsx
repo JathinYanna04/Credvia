@@ -69,7 +69,7 @@ export async function Sidebar() {
           <p className="text-sm text-text-secondary">
             You can keep reading now, then add skills and communities to sharpen your feed.
           </p>
-          <Link href="/onboarding/interests" className="text-sm font-medium text-accent">
+          <Link href="/onboarding" className="text-sm font-medium text-accent">
             Continue onboarding
           </Link>
         </div>

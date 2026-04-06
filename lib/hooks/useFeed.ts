@@ -3,6 +3,34 @@
 import { useEffect, useState } from "react";
 import { computeIdeaValidationScore } from "@/lib/utils/idea-score";
 import type { FeedTab, PostSummary } from "@/lib/types";
+import { shouldPreferVoteState } from '@/lib/voting';
+
+export function mergeFeedPosts(
+  current: PostSummary[] | undefined,
+  incoming: PostSummary[],
+) {
+  if (!current) {
+    return incoming;
+  }
+
+  const currentById = new Map(current.map((post) => [post.id, post]));
+
+  return incoming.map((post) => {
+    const existing = currentById.get(post.id);
+
+    if (!existing || shouldPreferVoteState(existing.updatedAt, post.updatedAt)) {
+      return post;
+    }
+
+    return {
+      ...post,
+      voteScore: existing.voteScore,
+      viewerVote: existing.viewerVote,
+      updatedAt: existing.updatedAt,
+      startupIdea: existing.startupIdea ?? post.startupIdea,
+    };
+  });
+}
 
 export function useFeed(tab: FeedTab) {
   const [posts, setPosts] = useState<PostSummary[] | undefined>(undefined);
@@ -32,7 +60,7 @@ export function useFeed(tab: FeedTab) {
           throw new Error(payload.error?.message ?? "Failed to load feed.");
         }
 
-        setPosts(payload.data ?? []);
+        setPosts((current) => mergeFeedPosts(current, payload.data ?? []));
       })
       .catch((fetchError) =>
         setError(
@@ -49,7 +77,10 @@ export function useFeed(tab: FeedTab) {
     authExpired,
     isLoading: posts === undefined && !error,
     isEmpty: Array.isArray(posts) && posts.length === 0,
-    updateVote: (postId: string, next: { score: number; vote: -1 | 0 | 1 }) =>
+    updateVote: (
+      postId: string,
+      next: { score: number; vote: -1 | 0 | 1; updatedAt?: string },
+    ) =>
       setPosts(
         (current) =>
           current?.map((post) => {
@@ -61,6 +92,7 @@ export function useFeed(tab: FeedTab) {
               ...post,
               voteScore: next.score,
               viewerVote: next.vote,
+              updatedAt: next.updatedAt ?? post.updatedAt,
               startupIdea: post.startupIdea
                 ? {
                     ...post.startupIdea,

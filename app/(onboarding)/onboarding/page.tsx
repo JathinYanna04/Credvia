@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import { PersonaOnboardingFlow } from '@/components/onboarding/PersonaOnboardingFlow';
 
 export default function OnboardingIndexPage() {
-  redirect('/feed');
+  return <PersonaOnboardingFlow />;
 }

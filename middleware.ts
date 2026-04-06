@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
+import { requiresPersonaOnboarding } from '@/lib/profile-state';
 import { updateSession } from '@/lib/supabase/middleware';
 import { logInfo } from '@/lib/utils/logger';
 
@@ -112,6 +113,10 @@ function isApiPath(pathname: string) {
   return pathname.startsWith('/api/');
 }
 
+function isOnboardingPath(pathname: string) {
+  return pathname === '/onboarding' || pathname.startsWith('/onboarding/');
+}
+
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const method = request.method;
@@ -145,7 +150,7 @@ export async function middleware(request: NextRequest) {
     pathname,
   });
 
-  const { response, user } = await updateSession(request);
+  const { response, user, profile } = await updateSession(request);
 
   if (!user && !isPublicPath(pathname) && !isPublicApiRequest(pathname, method)) {
     if (isApiPath(pathname)) {
@@ -169,11 +174,34 @@ export async function middleware(request: NextRequest) {
     return applyCareerDebugHeaders(NextResponse.redirect(new URL('/login', request.url)), pathname, 'redirect-login');
   }
 
+  const requiresOnboarding = Boolean(user) && (!profile || requiresPersonaOnboarding(profile));
+
+  if (
+    !isApiPath(pathname) &&
+    user &&
+    !isOnboardingPath(pathname) &&
+    requiresOnboarding
+  ) {
+    logInfo('middleware', 'Redirecting authenticated user into onboarding', {
+      pathname,
+    });
+    return NextResponse.redirect(new URL('/onboarding', request.url));
+  }
+
+  if (!isApiPath(pathname) && user && isOnboardingPath(pathname) && !requiresOnboarding) {
+    logInfo('middleware', 'Redirecting fully onboarded user away from onboarding', {
+      pathname,
+    });
+    return NextResponse.redirect(new URL('/feed', request.url));
+  }
+
   if (!isApiPath(pathname) && user && (pathname === '/login' || pathname === '/signup')) {
     logInfo('middleware', 'Redirecting authenticated user away from auth page', {
       pathname,
     });
-    return NextResponse.redirect(new URL('/feed', request.url));
+    return NextResponse.redirect(
+      new URL(requiresOnboarding ? '/onboarding' : '/feed', request.url),
+    );
   }
 
   logInfo('middleware', 'Allowing request to continue', {

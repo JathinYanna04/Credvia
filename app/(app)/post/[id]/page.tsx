@@ -5,6 +5,9 @@ import { toCommentSummaries, toPostSummaries } from '@/lib/supabase/query-helper
 
 export default async function PostPage({ params }: { params: { id: string } }) {
   const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const postResult = await supabase
     .from('posts')
     .select('*')
@@ -16,7 +19,7 @@ export default async function PostPage({ params }: { params: { id: string } }) {
     notFound();
   }
 
-  const [post] = await toPostSummaries(supabase, [postResult.data]);
+  const [post] = await toPostSummaries(supabase, [postResult.data], user?.id);
   if (!post) {
     notFound();
   }
@@ -31,6 +34,7 @@ export default async function PostPage({ params }: { params: { id: string } }) {
     supabase,
     commentsResult.data ?? [],
     postResult.data.community_id,
+    user?.id,
   );
 
   return <PostDetail post={post} comments={comments} />;

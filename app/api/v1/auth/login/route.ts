@@ -1,8 +1,17 @@
 import { fail, handleApiError, ok, parseJson } from '@/lib/api';
+import { getPostAuthRedirectPath } from '@/lib/profile-state';
+import { normalizePersonaSlug } from '@/lib/personas';
 import { LoginSchema } from '@/lib/schemas/auth';
-import { ensureProfileRecord } from '@/lib/supabase/helpers';
+import { ensureProfileRecord, isRecoverableSupabaseReadError } from '@/lib/supabase/helpers';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/service';
+
+type RedirectProfile = {
+  onboarding_complete: boolean;
+  primary_persona: string | null;
+  username: string;
+  full_name: string | null;
+};
 
 export async function POST(request: Request) {
   try {
@@ -21,6 +30,7 @@ export async function POST(request: Request) {
 
     const user = signInResult.data.user;
     const serviceRoleClient = createServiceRoleClient();
+    const inferredAccountType = normalizePersonaSlug(user.user_metadata?.account_type) ?? 'professional';
 
     if (serviceRoleClient) {
       const publicUserResult = await serviceRoleClient
@@ -32,25 +42,55 @@ export async function POST(request: Request) {
             typeof user.app_metadata?.provider === 'string'
               ? user.app_metadata.provider
               : 'email',
-          account_type:
-            typeof user.user_metadata?.account_type === 'string'
-              ? user.user_metadata.account_type
-              : 'professional',
+          account_type: inferredAccountType,
           status: 'active',
         })
         .select('id')
         .single();
 
       if (publicUserResult.error) {
-        throw publicUserResult.error;
+        if (!isRecoverableSupabaseReadError(publicUserResult.error)) {
+          throw publicUserResult.error;
+        }
       }
     }
 
-    await ensureProfileRecord(supabase, user);
+    let profile: RedirectProfile;
+    try {
+      const ensuredProfile = await ensureProfileRecord(supabase, user);
+      profile = {
+        onboarding_complete: ensuredProfile.onboarding_complete,
+        primary_persona: ensuredProfile.primary_persona,
+        username: ensuredProfile.username,
+        full_name: ensuredProfile.full_name,
+      };
+    } catch (profileError) {
+      const profileErrorForClassification =
+        profileError instanceof Error
+          ? profileError
+          : typeof profileError === 'object' && profileError !== null
+            ? (profileError as { message?: string; code?: string })
+            : undefined;
+
+      if (!isRecoverableSupabaseReadError(profileErrorForClassification)) {
+        throw profileError;
+      }
+
+      const emailBase = user.email?.split('@')[0] ?? `user-${user.id.slice(0, 8)}`;
+      profile = {
+        onboarding_complete: false,
+        username: emailBase.toLowerCase().replace(/[^a-z0-9_]+/g, '_').slice(0, 30),
+        full_name:
+          typeof user.user_metadata?.full_name === 'string'
+            ? user.user_metadata.full_name
+            : null,
+        primary_persona: inferredAccountType,
+      };
+    }
 
     return ok({
       id: user.id,
-      redirectTo: '/feed',
+      redirectTo: getPostAuthRedirectPath(profile),
     });
   } catch (error) {
     return handleApiError(error);

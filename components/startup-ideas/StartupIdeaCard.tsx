@@ -44,6 +44,7 @@ export function StartupIdeaCard({ idea }: StartupIdeaCardProps) {
         <VoteButtons
           score={idea.voteScore}
           initialVote={idea.viewerVote ?? 0}
+          updatedAt={idea.updatedAt}
           endpoint={`/api/v1/posts/${idea.id}/vote`}
           orientation="vertical"
           className="hidden sm:flex"
@@ -79,6 +80,7 @@ export function StartupIdeaCard({ idea }: StartupIdeaCardProps) {
             <VoteButtons
               score={idea.voteScore}
               initialVote={idea.viewerVote ?? 0}
+              updatedAt={idea.updatedAt}
               endpoint={`/api/v1/posts/${idea.id}/vote`}
             />
           </div>

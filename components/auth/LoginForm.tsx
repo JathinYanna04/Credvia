@@ -74,10 +74,10 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-white/10" />
+          <span className="w-full border-t border-[var(--marketing-border)]" />
         </div>
         <div className="relative flex justify-center">
-          <span className="bg-[rgba(10,18,34,0.88)] px-3 text-xs uppercase tracking-[0.18em] text-slate-400">
+          <span className="bg-[var(--marketing-elevated)] px-3 text-xs uppercase tracking-[0.18em] text-[var(--marketing-text-muted)]">
             Or continue with email
           </span>
         </div>
@@ -92,7 +92,7 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
             id="email"
             type="email"
             placeholder="Email"
-            className="h-11 rounded-2xl border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:ring-primary-500 focus-visible:ring-offset-[#0A1222]"
+            className="h-11 rounded-2xl border-[var(--marketing-border)] bg-[var(--marketing-glass)] text-[var(--marketing-text-primary)] placeholder:text-[var(--marketing-text-muted)] hover:border-primary-500/30 focus-visible:ring-primary-500 focus-visible:ring-offset-[var(--marketing-elevated)]"
             {...register('email')}
           />
           {formState.errors.email ? (
@@ -110,7 +110,7 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
             id="password"
             type="password"
             placeholder="Password"
-            className="h-11 rounded-2xl border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:ring-primary-500 focus-visible:ring-offset-[#0A1222]"
+            className="h-11 rounded-2xl border-[var(--marketing-border)] bg-[var(--marketing-glass)] text-[var(--marketing-text-primary)] placeholder:text-[var(--marketing-text-muted)] hover:border-primary-500/30 focus-visible:ring-primary-500 focus-visible:ring-offset-[var(--marketing-elevated)]"
             {...register('password')}
           />
           {formState.errors.password ? (
@@ -132,9 +132,9 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
         </Button>
       </form>
 
-      <div className="flex items-center justify-between text-sm text-slate-300">
+      <div className="flex items-center justify-between text-sm text-[var(--marketing-text-secondary)]">
         <span>New to Credvia?</span>
-        <Link href="/signup" className="text-primary-300 transition-colors hover:text-white">
+        <Link href="/signup" className="text-accent transition-colors hover:text-[var(--marketing-text-primary)]">
           Create account
         </Link>
       </div>

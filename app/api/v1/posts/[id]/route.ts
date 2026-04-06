@@ -45,6 +45,7 @@ export async function GET(
       supabase,
       commentsResult.data ?? [],
       postResult.data.community_id,
+      user?.id,
     );
 
     return ok({ post, comments });

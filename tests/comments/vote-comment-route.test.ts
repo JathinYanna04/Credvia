@@ -31,14 +31,17 @@ describe("comment vote route", () => {
         data: { id: "comment-1" },
         error: null,
       })),
-      single: vi.fn(async () => ({ data: { vote_score: 1 }, error: null })),
+      single: vi.fn(async () => ({
+        data: { id: "comment-1", vote_score: 1, updated_at: "2026-04-06T10:00:00.000Z" },
+        error: null,
+      })),
     };
 
     const voteLookup = {
       select: vi.fn(() => voteLookup),
       eq: vi.fn(() => voteLookup),
-      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
-      insert: vi.fn(async (payload: Record<string, unknown>) => {
+      maybeSingle: vi.fn(async () => ({ data: { value: 1 }, error: null })),
+      upsert: vi.fn(async (payload: Record<string, unknown>) => {
         insertedVote = payload;
         return { error: null };
       }),
@@ -70,6 +73,7 @@ describe("comment vote route", () => {
 
     expect(response.status).toBe(200);
     expect(payload.data.score).toBe(1);
+    expect(payload.data.currentUserVote).toBe(1);
     expect(insertedVote).toMatchObject({
       user_id: "user-1",
       entity_type: "comment",

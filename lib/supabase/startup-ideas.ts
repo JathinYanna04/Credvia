@@ -83,6 +83,7 @@ export async function getStartupIdeaBundle(
     supabase,
     commentsResult.data ?? [],
     postResult.data.community_id,
+    viewerId,
   );
 
   return {

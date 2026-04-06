@@ -1,49 +1,81 @@
 "use client";
 
 import { ArrowBigDown, ArrowBigUp } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  applyOptimisticVote,
+  type VoteMutationPayload,
+  type VoteValue,
+  shouldPreferVoteState,
+} from '@/lib/voting';
 import { cn } from "@/lib/utils/cn";
 
 export interface VoteButtonsProps {
   score: number;
   initialVote?: -1 | 0 | 1;
+  updatedAt?: string;
   orientation?: "vertical" | "horizontal";
   className?: string;
   endpoint?: string;
-  onVoteChange?: (next: { score: number; vote: -1 | 0 | 1 }) => void;
+  onVoteChange?: (next: { score: number; vote: VoteValue; updatedAt?: string }) => void;
 }
 
 export function VoteButtons({
   score,
   initialVote = 0,
+  updatedAt,
   orientation = "horizontal",
   className,
   endpoint,
   onVoteChange,
 }: VoteButtonsProps) {
   const [localScore, setLocalScore] = useState(score);
-  const [vote, setVote] = useState<-1 | 0 | 1>(initialVote);
+  const [vote, setVote] = useState<VoteValue>(initialVote);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [localUpdatedAt, setLocalUpdatedAt] = useState<string | undefined>(updatedAt);
+  const [pulse, setPulse] = useState(false);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    if (!shouldPreferVoteState(localUpdatedAt, updatedAt)) {
+      return;
+    }
+
     setLocalScore(score);
     setVote(initialVote);
+    setLocalUpdatedAt(updatedAt);
     setError(null);
-  }, [score, initialVote]);
+  }, [score, initialVote, loading, localUpdatedAt, updatedAt]);
 
   const applyVote = async (nextVote: -1 | 1) => {
     if (loading) {
       return;
     }
 
-    const resolvedVote = vote === nextVote ? 0 : nextVote;
-    const optimisticScore = localScore - vote + resolvedVote;
+    const previousState = {
+      score: localScore,
+      vote,
+      updatedAt: localUpdatedAt,
+    };
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    const optimisticState = applyOptimisticVote(previousState, nextVote, requestId);
 
-    setVote(resolvedVote);
-    setLocalScore(optimisticScore);
+    setVote(optimisticState.vote);
+    setLocalScore(optimisticState.score);
+    setLocalUpdatedAt(optimisticState.updatedAt ?? undefined);
+    setPulse(true);
     setError(null);
-    onVoteChange?.({ score: optimisticScore, vote: resolvedVote });
+    onVoteChange?.({
+      score: optimisticState.score,
+      vote: optimisticState.vote,
+      updatedAt: optimisticState.updatedAt ?? undefined,
+    });
 
     if (!endpoint) {
       return;
@@ -53,39 +85,53 @@ export function VoteButtons({
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value: resolvedVote }),
+      body: JSON.stringify({ value: optimisticState.vote }),
     });
 
     if (!response.ok) {
       const payload = (await response.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setVote(vote);
-      setLocalScore(localScore);
+      if (requestIdRef.current === requestId) {
+        setVote(previousState.vote);
+        setLocalScore(previousState.score);
+        setLocalUpdatedAt(previousState.updatedAt ?? undefined);
+      }
       setError(payload?.error?.message ?? "Could not save your vote.");
-      onVoteChange?.({ score: localScore, vote });
+      onVoteChange?.({
+        score: previousState.score,
+        vote: previousState.vote,
+        updatedAt: previousState.updatedAt ?? undefined,
+      });
       setLoading(false);
       return;
     }
 
-    const payload = (await response.json()) as {
-      data?: { score?: number; value?: -1 | 0 | 1 };
-    };
-    if (typeof payload.data?.value === "number") {
-      setVote(payload.data.value);
-    }
-    if (typeof payload.data?.score === "number") {
-      setLocalScore(payload.data.score);
+    const payload = (await response.json()) as { data?: VoteMutationPayload };
+
+    if (requestIdRef.current === requestId) {
+      const nextVoteValue =
+        typeof payload.data?.currentUserVote === "number"
+          ? payload.data.currentUserVote
+          : optimisticState.vote;
+      const nextScore =
+        typeof payload.data?.score === "number"
+          ? payload.data.score
+          : optimisticState.score;
+      const nextUpdatedAt = payload.data?.updatedAt ?? optimisticState.updatedAt;
+
+      setVote(nextVoteValue);
+      setLocalScore(nextScore);
+      setLocalUpdatedAt(nextUpdatedAt ?? undefined);
       onVoteChange?.({
-        score: payload.data.score,
-        vote:
-          typeof payload.data?.value === "number"
-            ? payload.data.value
-            : resolvedVote,
+        score: nextScore,
+        vote: nextVoteValue,
+        updatedAt: nextUpdatedAt ?? undefined,
       });
     }
 
     setLoading(false);
+    window.setTimeout(() => setPulse(false), 180);
   };
 
   return (
@@ -112,7 +158,8 @@ export function VoteButtons({
         <span
           aria-live="polite"
           className={cn(
-            "min-w-[2rem] text-center font-mono text-xs",
+            "min-w-[2rem] text-center font-mono text-xs transition-transform duration-200",
+            pulse && "scale-110",
             localScore > 0 ? "text-accent" : "text-text-tertiary",
           )}
         >

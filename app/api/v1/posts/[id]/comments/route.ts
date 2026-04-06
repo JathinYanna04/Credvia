@@ -13,6 +13,9 @@ export async function GET(
 ) {
   try {
     const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     const postResult = await supabase
       .from('posts')
       .select('community_id')
@@ -42,6 +45,7 @@ export async function GET(
       supabase,
       commentsResult.data ?? [],
       postResult.data.community_id,
+      user?.id,
     );
 
     return ok(comments);
@@ -100,6 +104,7 @@ export async function POST(
       supabase,
       [data],
       postResult.data.community_id,
+      user.id,
     );
 
     if (postResult.data.author_id !== user.id) {
