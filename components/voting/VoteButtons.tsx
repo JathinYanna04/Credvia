@@ -30,7 +30,7 @@ export function VoteButtons({
     setLocalScore(score);
     setVote(initialVote);
     setError(null);
-  }, [endpoint]);
+  }, [score, initialVote]);
 
   const applyVote = async (nextVote: -1 | 1) => {
     if (loading) {
