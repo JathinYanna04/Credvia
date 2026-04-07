@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ChatConversationSummary,
+  ChatMessageReactionRecord,
   ChatMessageRecord,
   ChatMessageType,
   ChatPresenceStatus,
@@ -18,6 +19,8 @@ type ChatConversationKeyRow =
   Database['public']['Tables']['chat_conversation_keys']['Row'];
 type ChatUserKeypairRow = Database['public']['Tables']['chat_user_keypairs']['Row'];
 type ChatUserPresenceRow = Database['public']['Tables']['chat_user_presence']['Row'];
+type ChatMessageReactionRow =
+  Database['public']['Tables']['chat_message_reactions']['Row'];
 
 type ParticipantProfile = {
   user_id: string;
@@ -92,6 +95,16 @@ export interface UpdateChatPresenceInput {
   heartbeatOnly?: boolean;
 }
 
+export interface ListConversationReactionsInput {
+  messageIds?: string[];
+}
+
+export interface ToggleMessageReactionInput {
+  messageId: string;
+  userId: string;
+  emoji: string;
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -127,6 +140,18 @@ function toMessageRecord(row: ChatMessageRow): ChatMessageRecord {
     replyToMessageId: row.reply_to_message_id,
     isDeleted: row.is_deleted,
     deletedAt: row.deleted_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toMessageReactionRecord(row: ChatMessageReactionRow) {
+  return {
+    id: row.id,
+    messageId: row.message_id,
+    conversationId: row.conversation_id,
+    userId: row.user_id,
+    emoji: row.emoji,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -213,7 +238,7 @@ async function loadConversationSummaries(
 
   const allParticipantsResult = await supabase
     .from('chat_participants')
-    .select('conversation_id, user_id, status')
+    .select('conversation_id, user_id, status, last_read_message_id, last_read_at')
     .eq('status', 'active')
     .in('conversation_id', conversationIds);
 
@@ -229,10 +254,26 @@ async function loadConversationSummaries(
   );
 
   const participantsByConversation = new Map<string, string[]>();
+  const participantByConversationAndUser = new Map<
+    string,
+    {
+      userId: string;
+      lastReadMessageId: string | null;
+      lastReadAt: string | null;
+    }
+  >();
   for (const participant of allParticipantsResult.data ?? []) {
     const current = participantsByConversation.get(participant.conversation_id) ?? [];
     current.push(participant.user_id);
     participantsByConversation.set(participant.conversation_id, current);
+    participantByConversationAndUser.set(
+      `${participant.conversation_id}:${participant.user_id}`,
+      {
+        userId: participant.user_id,
+        lastReadMessageId: participant.last_read_message_id,
+        lastReadAt: participant.last_read_at,
+      },
+    );
   }
 
   const lastMessageIds = conversations
@@ -406,6 +447,9 @@ async function loadConversationSummaries(
       if (counterpartId) {
         const profile = counterpartProfilesMap.get(counterpartId);
         const presence = counterpartPresenceMap.get(counterpartId);
+        const counterpartParticipant = participantByConversationAndUser.get(
+          `${conversation.id}:${counterpartId}`,
+        );
         counterpart = {
           userId: counterpartId,
           username: profile?.username ?? `user_${counterpartId.slice(0, 8)}`,
@@ -415,6 +459,8 @@ async function loadConversationSummaries(
           primaryPersona: profile?.primary_persona ?? null,
           presence: normalizePresenceStatus(presence?.status),
           lastSeenAt: presence?.last_seen_at ?? null,
+          lastReadMessageId: counterpartParticipant?.lastReadMessageId ?? null,
+          lastReadAt: counterpartParticipant?.lastReadAt ?? null,
         };
       }
     }
@@ -463,7 +509,10 @@ async function loadConversationSummaries(
             messageType: lastMessage.message_type as ChatMessageType,
             isDeleted: lastMessage.is_deleted,
             createdAt: lastMessage.created_at,
-            previewText: null,
+            previewText:
+              lastMessage.message_type === 'text'
+                ? 'Encrypted message'
+                : 'Shared an update',
           }
         : null,
     };
@@ -912,6 +961,109 @@ export async function updateChatPresence(
     lastSeenAt: upsertResult.data.last_seen_at,
     updatedAt: upsertResult.data.updated_at,
     heartbeatOnly: input.heartbeatOnly ?? false,
+  };
+}
+
+export async function listConversationMessageReactions(
+  supabase: TypedSupabaseClient,
+  userId: string,
+  conversationId: string,
+  input: ListConversationReactionsInput = {},
+): Promise<ChatMessageReactionRecord[]> {
+  await assertActiveParticipant(supabase, conversationId, userId);
+
+  let query = supabase
+    .from('chat_message_reactions')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true });
+
+  const messageIds = (input.messageIds ?? []).filter((value) => Boolean(value));
+  if (messageIds.length > 0) {
+    query = query.in('message_id', messageIds);
+  }
+
+  const result = await query;
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return (result.data ?? []).map((row) => toMessageReactionRecord(row as ChatMessageReactionRow));
+}
+
+export async function toggleMessageReaction(
+  supabase: TypedSupabaseClient,
+  input: ToggleMessageReactionInput,
+) {
+  const messageResult = await supabase
+    .from('chat_messages')
+    .select('id, conversation_id')
+    .eq('id', input.messageId)
+    .maybeSingle();
+
+  if (messageResult.error) {
+    throw new Error(messageResult.error.message);
+  }
+
+  if (!messageResult.data) {
+    throw new ChatServiceError('NOT_FOUND', 'Message not found.', 404);
+  }
+
+  await assertActiveParticipant(supabase, messageResult.data.conversation_id, input.userId);
+
+  const existingResult = await supabase
+    .from('chat_message_reactions')
+    .select('*')
+    .eq('message_id', input.messageId)
+    .eq('user_id', input.userId)
+    .eq('emoji', input.emoji)
+    .maybeSingle();
+
+  if (existingResult.error) {
+    throw new Error(existingResult.error.message);
+  }
+
+  if (existingResult.data) {
+    const deleteResult = await supabase
+      .from('chat_message_reactions')
+      .delete()
+      .eq('id', existingResult.data.id);
+
+    if (deleteResult.error) {
+      throw new Error(deleteResult.error.message);
+    }
+
+    return {
+      reacted: false,
+      reaction: null,
+      messageId: input.messageId,
+      conversationId: messageResult.data.conversation_id,
+      emoji: input.emoji,
+    };
+  }
+
+  const insertResult = await supabase
+    .from('chat_message_reactions')
+    .insert({
+      message_id: input.messageId,
+      conversation_id: messageResult.data.conversation_id,
+      user_id: input.userId,
+      emoji: input.emoji,
+    })
+    .select('*')
+    .single();
+
+  if (insertResult.error) {
+    throw new Error(insertResult.error.message);
+  }
+
+  return {
+    reacted: true,
+    reaction: toMessageReactionRecord(insertResult.data as ChatMessageReactionRow),
+    messageId: input.messageId,
+    conversationId: messageResult.data.conversation_id,
+    emoji: input.emoji,
   };
 }
 

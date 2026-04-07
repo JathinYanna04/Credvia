@@ -53,6 +53,8 @@ export interface ChatConversationSummary {
         primaryPersona: string | null;
         presence: ChatPresenceStatus;
         lastSeenAt: string | null;
+        lastReadMessageId?: string | null;
+        lastReadAt?: string | null;
       }
     | null;
   lastMessage:
@@ -81,6 +83,16 @@ export interface ChatMessageRecord {
   replyToMessageId: string | null;
   isDeleted: boolean;
   deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessageReactionRecord {
+  id: string;
+  messageId: string;
+  conversationId: string;
+  userId: string;
+  emoji: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -5,9 +5,9 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
+  Check,
   CheckCheck,
   ChevronLeft,
-  Loader2,
   MessageSquare,
   MoreHorizontal,
   Pin,
@@ -28,7 +28,11 @@ import {
 } from '@/components/ui/dropdown';
 import { Textarea } from '@/components/ui/textarea';
 import { bootstrapDirectMessageConversation } from '@/lib/chat/bootstrap-client';
-import type { ChatConversationSummary, ChatMessageRecord } from '@/lib/chat/contracts';
+import type {
+  ChatConversationSummary,
+  ChatMessageReactionRecord,
+  ChatMessageRecord,
+} from '@/lib/chat/contracts';
 import {
   decryptMessageContent,
   encryptMessageContent,
@@ -55,6 +59,9 @@ interface ConversationThreadClientProps {
 }
 
 type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+type ChatParticipantRow = Database['public']['Tables']['chat_participants']['Row'];
+type ChatMessageReactionRow =
+  Database['public']['Tables']['chat_message_reactions']['Row'];
 
 interface LocalUserKeypair {
   publicKey: string;
@@ -99,7 +106,14 @@ type TimelineItem =
       showInlineTimestamp: boolean;
     };
 
+interface ReactionSummary {
+  emoji: string;
+  count: number;
+  reactedByMe: boolean;
+}
+
 const USER_KEYPAIR_STORAGE_KEY = 'credvia.chat.user-keypair.v1';
+const QUICK_REACTIONS = ['❤️', '👍', '😂', '👏', '🔥'] as const;
 
 function conversationKeyStorageKey(conversationId: string) {
   return `credvia.chat.conversation-key.${conversationId}.v1`;
@@ -115,7 +129,7 @@ function getSourceContextChipLabel(sourceType: ChatConversationSummary['sourceTy
   }
 
   if (sourceType === 'opportunity') {
-    return 'From Job Opportunity';
+    return 'From Opportunity';
   }
 
   if (sourceType === 'career_match') {
@@ -199,6 +213,66 @@ function toMessageRecord(row: ChatMessageRow): ChatMessageRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function toReactionRecord(row: ChatMessageReactionRow): ChatMessageReactionRecord {
+  return {
+    id: row.id,
+    messageId: row.message_id,
+    conversationId: row.conversation_id,
+    userId: row.user_id,
+    emoji: row.emoji,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function aggregateReactions(
+  reactions: ChatMessageReactionRecord[] | undefined,
+  currentUserId: string,
+) {
+  const byEmoji = new Map<string, ReactionSummary>();
+
+  for (const reaction of reactions ?? []) {
+    const existing = byEmoji.get(reaction.emoji);
+    if (!existing) {
+      byEmoji.set(reaction.emoji, {
+        emoji: reaction.emoji,
+        count: 1,
+        reactedByMe: reaction.userId === currentUserId,
+      });
+      continue;
+    }
+
+    existing.count += 1;
+    if (reaction.userId === currentUserId) {
+      existing.reactedByMe = true;
+    }
+  }
+
+  return [...byEmoji.values()].sort((left, right) => {
+    if (left.count !== right.count) {
+      return right.count - left.count;
+    }
+
+    return left.emoji.localeCompare(right.emoji);
+  });
+}
+
+function isMessageSeenByCounterpart(
+  message: Pick<ChatMessageRecord, 'createdAt' | 'senderId'>,
+  counterpart: ChatConversationSummary['counterpart'],
+  currentUserId: string,
+) {
+  if (!counterpart || message.senderId !== currentUserId) {
+    return false;
+  }
+
+  if (!counterpart.lastReadAt) {
+    return false;
+  }
+
+  return Date.parse(counterpart.lastReadAt) >= Date.parse(message.createdAt);
 }
 
 function sortMessages(
@@ -431,7 +505,7 @@ function getConversationSubtitle(
       : 'Direct message';
 
     if (options?.isCounterpartTyping) {
-      return `${identity} · Typing...`;
+      return `${identity} · Typing`;
     }
 
     if (conversation.counterpart?.presence === 'online') {
@@ -510,6 +584,12 @@ export function ConversationThreadClient({
   const [realtimeStatus, setRealtimeStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
   const [connectionToast, setConnectionToast] = useState<'connecting' | 'reconnected' | null>(null);
   const [pendingBelowCount, setPendingBelowCount] = useState(0);
+  const [messageReactions, setMessageReactions] = useState<
+    Record<string, ChatMessageReactionRecord[]>
+  >({});
+  const [activeReactionPickerFor, setActiveReactionPickerFor] = useState<string | null>(null);
+  const [updatingReactionKey, setUpdatingReactionKey] = useState<string | null>(null);
+  const [typingIndicatorVisible, setTypingIndicatorVisible] = useState(false);
   const prefersReducedMotion = useReducedMotion();
 
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -527,6 +607,10 @@ export function ConversationThreadClient({
   const setupSlowConnectTimerRef = useRef<number | null>(null);
   const previousRealtimeStatusRef = useRef<'connecting' | 'connected' | 'offline'>('connecting');
   const typingChannelRef = useRef<{ send: (payload: unknown) => Promise<unknown> } | null>(null);
+  const loadedReactionMessageIdsRef = useRef<Set<string>>(new Set());
+  const reactionPressTimerRef = useRef<number | null>(null);
+  const historyLoadAnchorRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
+  const typingIndicatorDelayRef = useRef<number | null>(null);
 
   useEffect(() => {
     setSummary(conversation);
@@ -548,6 +632,11 @@ export function ConversationThreadClient({
     setShowSlowConnecting(false);
     setPendingDraft(null);
     setPendingBelowCount(0);
+    setMessageReactions({});
+    setActiveReactionPickerFor(null);
+    setUpdatingReactionKey(null);
+    setTypingIndicatorVisible(false);
+    loadedReactionMessageIdsRef.current = new Set();
     lastMessageIdRef.current = null;
 
     const savedDraft = localStorage.getItem(conversationDraftStorageKey(conversationId));
@@ -571,6 +660,16 @@ export function ConversationThreadClient({
     if (setupSlowConnectTimerRef.current !== null) {
       window.clearTimeout(setupSlowConnectTimerRef.current);
       setupSlowConnectTimerRef.current = null;
+    }
+
+    if (reactionPressTimerRef.current !== null) {
+      window.clearTimeout(reactionPressTimerRef.current);
+      reactionPressTimerRef.current = null;
+    }
+
+    if (typingIndicatorDelayRef.current !== null) {
+      window.clearTimeout(typingIndicatorDelayRef.current);
+      typingIndicatorDelayRef.current = null;
     }
 
     didBroadcastTypingRef.current = false;
@@ -880,6 +979,169 @@ export function ConversationThreadClient({
     }
   };
 
+  const upsertReaction = useCallback((reaction: ChatMessageReactionRecord) => {
+    setMessageReactions((previous) => {
+      const current = previous[reaction.messageId] ?? [];
+      const index = current.findIndex((candidate) => candidate.id === reaction.id);
+
+      if (index >= 0) {
+        const nextForMessage = current.map((candidate, currentIndex) =>
+          currentIndex === index ? reaction : candidate,
+        );
+        return {
+          ...previous,
+          [reaction.messageId]: nextForMessage,
+        };
+      }
+
+      return {
+        ...previous,
+        [reaction.messageId]: [...current, reaction],
+      };
+    });
+  }, []);
+
+  const removeReaction = useCallback((reactionId: string, messageId: string) => {
+    setMessageReactions((previous) => {
+      const current = previous[messageId] ?? [];
+      const nextForMessage = current.filter((candidate) => candidate.id !== reactionId);
+
+      if (nextForMessage.length === current.length) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        [messageId]: nextForMessage,
+      };
+    });
+  }, []);
+
+  const hydrateMissingReactions = useCallback(
+    async (messageIds: string[]) => {
+      const uniqueIds = [...new Set(messageIds)].filter((id) => !id.startsWith('optimistic:'));
+      const missingMessageIds = uniqueIds.filter(
+        (id) => !loadedReactionMessageIdsRef.current.has(id),
+      );
+
+      if (missingMessageIds.length === 0) {
+        return;
+      }
+
+      try {
+        const query = missingMessageIds.map((id) => `messageId=${encodeURIComponent(id)}`).join('&');
+        const response = await fetch(
+          `/api/v1/chat/conversations/${conversationId}/reactions?${query}`,
+          {
+            method: 'GET',
+          },
+        );
+        const payload = (await response.json()) as ApiResponse<ChatMessageReactionRecord[]>;
+
+        if (!response.ok) {
+          throw new Error(payload.error?.message ?? 'Unable to load message reactions.');
+        }
+
+        const nextByMessageId: Record<string, ChatMessageReactionRecord[]> = {};
+        for (const messageId of missingMessageIds) {
+          nextByMessageId[messageId] = [];
+        }
+
+        for (const reaction of payload.data ?? []) {
+          const current = nextByMessageId[reaction.messageId] ?? [];
+          current.push(reaction);
+          nextByMessageId[reaction.messageId] = current;
+        }
+
+        setMessageReactions((previous) => ({
+          ...previous,
+          ...nextByMessageId,
+        }));
+
+        for (const messageId of missingMessageIds) {
+          loadedReactionMessageIdsRef.current.add(messageId);
+        }
+      } catch {
+        // Reactions are optional UX metadata; failures should not break message flow.
+      }
+    },
+    [conversationId],
+  );
+
+  const toggleReaction = useCallback(
+    async (messageId: string, emoji: string) => {
+      const key = `${messageId}:${emoji}`;
+      if (updatingReactionKey === key) {
+        return;
+      }
+
+      setUpdatingReactionKey(key);
+
+      const previous = messageReactions;
+      const currentReactions = previous[messageId] ?? [];
+      const existingMine = currentReactions.find(
+        (candidate) => candidate.userId === currentUserId && candidate.emoji === emoji,
+      );
+
+      if (existingMine) {
+        removeReaction(existingMine.id, messageId);
+      } else {
+        upsertReaction({
+          id: `optimistic:${messageId}:${currentUserId}:${emoji}`,
+          messageId,
+          conversationId,
+          userId: currentUserId,
+          emoji,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      try {
+        const response = await fetch(`/api/v1/chat/messages/${messageId}/reactions`, {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ emoji }),
+        });
+
+        const payload = (await response.json()) as ApiResponse<{
+          reacted: boolean;
+          messageId: string;
+          emoji: string;
+          reaction: ChatMessageReactionRecord | null;
+        }>;
+
+        if (!response.ok || !payload.data) {
+          throw new Error(payload.error?.message ?? 'Unable to update reaction.');
+        }
+
+        removeReaction(`optimistic:${messageId}:${currentUserId}:${emoji}`, messageId);
+
+        if (payload.data.reacted && payload.data.reaction) {
+          upsertReaction(payload.data.reaction);
+        }
+      } catch {
+        setMessageReactions(previous);
+      } finally {
+        setUpdatingReactionKey((current) => (current === key ? null : current));
+      }
+    },
+    [
+      conversationId,
+      currentUserId,
+      messageReactions,
+      removeReaction,
+      upsertReaction,
+      updatingReactionKey,
+    ],
+  );
+
+  useEffect(() => {
+    void hydrateMissingReactions(messages.map((message) => message.id));
+  }, [hydrateMissingReactions, messages]);
+
   useEffect(() => {
     const supabase = createClient();
 
@@ -915,6 +1177,87 @@ export function ConversationThreadClient({
         (payload) => {
           const row = payload.new as ChatMessageRow;
           setMessages((previous) => mergeMessage(previous, toMessageRecord(row)));
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_participants',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const row = payload.new as ChatParticipantRow;
+          if (row.user_id === currentUserId) {
+            return;
+          }
+
+          setSummary((previous) => {
+            if (!previous.counterpart || previous.counterpart.userId !== row.user_id) {
+              return previous;
+            }
+
+            return {
+              ...previous,
+              counterpart: {
+                ...previous.counterpart,
+                lastReadMessageId: row.last_read_message_id,
+                lastReadAt: row.last_read_at,
+              },
+            };
+          });
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_message_reactions',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const deleted = payload.old as { id: string; message_id: string };
+            removeReaction(deleted.id, deleted.message_id);
+            return;
+          }
+
+          const row = payload.new as ChatMessageReactionRow;
+          upsertReaction(toReactionRecord(row));
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_user_presence',
+          filter: summary.counterpart?.userId
+            ? `user_id=eq.${summary.counterpart.userId}`
+            : 'user_id=eq.00000000-0000-0000-0000-000000000000',
+        },
+        (payload) => {
+          const next = payload.new as { status?: 'online' | 'away' | 'offline'; last_seen_at?: string };
+          if (!summary.counterpart?.userId) {
+            return;
+          }
+
+          setSummary((previous) => {
+            if (!previous.counterpart) {
+              return previous;
+            }
+
+            return {
+              ...previous,
+              counterpart: {
+                ...previous.counterpart,
+                presence: next.status ?? previous.counterpart.presence,
+                lastSeenAt: next.last_seen_at ?? previous.counterpart.lastSeenAt,
+              },
+            };
+          });
         },
       )
       .on('broadcast', { event: 'typing' }, (payload) => {
@@ -983,7 +1326,7 @@ export function ConversationThreadClient({
       window.clearInterval(typingPruneInterval);
       void supabase.removeChannel(channel);
     };
-  }, [conversationId, currentUserId]);
+  }, [conversationId, currentUserId, removeReaction, summary.counterpart?.userId, upsertReaction]);
 
   useEffect(() => {
     const latest = messages[messages.length - 1];
@@ -1058,7 +1401,7 @@ export function ConversationThreadClient({
       return;
     }
 
-    if (isNearBottomRef.current || latest.senderId === currentUserId) {
+    if (isNearBottomRef.current) {
       container.scrollTo({
         top: container.scrollHeight,
         behavior: 'smooth',
@@ -1069,7 +1412,7 @@ export function ConversationThreadClient({
     }
 
     lastMessageIdRef.current = latest.id;
-  }, [messages, currentUserId]);
+  }, [messages]);
 
   const isCounterpartTyping = useMemo(() => {
     if (!summary.counterpart?.userId) {
@@ -1096,6 +1439,29 @@ export function ConversationThreadClient({
 
     return typingUserIds.length === 1 ? 'Someone is typing' : `${typingUserIds.length} people are typing`;
   }, [isCounterpartTyping, typingUsers]);
+
+  useEffect(() => {
+    const hasTyping = Boolean(typingIndicatorLabel);
+
+    if (!hasTyping) {
+      if (typingIndicatorDelayRef.current !== null) {
+        window.clearTimeout(typingIndicatorDelayRef.current);
+        typingIndicatorDelayRef.current = null;
+      }
+
+      setTypingIndicatorVisible(false);
+      return;
+    }
+
+    if (typingIndicatorVisible || typingIndicatorDelayRef.current !== null) {
+      return;
+    }
+
+    typingIndicatorDelayRef.current = window.setTimeout(() => {
+      typingIndicatorDelayRef.current = null;
+      setTypingIndicatorVisible(true);
+    }, 400);
+  }, [typingIndicatorLabel, typingIndicatorVisible]);
 
   const renderedMessages = useMemo(
     () =>
@@ -1268,6 +1634,14 @@ export function ConversationThreadClient({
         window.clearTimeout(setupSlowConnectTimerRef.current);
       }
 
+      if (reactionPressTimerRef.current !== null) {
+        window.clearTimeout(reactionPressTimerRef.current);
+      }
+
+      if (typingIndicatorDelayRef.current !== null) {
+        window.clearTimeout(typingIndicatorDelayRef.current);
+      }
+
       sendTypingSignal(false);
     },
     [sendTypingSignal],
@@ -1277,6 +1651,14 @@ export function ConversationThreadClient({
     if (!nextCursor || loadingOlder) {
       return;
     }
+
+    const container = messagesContainerRef.current;
+    historyLoadAnchorRef.current = container
+      ? {
+          scrollTop: container.scrollTop,
+          scrollHeight: container.scrollHeight,
+        }
+      : null;
 
     setLoadingOlder(true);
     setStatusError(null);
@@ -1299,6 +1681,20 @@ export function ConversationThreadClient({
         }
 
         return next;
+      });
+
+      window.requestAnimationFrame(() => {
+        const anchor = historyLoadAnchorRef.current;
+        const liveContainer = messagesContainerRef.current;
+
+        if (!anchor || !liveContainer) {
+          historyLoadAnchorRef.current = null;
+          return;
+        }
+
+        const heightDelta = liveContainer.scrollHeight - anchor.scrollHeight;
+        liveContainer.scrollTop = anchor.scrollTop + heightDelta;
+        historyLoadAnchorRef.current = null;
       });
 
       setNextCursor(payload.meta?.cursor ?? null);
@@ -1451,7 +1847,15 @@ export function ConversationThreadClient({
           deletedAt: null,
           createdAt: optimisticCreatedAt,
           updatedAt: optimisticCreatedAt,
-        }),
+        }).map((message) =>
+          message.id === optimisticMessageId
+            ? {
+                ...message,
+                localState: 'sending',
+                localError: null,
+              }
+            : message,
+        ),
       );
     } else {
       setMessages((previous) =>
@@ -1586,7 +1990,7 @@ export function ConversationThreadClient({
         : null;
 
   return (
-    <section className="surface-panel relative flex min-h-[58dvh] flex-col overflow-hidden lg:max-h-[calc(100dvh-11.25rem)]">
+    <section className="surface-panel relative flex h-[calc(100dvh-6.2rem)] min-h-[calc(100dvh-6.2rem)] flex-col overflow-hidden lg:h-auto lg:min-h-[58dvh] lg:max-h-[calc(100dvh-11.25rem)]">
       <header className="sticky top-0 z-10 border-b border-border-subtle bg-bg-surface/95 px-3 py-2.5 backdrop-blur">
         <div className="flex items-center gap-3">
           {showBackLink ? (
@@ -1641,7 +2045,7 @@ export function ConversationThreadClient({
           <div className="sm:hidden">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="secondary" size="icon" aria-label="Conversation actions">
+                <Button variant="secondary" size="icon" className="h-11 w-11" aria-label="Conversation actions">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -1773,25 +2177,44 @@ export function ConversationThreadClient({
             }
 
             const { message, groupedWithPrevious, groupedWithNext, showAvatar, showInlineTimestamp } = item;
+            const seenByCounterpart = isMessageSeenByCounterpart(
+              message,
+              summary.counterpart,
+              currentUserId,
+            );
+            const reactionsForMessage = aggregateReactions(
+              messageReactions[message.id],
+              currentUserId,
+            );
             const outgoingStatus =
               message.localState === 'failed'
                 ? 'failed'
                 : message.localState === 'sending'
-                  ? 'sending'
-                  : 'delivered';
+                  ? 'sent'
+                  : seenByCounterpart
+                    ? 'seen'
+                    : 'delivered';
 
             return (
               <motion.div
                 key={item.key}
-                layout
+                layout="position"
                 initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}
+                transition={{ duration: prefersReducedMotion ? 0 : 0.18, ease: 'easeOut' }}
                 className={cn(
-                  'group flex items-end gap-2',
+                  'group relative flex items-end gap-2',
                   message.mine ? 'justify-end' : 'justify-start',
                   groupedWithPrevious ? 'mt-1' : 'mt-3',
                 )}
+                onMouseEnter={() => {
+                  setActiveReactionPickerFor(message.id);
+                }}
+                onMouseLeave={() => {
+                  setActiveReactionPickerFor((current) =>
+                    current === message.id ? null : current,
+                  );
+                }}
               >
                 {!message.mine ? (
                   <div className="w-8 shrink-0">
@@ -1809,8 +2232,64 @@ export function ConversationThreadClient({
                   </div>
                 ) : null}
 
+                {!message.isDeleted ? (
+                  <div
+                    className={cn(
+                      'pointer-events-none absolute -top-9 z-10 flex items-center gap-1 rounded-full border border-border-subtle bg-bg-surface px-1.5 py-1 shadow transition-opacity',
+                      activeReactionPickerFor === message.id
+                        ? 'opacity-100'
+                        : 'opacity-0 group-hover:opacity-100',
+                      message.mine ? 'right-10' : 'left-10',
+                    )}
+                  >
+                    {QUICK_REACTIONS.map((emoji) => {
+                      const reactionKey = `${message.id}:${emoji}`;
+                      return (
+                        <button
+                          key={emoji}
+                          type="button"
+                          className="pointer-events-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-sm transition-colors hover:bg-bg-overlay sm:h-7 sm:w-7"
+                          onClick={() => {
+                            void toggleReaction(message.id, emoji);
+                          }}
+                          disabled={updatingReactionKey === reactionKey}
+                          aria-label={`React with ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
                 <motion.article
-                  layout
+                  layout="position"
+                  onPointerDown={(event) => {
+                    if (event.pointerType !== 'touch') {
+                      return;
+                    }
+
+                    if (reactionPressTimerRef.current !== null) {
+                      window.clearTimeout(reactionPressTimerRef.current);
+                    }
+
+                    reactionPressTimerRef.current = window.setTimeout(() => {
+                      reactionPressTimerRef.current = null;
+                      setActiveReactionPickerFor(message.id);
+                    }, 420);
+                  }}
+                  onPointerUp={() => {
+                    if (reactionPressTimerRef.current !== null) {
+                      window.clearTimeout(reactionPressTimerRef.current);
+                      reactionPressTimerRef.current = null;
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    if (reactionPressTimerRef.current !== null) {
+                      window.clearTimeout(reactionPressTimerRef.current);
+                      reactionPressTimerRef.current = null;
+                    }
+                  }}
                   className={cn(
                     'max-w-[72%] border px-3.5 py-2.5 text-sm shadow-[0_2px_7px_rgba(15,23,42,0.05)] sm:max-w-[70%]',
                     message.mine
@@ -1836,26 +2315,60 @@ export function ConversationThreadClient({
                     ) : null}
 
                     {message.mine ? (
-                      <>
-                        {outgoingStatus === 'sending' ? (
-                          <span className="inline-flex items-center gap-1 text-text-tertiary">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Sending...
-                          </span>
+                      <AnimatePresence mode="wait" initial={false}>
+                        {outgoingStatus === 'sent' ? (
+                          <motion.span
+                            key="sent"
+                            initial={prefersReducedMotion ? false : { opacity: 0, y: 2 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -2 }}
+                            transition={{ duration: prefersReducedMotion ? 0 : 0.15 }}
+                            className="inline-flex min-w-[4.7rem] items-center justify-end gap-1 text-text-tertiary"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            Sent
+                          </motion.span>
                         ) : null}
                         {outgoingStatus === 'delivered' ? (
-                          <span className="inline-flex items-center gap-1 text-success">
+                          <motion.span
+                            key="delivered"
+                            initial={prefersReducedMotion ? false : { opacity: 0, y: 2 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -2 }}
+                            transition={{ duration: prefersReducedMotion ? 0 : 0.15 }}
+                            className="inline-flex min-w-[4.7rem] items-center justify-end gap-1 text-text-secondary"
+                          >
                             <CheckCheck className="h-3.5 w-3.5" />
                             Delivered
-                          </span>
+                          </motion.span>
+                        ) : null}
+                        {outgoingStatus === 'seen' ? (
+                          <motion.span
+                            key="seen"
+                            initial={prefersReducedMotion ? false : { opacity: 0, y: 2 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -2 }}
+                            transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}
+                            className="inline-flex min-w-[4.7rem] items-center justify-end gap-1 text-sky-500"
+                          >
+                            <CheckCheck className="h-3.5 w-3.5" />
+                            Seen
+                          </motion.span>
                         ) : null}
                         {outgoingStatus === 'failed' ? (
-                          <span className="inline-flex items-center gap-1 text-danger">
+                          <motion.span
+                            key="failed"
+                            initial={prefersReducedMotion ? false : { opacity: 0, y: 2 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -2 }}
+                            transition={{ duration: prefersReducedMotion ? 0 : 0.15 }}
+                            className="inline-flex min-w-[4.7rem] items-center justify-end gap-1 text-danger"
+                          >
                             <AlertTriangle className="h-3.5 w-3.5" />
                             Failed
-                          </span>
+                          </motion.span>
                         ) : null}
-                      </>
+                      </AnimatePresence>
                     ) : null}
                   </div>
 
@@ -1879,6 +2392,34 @@ export function ConversationThreadClient({
                         <RotateCcw className="h-3.5 w-3.5" />
                         Retry
                       </Button>
+                    </div>
+                  ) : null}
+
+                  {reactionsForMessage.length > 0 ? (
+                    <div className={cn('mt-2 flex flex-wrap gap-1.5', message.mine ? 'justify-end' : 'justify-start')}>
+                      {reactionsForMessage.map((reaction) => {
+                        const reactionKey = `${message.id}:${reaction.emoji}`;
+                        return (
+                          <button
+                            key={reaction.emoji}
+                            type="button"
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors',
+                              reaction.reactedByMe
+                                ? 'border-accent/35 bg-accent/12 text-accent'
+                                : 'border-border-subtle bg-bg-overlay/70 text-text-tertiary hover:text-text-primary',
+                            )}
+                            onClick={() => {
+                              void toggleReaction(message.id, reaction.emoji);
+                            }}
+                            disabled={updatingReactionKey === reactionKey}
+                            aria-label={`Toggle ${reaction.emoji} reaction`}
+                          >
+                            <span>{reaction.emoji}</span>
+                            <span>{reaction.count}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   ) : null}
                 </motion.article>
@@ -1907,23 +2448,23 @@ export function ConversationThreadClient({
             }}
           >
             <ArrowDown className="h-3.5 w-3.5" />
-            {pendingBelowCount} new
+            New messages
           </button>
         </div>
       ) : null}
 
       <div className="sticky bottom-0 border-t border-border-subtle bg-bg-surface/95 p-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:p-3 sm:pb-[max(1rem,env(safe-area-inset-bottom))]">
         <AnimatePresence initial={false}>
-          {typingIndicatorLabel ? (
+          {typingIndicatorVisible && typingIndicatorLabel ? (
             <motion.div
               key="typing-indicator"
               initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
-              transition={{ duration: prefersReducedMotion ? 0 : 0.16 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: 'easeOut' }}
               className="mb-2 flex items-center gap-2 text-xs text-text-tertiary"
             >
-              <span>{typingIndicatorLabel}</span>
+              <span className="sr-only">{typingIndicatorLabel}</span>
               <span className="inline-flex items-center gap-1">
                 {[0, 1, 2].map((index) => (
                   <motion.span
@@ -1978,7 +2519,7 @@ export function ConversationThreadClient({
             }}
             loading={isSending}
             disabled={!draft.trim() || composerDisabled}
-            className="h-11 shrink-0 rounded-xl px-3 shadow-[0_0_0_0_rgba(99,102,241,0)] transition-all hover:shadow-[0_0_0_4px_rgba(99,102,241,0.16)] active:scale-[0.96]"
+            className="h-12 min-w-12 shrink-0 rounded-xl px-3 shadow-[0_0_0_0_rgba(99,102,241,0)] transition-all hover:shadow-[0_0_0_4px_rgba(99,102,241,0.16)] active:scale-[0.96]"
             aria-label="Send message"
           >
             <ArrowUp className="h-4 w-4" />

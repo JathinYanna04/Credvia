@@ -59,13 +59,13 @@ export default async function MessageConversationPage({
     }
 
     return (
-      <div className="mx-auto w-full max-w-[1480px] space-y-4">
-        <section className="surface-panel premium-soft-gradient px-4 py-3 sm:px-5 sm:py-3.5">
+      <div className="mx-auto w-full max-w-[1480px] space-y-0 lg:space-y-4">
+        <section className="surface-panel premium-soft-gradient hidden px-4 py-3 sm:px-5 sm:py-3.5 lg:block">
           <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Conversation</div>
           <h1 className="mt-1 text-xl font-semibold text-text-primary sm:text-2xl">Messages</h1>
         </section>
 
-        <div className="space-y-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-3.5 lg:space-y-0">
+        <div className="space-y-0 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-3.5 lg:space-y-0">
           <ConversationInboxClient
             userId={user.id}
             initialConversations={conversationsList.conversations}

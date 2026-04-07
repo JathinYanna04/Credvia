@@ -19,9 +19,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { createClient } from '@/lib/supabase/client';
 import type { ChatConversationSummary } from '@/lib/chat/contracts';
+import type { Database } from '@/lib/supabase/types';
 import type { ApiResponse } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
 import { formatCompactRelativeTime } from '@/lib/utils/format';
+
+type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+type ChatParticipantRow = Database['public']['Tables']['chat_participants']['Row'];
+type ChatPresenceRow = Database['public']['Tables']['chat_user_presence']['Row'];
 
 interface ConversationInboxClientProps {
   userId: string;
@@ -195,6 +200,18 @@ function stableConversationSort(
   return left.id.localeCompare(right.id);
 }
 
+function messageRowToPreview(row: ChatMessageRow, userId: string) {
+  if (row.message_type !== 'text') {
+    return 'Shared an update';
+  }
+
+  if (row.sender_id === userId) {
+    return 'You: Encrypted message';
+  }
+
+  return 'Encrypted message';
+}
+
 export function ConversationInboxClient({
   userId,
   initialConversations,
@@ -208,8 +225,11 @@ export function ConversationInboxClient({
   const [query, setQuery] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
   const [updatingPreferenceFor, setUpdatingPreferenceFor] = useState<string | null>(null);
+  const [recentlyUpdatedConversationId, setRecentlyUpdatedConversationId] = useState<string | null>(null);
   const prefersReducedMotion = useReducedMotion();
   const refreshTimerRef = useRef<number | null>(null);
+  const seenRealtimeMessageIdsRef = useRef<Set<string>>(new Set());
+  const rowPulseTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -353,16 +373,136 @@ export function ConversationInboxClient({
       void refreshConversations();
     }, 45_000);
 
+    const applyIncomingMessage = (row: ChatMessageRow) => {
+      if (seenRealtimeMessageIdsRef.current.has(row.id)) {
+        return;
+      }
+
+      seenRealtimeMessageIdsRef.current.add(row.id);
+
+      if (seenRealtimeMessageIdsRef.current.size > 400) {
+        const ids = [...seenRealtimeMessageIdsRef.current];
+        seenRealtimeMessageIdsRef.current = new Set(ids.slice(ids.length - 240));
+      }
+
+      let foundConversation = false;
+
+      setConversations((current) => {
+        const next = current.map((conversation) => {
+          if (conversation.id !== row.conversation_id) {
+            return conversation;
+          }
+
+          foundConversation = true;
+          const incomingFromOther = row.sender_id !== null && row.sender_id !== userId;
+          const shouldIncrementUnread = incomingFromOther && selectedConversationId !== conversation.id;
+
+          return {
+            ...conversation,
+            messageCount: Math.max(conversation.messageCount + 1, conversation.messageCount),
+            lastMessageAt: row.created_at,
+            lastMessageId: row.id,
+            unreadCount: shouldIncrementUnread
+              ? conversation.unreadCount + 1
+              : conversation.unreadCount,
+            lastMessage: {
+              id: row.id,
+              senderId: row.sender_id,
+              messageType: row.message_type as 'text' | 'system' | 'context_card',
+              isDeleted: row.is_deleted,
+              createdAt: row.created_at,
+              previewText: messageRowToPreview(row, userId),
+            },
+          };
+        });
+
+        if (!foundConversation) {
+          return current;
+        }
+
+        return next.sort(stableConversationSort);
+      });
+
+      setRecentlyUpdatedConversationId(row.conversation_id);
+      if (rowPulseTimerRef.current !== null) {
+        window.clearTimeout(rowPulseTimerRef.current);
+      }
+
+      rowPulseTimerRef.current = window.setTimeout(() => {
+        rowPulseTimerRef.current = null;
+        setRecentlyUpdatedConversationId((current) =>
+          current === row.conversation_id ? null : current,
+        );
+      }, 420);
+
+      if (!foundConversation) {
+        scheduleRefresh();
+      }
+    };
+
+    const applyParticipantUpdate = (row: ChatParticipantRow) => {
+      setConversations((current) =>
+        current
+          .map((conversation) => {
+            if (conversation.id !== row.conversation_id) {
+              return conversation;
+            }
+
+            const didReadInActiveThread = selectedConversationId === conversation.id;
+
+            return {
+              ...conversation,
+              unreadCount: didReadInActiveThread ? 0 : conversation.unreadCount,
+              participant: {
+                ...conversation.participant,
+                status: row.status as ChatConversationSummary['participant']['status'],
+                role: row.role as ChatConversationSummary['participant']['role'],
+                lastReadMessageId: row.last_read_message_id,
+                lastReadAt: row.last_read_at,
+                notificationsMuted: row.notifications_muted,
+                isPinned: row.is_pinned ?? false,
+                pinnedAt: row.pinned_at,
+              },
+            };
+          })
+          .sort(stableConversationSort),
+      );
+    };
+
+    const applyPresenceUpdate = (row: ChatPresenceRow) => {
+      setConversations((current) =>
+        current.map((conversation) => {
+          if (!conversation.counterpart || conversation.counterpart.userId !== row.user_id) {
+            return conversation;
+          }
+
+          return {
+            ...conversation,
+            counterpart: {
+              ...conversation.counterpart,
+              presence:
+                row.status === 'online' || row.status === 'away' || row.status === 'offline'
+                  ? row.status
+                  : 'offline',
+              lastSeenAt: row.last_seen_at,
+            },
+          };
+        }),
+      );
+    };
+
     const channel = supabase
       .channel(`chat-inbox:${userId}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'chat_messages',
         },
-        scheduleRefresh,
+        (payload) => {
+          applyIncomingMessage(payload.new as ChatMessageRow);
+        },
       )
       .on(
         'postgres_changes',
@@ -372,7 +512,24 @@ export function ConversationInboxClient({
           table: 'chat_participants',
           filter: `user_id=eq.${userId}`,
         },
-        scheduleRefresh,
+        (payload) => {
+          applyParticipantUpdate(payload.new as ChatParticipantRow);
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_user_presence',
+        },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            return;
+          }
+
+          applyPresenceUpdate(payload.new as ChatPresenceRow);
+        },
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -408,12 +565,17 @@ export function ConversationInboxClient({
         refreshTimerRef.current = null;
       }
 
+      if (rowPulseTimerRef.current !== null) {
+        window.clearTimeout(rowPulseTimerRef.current);
+        rowPulseTimerRef.current = null;
+      }
+
       window.removeEventListener('offline', onOffline);
       window.removeEventListener('online', onOnline);
 
       void supabase.removeChannel(channel);
     };
-  }, [userId]);
+  }, [selectedConversationId, userId]);
 
   useEffect(() => {
     setConversations(initialConversations.sort(stableConversationSort));
@@ -464,6 +626,7 @@ export function ConversationInboxClient({
   const renderConversationRow = (conversation: ChatConversationSummary) => {
     const muted = conversation.participant.notificationsMuted;
     const unread = conversation.unreadCount > 0;
+    const wasJustUpdated = recentlyUpdatedConversationId === conversation.id;
     const presenceLabel =
       conversation.type === 'dm'
         ? getPresenceLabel(conversation, { includeRelativeTime: isHydrated })
@@ -478,11 +641,24 @@ export function ConversationInboxClient({
     return (
       <motion.article
         key={conversation.id}
-        layout
+        layout="position"
         initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
+        animate={
+          prefersReducedMotion
+            ? { opacity: 1, y: 0 }
+            : wasJustUpdated
+              ? { opacity: 1, y: [0, -2, 0] }
+              : { opacity: 1, y: 0 }
+        }
         exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
-        transition={rowTransition}
+        transition={
+          wasJustUpdated
+            ? {
+                duration: prefersReducedMotion ? 0 : 0.26,
+                ease: 'easeOut',
+              }
+            : rowTransition
+        }
         whileHover={prefersReducedMotion ? undefined : { y: -2 }}
         className={cn(
           'group relative cursor-pointer rounded-2xl border p-3.5 transition-colors',
@@ -526,9 +702,19 @@ export function ConversationInboxClient({
                 {getConversationTitle(conversation)}
               </p>
               {conversation.unreadCount > 0 ? (
-                <span className="rounded-full bg-accent/12 px-2 py-0.5 text-[11px] font-semibold text-accent">
+                <motion.span
+                  className="rounded-full bg-accent/12 px-2 py-0.5 text-[11px] font-semibold text-accent"
+                  animate={
+                    prefersReducedMotion
+                      ? { scale: 1 }
+                      : wasJustUpdated
+                        ? { scale: [1, 1.1, 1] }
+                        : { scale: 1 }
+                  }
+                  transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: 'easeOut' }}
+                >
                   {conversation.unreadCount}
-                </span>
+                </motion.span>
               ) : null}
               {muted ? <VolumeX className="h-3.5 w-3.5 text-text-tertiary" /> : null}
             </div>

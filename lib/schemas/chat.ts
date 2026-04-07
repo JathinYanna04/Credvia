@@ -84,3 +84,15 @@ export const UpdateChatPresenceSchema = z
     heartbeatOnly: z.boolean().optional(),
   })
   .strict();
+
+export const ToggleMessageReactionSchema = z
+  .object({
+    emoji: z.string().trim().min(1).max(16),
+  })
+  .strict();
+
+export const ListConversationReactionsSchema = z
+  .object({
+    messageIds: z.array(z.string().uuid()).max(120).optional(),
+  })
+  .strict();
