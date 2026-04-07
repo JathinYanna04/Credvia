@@ -32,7 +32,7 @@ export default function SignupPage() {
         footer={
           <>
             Already inside?{' '}
-            <Link href="/login" className="text-primary-300 transition-colors hover:text-white">
+            <Link href="/login" className="text-accent transition-colors hover:text-[var(--marketing-text-primary)]">
               Sign in
             </Link>
           </>

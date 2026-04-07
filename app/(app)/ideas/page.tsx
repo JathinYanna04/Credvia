@@ -7,7 +7,9 @@ import { IdeaFilters } from '@/components/startup-ideas/IdeaFilters';
 import { StartupIdeaCard } from '@/components/startup-ideas/StartupIdeaCard';
 import { StartupIdeaCardSkeleton } from '@/components/startup-ideas/StartupIdeaCardSkeleton';
 import posthog from '@/lib/analytics/posthog-client';
+import { useVoteStore } from '@/lib/stores/vote-store';
 import type { PostSummary } from '@/lib/types';
+import { toCanonicalVoteSnapshot, toVoteEntityTypeFromPostType } from '@/lib/voting';
 
 export default function IdeasPage() {
   const [ideas, setIdeas] = useState<PostSummary[] | undefined>(undefined);
@@ -17,10 +19,14 @@ export default function IdeasPage() {
   const [stage, setStage] = useState('');
   const [category, setCategory] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const hydrateManyVoteSnapshots = useVoteStore(
+    (state) => state.hydrateManyVoteSnapshots,
+  );
   const hasTrackedSortChange = useRef(false);
   const queryRef = useRef(query);
   const stageRef = useRef(stage);
   const categoryRef = useRef(category);
+  const fetchRequestIdRef = useRef(0);
 
   useEffect(() => {
     queryRef.current = query;
@@ -43,6 +49,10 @@ export default function IdeasPage() {
   }, [sort]);
 
   useEffect(() => {
+    const requestId = fetchRequestIdRef.current + 1;
+    fetchRequestIdRef.current = requestId;
+    const controller = new AbortController();
+
     setIdeas(undefined);
     setError(null);
     const params = new URLSearchParams();
@@ -57,20 +67,51 @@ export default function IdeasPage() {
       params.set('category', category);
     }
 
-    fetch(`/api/v1/ideas?${params.toString()}`)
+    fetch(`/api/v1/ideas?${params.toString()}`, { signal: controller.signal })
       .then(async (response) => {
+        if (controller.signal.aborted || fetchRequestIdRef.current !== requestId) {
+          return;
+        }
+
         const payload = (await response.json()) as {
           data?: PostSummary[];
           error?: { message?: string };
         };
 
+        if (controller.signal.aborted || fetchRequestIdRef.current !== requestId) {
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(payload.error?.message ?? 'Could not load startup ideas.');
         }
 
-        setIdeas(payload.data ?? []);
+        const nextIdeas = payload.data ?? [];
+        hydrateManyVoteSnapshots(
+          nextIdeas.map((idea) =>
+            toCanonicalVoteSnapshot({
+              entityType: toVoteEntityTypeFromPostType(idea.postType),
+              entityId: idea.id,
+              score: idea.voteScore,
+              upvoteCount: idea.upvoteCount,
+              downvoteCount: idea.downvoteCount,
+              currentUserVote: idea.currentUserVote,
+              version: idea.version,
+              updatedAt: idea.updatedAt,
+            }),
+          ),
+        );
+        setIdeas(nextIdeas);
       })
       .catch((fetchError: unknown) => {
+        if (
+          controller.signal.aborted ||
+          fetchRequestIdRef.current !== requestId ||
+          (fetchError instanceof Error && fetchError.name === 'AbortError')
+        ) {
+          return;
+        }
+
         setIdeas([]);
         setError(
           fetchError instanceof Error
@@ -78,7 +119,11 @@ export default function IdeasPage() {
             : 'Could not load startup ideas.',
         );
       });
-  }, [category, query, refreshKey, sort, stage]);
+
+    return () => {
+      controller.abort();
+    };
+  }, [category, query, refreshKey, sort, stage, hydrateManyVoteSnapshots]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">

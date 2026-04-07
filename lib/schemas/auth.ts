@@ -16,7 +16,6 @@ export const SignupSchema = z
       .regex(/[A-Z]/, 'Password must include an uppercase letter.')
       .regex(/[a-z]/, 'Password must include a lowercase letter.')
       .regex(/[0-9]/, 'Password must include a number.'),
-    accountType: z.enum(['student', 'professional', 'recruiter', 'founder', 'mentor']),
   })
   .strict();
 

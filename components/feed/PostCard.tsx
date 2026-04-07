@@ -4,25 +4,63 @@ import Link from "next/link";
 import { ArrowUpRight, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { StartDirectMessageButton } from '@/components/chat/StartDirectMessageButton';
 import { PostTypeBadge } from "@/components/post/PostTypeBadge";
 import { ReputationBadge } from "@/components/reputation/ReputationBadge";
 import { VoteButtons } from "@/components/voting/VoteButtons";
 import { ValidationScoreBadge } from "@/components/startup-ideas/ValidationScoreBadge";
+import { useVoteSnapshot } from '@/lib/hooks/useVoteSnapshot';
 import type { PostSummary } from "@/lib/types";
+import { toVoteEntityTypeFromPostType } from '@/lib/voting';
+import { computeIdeaValidationScore } from '@/lib/utils/idea-score';
 import { formatRelativeTime } from "@/lib/utils/format";
 
 export interface PostCardProps {
   post: PostSummary;
-  onVoteChange?: (
-    postId: string,
-    next: { score: number; vote: -1 | 0 | 1 },
-  ) => void;
+  currentUserId?: string | null;
 }
 
-export function PostCard({ post, onVoteChange }: PostCardProps) {
+export function PostCard({ post, currentUserId = null }: PostCardProps) {
   const topRep = post.author.reputation[0];
+  const voteEntityType = toVoteEntityTypeFromPostType(post.postType);
+  const voteSnapshot = useVoteSnapshot(voteEntityType, post.id, {
+    score: post.voteScore,
+    upvoteCount: post.upvoteCount,
+    downvoteCount: post.downvoteCount,
+    currentUserVote: post.currentUserVote,
+    version: post.version,
+    updatedAt: post.updatedAt,
+  });
+
+  const startupValidationScore = post.startupIdea
+    ? computeIdeaValidationScore({
+        voteScore: voteSnapshot.score,
+        commentCount: post.commentCount,
+        saveCount: post.saveCount,
+        uniqueCommenters: post.startupIdea.uniqueCommenters,
+        createdAt: post.createdAt,
+      })
+    : null;
+
   const detailHref =
     post.postType === "startup_idea" ? `/ideas/${post.id}` : `/post/${post.id}`;
+  const voteEndpoint =
+    post.postType === "startup_idea"
+      ? `/api/v1/startup-ideas/${post.id}/vote`
+      : `/api/v1/posts/${post.id}/vote`;
+  const trackOpen = () => {
+    void fetch('/api/v1/feed/signals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        postId: post.id,
+        signalType: 'open',
+        metadata: {
+          postType: post.postType,
+        },
+      }),
+    }).catch(() => undefined);
+  };
 
   return (
     <article className="surface-panel card-lift overflow-hidden p-4 sm:p-5">
@@ -79,14 +117,14 @@ export function PostCard({ post, onVoteChange }: PostCardProps) {
 
       <div className="mt-4 space-y-3">
         <div className="flex flex-wrap items-start gap-2">
-          <Link href={detailHref} className="block min-w-0 flex-1">
+          <Link href={detailHref} className="block min-w-0 flex-1" onClick={trackOpen}>
             <h3 className="line-clamp-2 text-lg font-semibold leading-snug text-text-primary transition hover:text-accent sm:text-xl">
               {post.title}
             </h3>
           </Link>
           {post.startupIdea ? (
             <ValidationScoreBadge
-              score={post.startupIdea.validationScore}
+              score={startupValidationScore ?? post.startupIdea.validationScore}
               compact
             />
           ) : null}
@@ -108,6 +146,13 @@ export function PostCard({ post, onVoteChange }: PostCardProps) {
           </div>
         ) : null}
 
+        {post.feedExplanation ? (
+          <div className="rounded-2xl border border-border-subtle bg-bg-base px-3 py-2 text-xs text-text-secondary">
+            <span className="font-medium text-text-primary">Why this appears:</span>{' '}
+            {post.feedExplanation.reasons.join(' • ')}
+          </div>
+        ) : null}
+
         {!topRep ? (
           <div className="text-xs text-text-tertiary sm:hidden">
             Reputation grows with useful answers and votes.
@@ -121,20 +166,38 @@ export function PostCard({ post, onVoteChange }: PostCardProps) {
             />
           </div>
         )}
+
+        {currentUserId ? (
+          <StartDirectMessageButton
+            currentUserId={currentUserId}
+            targetUserId={post.author.id}
+            label={post.postType === 'startup_idea' ? 'Message founder' : 'Message author'}
+            variant="outline"
+            size="sm"
+          />
+        ) : null}
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2 border-t border-border-subtle pt-4">
         <div className="min-w-0">
           <VoteButtons
-            score={post.voteScore}
-            initialVote={post.viewerVote ?? 0}
-            endpoint={`/api/v1/posts/${post.id}/vote`}
-            onVoteChange={(next) => onVoteChange?.(post.id, next)}
+            entityType={voteEntityType}
+            entityId={post.id}
+            initialVoteState={{
+              score: post.voteScore,
+              upvoteCount: post.upvoteCount,
+              downvoteCount: post.downvoteCount,
+              currentUserVote: post.currentUserVote,
+              version: post.version,
+              updatedAt: post.updatedAt,
+            }}
+            endpoint={voteEndpoint}
             className="h-11 w-full justify-between rounded-2xl px-2 sm:w-auto"
           />
         </div>
         <Link
           href={detailHref}
+          onClick={trackOpen}
           className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-bg-base px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-overlay hover:text-text-primary active:scale-[0.98]"
         >
           <MessageSquare className="h-4 w-4" />

@@ -21,6 +21,7 @@ export default async function IdeaPage({ params }: { params: { id: string } }) {
       <PostDetail
         post={bundle.idea}
         comments={bundle.comments}
+        currentUserId={user?.id ?? null}
         startupIdeaContext={{
           revisions: bundle.revisions,
           canRevise: bundle.canRevise,

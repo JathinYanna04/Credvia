@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
+import { JoinIdeaDiscussionButton } from '@/components/chat/JoinIdeaDiscussionButton';
+import { StartDirectMessageButton } from '@/components/chat/StartDirectMessageButton';
 import { CommentEditor } from "@/components/comments/CommentEditor";
 import { CommentThread } from "@/components/comments/CommentThread";
 import { PostTypeBadge } from "@/components/post/PostTypeBadge";
@@ -14,11 +16,13 @@ import type {
   PostSummary,
   StartupIdeaRevisionSummary,
 } from "@/lib/types";
+import { toVoteEntityTypeFromPostType } from '@/lib/voting';
 import { formatRelativeTime } from "@/lib/utils/format";
 
 export interface PostDetailProps {
   post: PostSummary;
   comments: CommentSummary[];
+  currentUserId?: string | null;
   startupIdeaContext?: {
     revisions: StartupIdeaRevisionSummary[];
     canRevise: boolean;
@@ -30,9 +34,15 @@ export interface PostDetailProps {
 export function PostDetail({
   post,
   comments,
+  currentUserId = null,
   startupIdeaContext,
 }: PostDetailProps) {
   const topRep = post.author.reputation[0];
+  const voteEntityType = toVoteEntityTypeFromPostType(post.postType);
+  const voteEndpoint =
+    post.postType === 'startup_idea'
+      ? `/api/v1/startup-ideas/${post.id}/vote`
+      : `/api/v1/posts/${post.id}/vote`;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -75,6 +85,12 @@ export function PostDetail({
         <p className="max-w-3xl text-base leading-8 text-text-secondary">
           {post.body}
         </p>
+        {post.feedExplanation ? (
+          <div className="rounded-2xl border border-border-subtle bg-bg-base px-4 py-3 text-sm text-text-secondary">
+            <span className="font-medium text-text-primary">Why this appears:</span>{' '}
+            {post.feedExplanation.reasons.join(' • ')}
+          </div>
+        ) : null}
         {post.startupIdea ? (
           <div className="grid gap-4 rounded-3xl border border-border-subtle bg-bg-surface p-5 md:grid-cols-2">
             <div>
@@ -142,9 +158,17 @@ export function PostDetail({
 
       <div className="flex flex-col gap-6 rounded-3xl border border-border-subtle bg-bg-surface p-5 sm:flex-row">
         <VoteButtons
-          score={post.voteScore}
-          initialVote={post.viewerVote ?? 0}
-          endpoint={`/api/v1/posts/${post.id}/vote`}
+          entityType={voteEntityType}
+          entityId={post.id}
+          initialVoteState={{
+            score: post.voteScore,
+            upvoteCount: post.upvoteCount,
+            downvoteCount: post.downvoteCount,
+            currentUserVote: post.currentUserVote,
+            version: post.version,
+            updatedAt: post.updatedAt,
+          }}
+          endpoint={voteEndpoint}
           orientation="vertical"
         />
         <div className="min-w-0 flex-1">
@@ -161,6 +185,23 @@ export function PostDetail({
           ) : null}
 
           <div className="grid gap-2 text-sm text-text-secondary sm:flex sm:flex-wrap sm:items-center">
+            <StartDirectMessageButton
+              currentUserId={currentUserId}
+              targetUserId={post.author.id}
+              label={post.postType === 'startup_idea' ? 'Message founder' : 'Message author'}
+              variant="secondary"
+              size="sm"
+            />
+            {post.postType === 'startup_idea' ? (
+              <JoinIdeaDiscussionButton
+                currentUserId={currentUserId}
+                ideaId={post.id}
+                founderUserId={post.author.id}
+                label="Join discussion"
+                variant="outline"
+                size="sm"
+              />
+            ) : null}
             {post.startupIdea && startupIdeaContext?.advancedFeaturesEnabled ? (
               <IdeaFollowButton
                 postId={post.id}

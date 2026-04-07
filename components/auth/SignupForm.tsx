@@ -19,9 +19,6 @@ export function SignupForm() {
   const router = useRouter();
   const { register, handleSubmit, formState } = useForm<SignupInput>({
     resolver: zodResolver(SignupSchema),
-    defaultValues: {
-      accountType: 'student',
-    },
   });
 
   const onSubmit = async (values: SignupInput) => {
@@ -29,16 +26,13 @@ export function SignupForm() {
     setError(null);
     setMessage(null);
     const supabase = createClient();
-    posthog.capture('auth_signup_started', {
-      accountType: values.accountType,
-      method: 'email',
-    });
+    posthog.capture('auth_signup_started', { method: 'email' });
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: values.email,
       password: values.password,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback`,
-        data: { account_type: values.accountType, full_name: values.email.split('@')[0] },
+        data: { full_name: values.email.split('@')[0] },
       },
     });
     if (signUpError) {
@@ -49,7 +43,6 @@ export function SignupForm() {
       }
 
       posthog.capture('auth_signup_completed', {
-        accountType: values.accountType,
         method: 'email',
         hasSession: Boolean(data.session),
       });
@@ -61,7 +54,7 @@ export function SignupForm() {
       }
 
       if (data.session) {
-        router.push('/feed');
+        router.push('/onboarding');
         router.refresh();
       } else {
         setMessage('Check your email to confirm your account, then continue through the callback link.');
@@ -82,10 +75,10 @@ export function SignupForm() {
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-white/10" />
+          <span className="w-full border-t border-[var(--marketing-border)]" />
         </div>
         <div className="relative flex justify-center">
-          <span className="bg-[rgba(10,18,34,0.88)] px-3 text-xs uppercase tracking-[0.18em] text-slate-400">
+          <span className="bg-[var(--marketing-elevated)] px-3 text-xs uppercase tracking-[0.18em] text-[var(--marketing-text-muted)]">
             Or create with email
           </span>
         </div>
@@ -99,7 +92,7 @@ export function SignupForm() {
           id="signup-email"
           type="email"
           placeholder="Email"
-          className="h-11 rounded-2xl border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:ring-primary-500 focus-visible:ring-offset-[#0A1222]"
+          className="h-11 rounded-2xl border-[var(--marketing-border)] bg-[var(--marketing-glass)] text-[var(--marketing-text-primary)] placeholder:text-[var(--marketing-text-muted)] hover:border-primary-500/30 focus-visible:ring-primary-500 focus-visible:ring-offset-[var(--marketing-elevated)]"
           {...register('email')}
         />
         <label htmlFor="signup-password" className="sr-only">
@@ -109,24 +102,9 @@ export function SignupForm() {
           id="signup-password"
           type="password"
           placeholder="Password"
-          className="h-11 rounded-2xl border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:ring-primary-500 focus-visible:ring-offset-[#0A1222]"
+          className="h-11 rounded-2xl border-[var(--marketing-border)] bg-[var(--marketing-glass)] text-[var(--marketing-text-primary)] placeholder:text-[var(--marketing-text-muted)] hover:border-primary-500/30 focus-visible:ring-primary-500 focus-visible:ring-offset-[var(--marketing-elevated)]"
           {...register('password')}
         />
-        <label htmlFor="account-type" className="sr-only">
-          Account type
-        </label>
-        <select
-          id="account-type"
-          {...register('accountType')}
-          className="flex h-11 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-sm text-white outline-none transition hover:border-white/20 focus:border-primary-500"
-        >
-          <option value="student">Student</option>
-          <option value="professional">Professional</option>
-          <option value="recruiter">Recruiter</option>
-          <option value="founder">Founder</option>
-          <option value="mentor">Mentor</option>
-        </select>
-
         {formState.errors.email ? (
           <p className="border-l-2 border-danger pl-3 text-sm text-danger">
             {formState.errors.email.message}
@@ -141,7 +119,7 @@ export function SignupForm() {
           <p className="border-l-2 border-danger pl-3 text-sm text-danger">{error}</p>
         ) : null}
         {message ? (
-          <p className="border-l-2 border-accent pl-3 text-sm text-primary-300">{message}</p>
+          <p className="border-l-2 border-accent pl-3 text-sm text-accent">{message}</p>
         ) : null}
 
         <Button className="w-full" disabled={loading}>
@@ -149,9 +127,9 @@ export function SignupForm() {
         </Button>
       </form>
 
-      <div className="flex items-center justify-between text-sm text-slate-300">
+      <div className="flex items-center justify-between text-sm text-[var(--marketing-text-secondary)]">
         <span>Already have access?</span>
-        <Link href="/login" className="text-primary-300 transition-colors hover:text-white">
+        <Link href="/login" className="text-accent transition-colors hover:text-[var(--marketing-text-primary)]">
           Sign in
         </Link>
       </div>

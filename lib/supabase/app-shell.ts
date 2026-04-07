@@ -1,6 +1,8 @@
 import { cache } from "react";
+import { getPersonaDetails, normalizePersonaSlug } from '@/lib/personas';
 import type { UserSummary } from "@/lib/types";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { requiresPersonaOnboarding } from '@/lib/profile-state';
 
 export interface AppShellData {
   currentUser: UserSummary | null;
@@ -83,8 +85,14 @@ export const getAppShellData = cache(
       fullName: profile?.full_name ?? profile?.username ?? "Credvia User",
       headline: profile?.headline ?? "",
       avatarUrl: profile?.avatar_url ?? "",
+      primaryPersona: normalizePersonaSlug(profile?.primary_persona) ?? undefined,
+      personaDetails: getPersonaDetails(
+        profile?.metadata ?? null,
+        normalizePersonaSlug(profile?.primary_persona),
+      ),
       skills: [],
       location: profile?.location ?? undefined,
+      website: profile?.website ?? undefined,
       currentCompany: profile?.current_company ?? undefined,
       reputation: (reputationResult.data ?? [])
         .map((entry) => {
@@ -105,7 +113,7 @@ export const getAppShellData = cache(
     };
 
     const joinedCommunities = (
-      (membershipsResult.data ?? []) as Array<{
+      (membershipsResult.data ?? []) as unknown as Array<{
         communities: JoinedCommunityRow | JoinedCommunityRow[] | null;
       }>
     )
@@ -131,7 +139,7 @@ export const getAppShellData = cache(
 
     return {
       currentUser,
-      onboardingComplete: profile?.onboarding_complete ?? false,
+      onboardingComplete: profile ? !requiresPersonaOnboarding(profile) : false,
       joinedCommunities,
       unreadNotifications: unreadResult.count ?? 0,
     };

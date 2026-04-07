@@ -67,7 +67,7 @@ export const CreatePostSchema = z
 
 export const VotePostSchema = z
   .object({
-    value: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
+    direction: z.enum(['up', 'down']),
   })
   .strict();
 

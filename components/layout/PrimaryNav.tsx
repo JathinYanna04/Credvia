@@ -2,13 +2,23 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, BookMarked, BriefcaseBusiness, Compass, Home, Search, User } from 'lucide-react';
+import {
+  Bell,
+  BookMarked,
+  BriefcaseBusiness,
+  Compass,
+  Home,
+  MessageCircle,
+  Search,
+  User,
+} from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 const iconMap = {
   home: Home,
   explore: Compass,
   career: BriefcaseBusiness,
+  messages: MessageCircle,
   notifications: Bell,
   profile: User,
   resume: BookMarked,
@@ -37,7 +47,12 @@ export function PrimaryNav({
 
   if (mobile) {
     return (
-      <div className="grid w-full grid-cols-5 gap-1">
+      <div
+        className="grid w-full gap-1"
+        style={{
+          gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))`,
+        }}
+      >
         {items.map((item) => {
           const Icon = iconMap[item.icon];
           const active =

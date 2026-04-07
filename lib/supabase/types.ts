@@ -14,7 +14,7 @@ export interface Database {
           id: string;
           email: string;
           auth_provider: string;
-          account_type: string;
+          account_type: string | null;
           status: string;
           created_at: string;
           updated_at: string;
@@ -23,7 +23,7 @@ export interface Database {
           id: string;
           email: string;
           auth_provider?: string;
-          account_type?: string;
+          account_type?: string | null;
           status?: string;
           created_at?: string;
           updated_at?: string;
@@ -40,10 +40,39 @@ export interface Database {
           bio: string | null;
           avatar_url: string | null;
           location: string | null;
+          website: string | null;
           current_company: string | null;
           education: string | null;
+          primary_persona: string | null;
+          secondary_personas: string[];
+          profile_intent: string[];
+          open_to: string[];
+          expertise_tags: string[];
+          interest_tags: string[];
+          contribution_score: number;
+          credibility_score: number;
+          helpfulness_score: number;
+          expertise_score: number;
+          community_score: number;
+          persona_completion_score: number;
+          open_for_opportunities: boolean;
+          open_for_mentorship: boolean;
+          open_for_hiring: boolean;
+          onboarding_version: number;
+          contribution_profile: Json;
+          trust_profile: Json;
+          behavioral_signals: Json;
+          growth_trajectory: Json;
+          identity_confidence_score: number;
+          consistency_score: number;
+          depth_score: number;
+          impact_score: number;
+          signal_to_noise_ratio: number;
+          domain_authority_score: number;
+          metadata: Json;
           profile_visibility: Json;
           onboarding_complete: boolean;
+          onboarding_completed_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -55,14 +84,93 @@ export interface Database {
           bio?: string | null;
           avatar_url?: string | null;
           location?: string | null;
+          website?: string | null;
           current_company?: string | null;
           education?: string | null;
+          primary_persona?: string | null;
+          secondary_personas?: string[];
+          profile_intent?: string[];
+          open_to?: string[];
+          expertise_tags?: string[];
+          interest_tags?: string[];
+          contribution_score?: number;
+          credibility_score?: number;
+          helpfulness_score?: number;
+          expertise_score?: number;
+          community_score?: number;
+          persona_completion_score?: number;
+          open_for_opportunities?: boolean;
+          open_for_mentorship?: boolean;
+          open_for_hiring?: boolean;
+          onboarding_version?: number;
+          contribution_profile?: Json;
+          trust_profile?: Json;
+          behavioral_signals?: Json;
+          growth_trajectory?: Json;
+          identity_confidence_score?: number;
+          consistency_score?: number;
+          depth_score?: number;
+          impact_score?: number;
+          signal_to_noise_ratio?: number;
+          domain_authority_score?: number;
+          metadata?: Json;
           profile_visibility?: Json;
           onboarding_complete?: boolean;
+          onboarding_completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['profiles']['Insert']>;
+        Relationships: [];
+      };
+      profile_persona_details: {
+        Row: {
+          user_id: string;
+          current_title: string | null;
+          company: string | null;
+          industry: string | null;
+          years_experience: number | null;
+          college: string | null;
+          degree: string | null;
+          graduation_year: number | null;
+          target_roles: string[];
+          preferred_locations: string[];
+          work_mode: string | null;
+          startup_name: string | null;
+          startup_stage: string | null;
+          startup_domains: string[];
+          startup_team_size: number | null;
+          mentor_topics: string[];
+          mentoring_format: string | null;
+          hiring_roles: string[];
+          hiring_regions: string[];
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          current_title?: string | null;
+          company?: string | null;
+          industry?: string | null;
+          years_experience?: number | null;
+          college?: string | null;
+          degree?: string | null;
+          graduation_year?: number | null;
+          target_roles?: string[];
+          preferred_locations?: string[];
+          work_mode?: string | null;
+          startup_name?: string | null;
+          startup_stage?: string | null;
+          startup_domains?: string[];
+          startup_team_size?: number | null;
+          mentor_topics?: string[];
+          mentoring_format?: string | null;
+          hiring_roles?: string[];
+          hiring_regions?: string[];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['profile_persona_details']['Insert']>;
         Relationships: [];
       };
       communities: {
@@ -265,6 +373,40 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['follows']['Insert']>;
         Relationships: [];
       };
+      reputation_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          community_id: string;
+          source_type: string;
+          source_id: string;
+          delta: number;
+          actor_user_id: string | null;
+          event_type: string | null;
+          entity_type: string | null;
+          entity_id: string | null;
+          points: number | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          community_id: string;
+          source_type: string;
+          source_id: string;
+          delta: number;
+          actor_user_id?: string | null;
+          event_type?: string | null;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          points?: number | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['reputation_events']['Insert']>;
+        Relationships: [];
+      };
       community_reputation: {
         Row: {
           user_id: string;
@@ -279,6 +421,168 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['community_reputation']['Insert']>;
+        Relationships: [];
+      };
+      user_contribution_stats: {
+        Row: {
+          user_id: string;
+          posts_count: number;
+          comments_count: number;
+          votes_received: number;
+          votes_cast: number;
+          helpful_marks_received: number;
+          mentor_answers_count: number;
+          startup_ideas_count: number;
+          recruiter_actions_count: number;
+          score_last_recomputed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          posts_count?: number;
+          comments_count?: number;
+          votes_received?: number;
+          votes_cast?: number;
+          helpful_marks_received?: number;
+          mentor_answers_count?: number;
+          startup_ideas_count?: number;
+          recruiter_actions_count?: number;
+          score_last_recomputed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['user_contribution_stats']['Insert']>;
+        Relationships: [];
+      };
+      topics: {
+        Row: {
+          id: string;
+          slug: string;
+          label: string;
+          description: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          slug: string;
+          label: string;
+          description?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['topics']['Insert']>;
+        Relationships: [];
+      };
+      trust_edges: {
+        Row: {
+          source_user_id: string;
+          target_user_id: string;
+          domain_tag: string;
+          edge_type: string;
+          weight: number;
+          evidence_entity_type: string | null;
+          evidence_entity_id: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          source_user_id: string;
+          target_user_id: string;
+          domain_tag?: string;
+          edge_type?: string;
+          weight?: number;
+          evidence_entity_type?: string | null;
+          evidence_entity_id?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trust_edges']['Insert']>;
+        Relationships: [];
+      };
+      endorsement_graph: {
+        Row: {
+          endorser_user_id: string;
+          endorsed_user_id: string;
+          domain_tag: string;
+          note: string | null;
+          weight: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          endorser_user_id: string;
+          endorsed_user_id: string;
+          domain_tag: string;
+          note?: string | null;
+          weight?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['endorsement_graph']['Insert']>;
+        Relationships: [];
+      };
+      feed_signal_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          post_id: string | null;
+          signal_type: string;
+          duration_ms: number | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          post_id?: string | null;
+          signal_type: string;
+          duration_ms?: number | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['feed_signal_events']['Insert']>;
+        Relationships: [];
+      };
+      interaction_events: {
+        Row: {
+          id: string;
+          actor_user_id: string;
+          target_user_id: string | null;
+          entity_type: string;
+          entity_id: string;
+          interaction_type: string;
+          value: number;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          actor_user_id: string;
+          target_user_id?: string | null;
+          entity_type: string;
+          entity_id: string;
+          interaction_type: string;
+          value?: number;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['interaction_events']['Insert']>;
+        Relationships: [];
+      };
+      user_topic_follows: {
+        Row: {
+          user_id: string;
+          topic_id: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          topic_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['user_topic_follows']['Insert']>;
         Relationships: [];
       };
       reports: {
@@ -834,9 +1138,256 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['startup_ideas']['Insert']>;
         Relationships: [];
       };
+      chat_conversations: {
+        Row: {
+          id: string;
+          type: string;
+          source_type: string | null;
+          source_id: string | null;
+          created_by: string;
+          title: string | null;
+          description: string | null;
+          is_archived: boolean;
+          dm_user_low: string | null;
+          dm_user_high: string | null;
+          last_message_at: string | null;
+          last_message_id: string | null;
+          message_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          type: string;
+          source_type?: string | null;
+          source_id?: string | null;
+          created_by: string;
+          title?: string | null;
+          description?: string | null;
+          is_archived?: boolean;
+          dm_user_low?: string | null;
+          dm_user_high?: string | null;
+          last_message_at?: string | null;
+          last_message_id?: string | null;
+          message_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_conversations']['Insert']>;
+        Relationships: [];
+      };
+      chat_participants: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          user_id: string;
+          role: string;
+          status: string;
+          joined_at: string;
+          left_at: string | null;
+          last_read_message_id: string | null;
+          last_read_at: string | null;
+          notifications_muted: boolean;
+          is_pinned: boolean;
+          pinned_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          user_id: string;
+          role?: string;
+          status?: string;
+          joined_at?: string;
+          left_at?: string | null;
+          last_read_message_id?: string | null;
+          last_read_at?: string | null;
+          notifications_muted?: boolean;
+          is_pinned?: boolean;
+          pinned_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_participants']['Insert']>;
+        Relationships: [];
+      };
+      chat_messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          sender_id: string | null;
+          message_type: string;
+          ciphertext: string | null;
+          iv: string | null;
+          algorithm: string | null;
+          key_version: number | null;
+          payload_meta: Json | null;
+          client_generated_id: string | null;
+          reply_to_message_id: string | null;
+          is_deleted: boolean;
+          deleted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          sender_id?: string | null;
+          message_type: string;
+          ciphertext?: string | null;
+          iv?: string | null;
+          algorithm?: string | null;
+          key_version?: number | null;
+          payload_meta?: Json | null;
+          client_generated_id?: string | null;
+          reply_to_message_id?: string | null;
+          is_deleted?: boolean;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_messages']['Insert']>;
+        Relationships: [];
+      };
+      chat_message_reactions: {
+        Row: {
+          id: string;
+          message_id: string;
+          conversation_id: string;
+          user_id: string;
+          emoji: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          message_id: string;
+          conversation_id: string;
+          user_id: string;
+          emoji: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_message_reactions']['Insert']>;
+        Relationships: [];
+      };
+      chat_conversation_keys: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          user_id: string;
+          encrypted_conversation_key: string;
+          key_encryption_algorithm: string;
+          key_version: number;
+          created_at: string;
+          rotated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          user_id: string;
+          encrypted_conversation_key: string;
+          key_encryption_algorithm: string;
+          key_version?: number;
+          created_at?: string;
+          rotated_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['chat_conversation_keys']['Insert']>;
+        Relationships: [];
+      };
+      chat_user_keypairs: {
+        Row: {
+          user_id: string;
+          public_key: string;
+          algorithm: string;
+          key_version: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          public_key: string;
+          algorithm?: string;
+          key_version?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_user_keypairs']['Insert']>;
+        Relationships: [];
+      };
+      chat_user_presence: {
+        Row: {
+          user_id: string;
+          status: string;
+          last_seen_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          status?: string;
+          last_seen_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_user_presence']['Insert']>;
+        Relationships: [];
+      };
+      chat_blocks: {
+        Row: {
+          id: string;
+          blocker_id: string;
+          blocked_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          blocker_id: string;
+          blocked_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_blocks']['Insert']>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      mutate_post_vote_atomic: {
+        Args: {
+          p_entity_id: string;
+          p_direction?: number | null;
+          p_value?: number | null;
+        };
+        Returns: {
+          entity_id: string;
+          previous_vote: number;
+          current_user_vote: number;
+          score: number;
+          upvote_count: number;
+          downvote_count: number;
+          updated_at: string;
+          contribution_delta: number;
+        }[];
+      };
+      mutate_comment_vote_atomic: {
+        Args: {
+          p_entity_id: string;
+          p_direction?: number | null;
+          p_value?: number | null;
+        };
+        Returns: {
+          entity_id: string;
+          previous_vote: number;
+          current_user_vote: number;
+          score: number;
+          upvote_count: number;
+          downvote_count: number;
+          updated_at: string;
+          contribution_delta: number;
+        }[];
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

@@ -139,7 +139,9 @@ describe("toPostSummaries", () => {
     );
 
     expect(summary).toBeDefined();
-    expect(summary?.viewerVote).toBe(1);
+    expect(summary?.currentUserVote).toBe(1);
+    expect(summary?.upvoteCount).toBe(1);
+    expect(summary?.downvoteCount).toBe(0);
     expect(summary?.voteScore).toBe(3);
   });
 });

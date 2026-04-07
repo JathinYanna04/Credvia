@@ -40,7 +40,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         footer={
           <>
             Need a public view first?{' '}
-            <Link href="/" className="text-primary-300 transition-colors hover:text-white">
+            <Link href="/" className="text-accent transition-colors hover:text-[var(--marketing-text-primary)]">
               Visit landing page
             </Link>
           </>

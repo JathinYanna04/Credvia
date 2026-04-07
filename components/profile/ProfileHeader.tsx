@@ -1,12 +1,16 @@
 import { ArrowUpRight, Building2, MapPin, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { StartDirectMessageButton } from '@/components/chat/StartDirectMessageButton';
+import { getPersonaDefinition } from '@/lib/personas';
 import type { UserSummary } from '@/lib/types';
 import { ReputationBadge } from '@/components/reputation/ReputationBadge';
 
 export interface ProfileHeaderProps {
   user: UserSummary;
+  currentUserId?: string | null;
   showFollowAction?: boolean;
   editHref?: string | null;
   contributionCount?: number;
@@ -15,12 +19,20 @@ export interface ProfileHeaderProps {
 
 export function ProfileHeader({
   user,
+  currentUserId,
   showFollowAction = false,
   editHref = null,
   contributionCount = 0,
   commentCount = 0,
 }: ProfileHeaderProps) {
   const totalReputation = user.reputation.reduce((sum, item) => sum + item.score, 0);
+  const persona = user.primaryPersona ? getPersonaDefinition(user.primaryPersona) : null;
+  const secondaryPersonas = (user.secondaryPersonas ?? []).map((item) => getPersonaDefinition(item));
+  const personaHighlights = user.personaDetails
+    ? Object.values(user.personaDetails).filter(
+        (value): value is string => typeof value === 'string' && value.trim().length > 0,
+      )
+    : [];
 
   return (
     <header className="surface-panel overflow-hidden rounded-[28px] p-0 shadow-[0_20px_48px_rgba(15,23,42,0.06)]">
@@ -39,7 +51,7 @@ export function ProfileHeader({
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-accent/15 bg-bg-surface/90 px-3 py-1 text-xs font-medium text-accent shadow-sm">
                 <Sparkles className="h-3.5 w-3.5" />
-                Reputation-led profile
+                {persona ? `${persona.label} profile` : 'Reputation-led profile'}
               </div>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl">
                 {user.fullName}
@@ -48,6 +60,23 @@ export function ProfileHeader({
               <p className="mt-3 max-w-2xl text-sm leading-6 text-text-secondary">
                 {user.headline || 'Building credibility one useful contribution at a time.'}
               </p>
+              {persona ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge>{persona.label}</Badge>
+                  {secondaryPersonas.map((item) => (
+                    <Badge key={item.slug} variant="secondary">
+                      {item.label}
+                    </Badge>
+                  ))}
+                  {user.openTo?.map((item) => (
+                    <Badge key={item} variant="secondary">
+                      {item.replace(/_/g, ' ')}
+                    </Badge>
+                  ))}
+                  <Badge variant="secondary">{persona.shortDescription}</Badge>
+                  {user.badge ? <Badge variant="secondary">{user.badge}</Badge> : null}
+                </div>
+              ) : null}
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-text-secondary">
               {user.location ? (
                 <span className="inline-flex items-center gap-2">
@@ -71,6 +100,14 @@ export function ProfileHeader({
                 <Link href={editHref}>Edit profile</Link>
               </Button>
             ) : null}
+            {!editHref ? (
+              <StartDirectMessageButton
+                currentUserId={currentUserId}
+                targetUserId={user.id}
+                label="Message"
+                variant="secondary"
+              />
+            ) : null}
             {showFollowAction ? <Button variant="secondary">Follow</Button> : null}
             <Button asChild>
               <Link href="/post/new">
@@ -91,12 +128,24 @@ export function ProfileHeader({
           </p>
           <div className="mt-5 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
             <div className="rounded-2xl bg-bg-surface px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.14em] text-text-tertiary">Credibility</div>
+              <div className="mt-1 text-xl font-semibold text-text-primary">
+                {user.scoreSummary?.credibility_score ?? 0}
+              </div>
+            </div>
+            <div className="rounded-2xl bg-bg-surface px-4 py-3">
               <div className="text-xs uppercase tracking-[0.14em] text-text-tertiary">Public posts</div>
               <div className="mt-1 text-xl font-semibold text-text-primary">{contributionCount}</div>
             </div>
             <div className="rounded-2xl bg-bg-surface px-4 py-3">
               <div className="text-xs uppercase tracking-[0.14em] text-text-tertiary">Public replies</div>
               <div className="mt-1 text-xl font-semibold text-text-primary">{commentCount}</div>
+            </div>
+            <div className="rounded-2xl bg-bg-surface px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.14em] text-text-tertiary">Contribution</div>
+              <div className="mt-1 text-xl font-semibold text-text-primary">
+                {user.scoreSummary?.contribution_score ?? 0}
+              </div>
             </div>
           </div>
         </div>
@@ -127,6 +176,21 @@ export function ProfileHeader({
                     className="rounded-full border border-border-default bg-bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary"
                   >
                     {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {personaHighlights.length > 0 ? (
+            <div className="mt-5">
+              <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Persona highlights</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {personaHighlights.slice(0, 4).map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-full border border-border-default bg-bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary"
+                  >
+                    {item}
                   </span>
                 ))}
               </div>

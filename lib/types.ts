@@ -1,9 +1,12 @@
-export type AccountType =
-  | "student"
-  | "professional"
-  | "recruiter"
-  | "founder"
-  | "mentor";
+import type {
+  OpenToValue,
+  PersonaDetailsMap,
+  PersonaSlug,
+  ProfileIntent,
+  ScoreSummary,
+} from '@/lib/personas';
+
+export type AccountType = PersonaSlug;
 
 export type PostType =
   | "question"
@@ -15,7 +18,15 @@ export type PostType =
   | "looking_for_collaborator"
   | "startup_idea";
 
-export type FeedTab = "for-you" | "communities" | "following";
+export type FeedTab =
+  | "for-you"
+  | "communities"
+  | "following"
+  | "trending"
+  | "founders"
+  | "careers"
+  | "mentors"
+  | "recruiters";
 
 export type NotificationType =
   | "reply"
@@ -60,15 +71,40 @@ export interface ReputationSummary {
   score: number;
 }
 
+export interface ReputationBreakdownItem {
+  label: string;
+  value: number;
+  description: string;
+}
+
+export interface FeedExplanation {
+  layer: "real-time" | "rising" | "stable";
+  reasons: string[];
+}
+
 export interface UserSummary {
   id: string;
   username: string;
   fullName: string;
   headline: string;
   avatarUrl: string;
+  primaryPersona?: PersonaSlug;
+  secondaryPersonas?: PersonaSlug[];
+  profileIntent?: ProfileIntent[];
+  openTo?: OpenToValue[];
+  expertiseTags?: string[];
+  interestTags?: string[];
+  personaDetails?: PersonaDetailsMap[PersonaSlug] | null;
   skills: string[];
   location?: string;
+  website?: string;
   currentCompany?: string;
+  scoreSummary?: ScoreSummary;
+  badge?: string;
+  contributionProfile?: Record<string, unknown>;
+  trustProfile?: Record<string, unknown>;
+  growthTrajectory?: Record<string, unknown>;
+  behavioralSignals?: Record<string, unknown>;
   reputation: ReputationSummary[];
 }
 
@@ -77,9 +113,13 @@ export interface PostSummary {
   title: string;
   body: string;
   createdAt: string;
+  updatedAt: string;
+  version?: string;
   postType: PostType;
   voteScore: number;
-  viewerVote?: -1 | 0 | 1;
+  upvoteCount?: number;
+  downvoteCount?: number;
+  currentUserVote?: -1 | 0 | 1;
   commentCount: number;
   saveCount: number;
   author: UserSummary;
@@ -101,6 +141,7 @@ export interface PostSummary {
     lastRevisionAt?: string;
     currentRevisionId?: string;
   };
+  feedExplanation?: FeedExplanation;
 }
 
 export interface CommentSummary {
@@ -108,7 +149,12 @@ export interface CommentSummary {
   author: UserSummary;
   body: string;
   createdAt: string;
+  updatedAt: string;
+  version?: string;
   voteScore: number;
+  upvoteCount?: number;
+  downvoteCount?: number;
+  currentUserVote?: -1 | 0 | 1;
   isBestAnswer?: boolean;
   replies?: CommentSummary[];
 }

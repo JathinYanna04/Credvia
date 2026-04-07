@@ -12,9 +12,10 @@ const idea: PostSummary = {
   title: "Startup validation 1774798703978",
   body: "Founders need better validation workflows.",
   createdAt: "2026-04-04T00:00:00.000Z",
+  updatedAt: "2026-04-04T00:00:00.000Z",
   postType: "startup_idea",
   voteScore: 9,
-  viewerVote: 1,
+  currentUserVote: 1,
   commentCount: 1,
   saveCount: 0,
   author: {

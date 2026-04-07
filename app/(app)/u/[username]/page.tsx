@@ -1,3 +1,4 @@
+import { getPersonaDefinition } from '@/lib/personas';
 import { PostCard } from '@/components/feed/PostCard';
 import { CommentThread } from '@/components/comments/CommentThread';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
@@ -12,17 +13,19 @@ export default async function ProfilePage({ params }: { params: { username: stri
   } = await supabase.auth.getUser();
   const profile = await getPublicProfileBundle(params.username);
   const isOwner = currentUser?.id === profile.user.id;
+  const persona = profile.user.primaryPersona ? getPersonaDefinition(profile.user.primaryPersona) : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <ProfileHeader
         user={profile.user}
+        currentUserId={currentUser?.id ?? null}
         showFollowAction={false}
         editHref={isOwner ? '/settings' : null}
         contributionCount={profile.posts.length}
         commentCount={profile.comments.length}
       />
-      <div className="sticky top-[65px] z-20 -mx-4 overflow-x-auto border-b border-border-subtle bg-[rgba(246,247,251,0.96)] px-4 py-2 backdrop-blur [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:top-[73px] lg:hidden">
+      <div className="sticky top-[65px] z-20 -mx-4 overflow-x-auto border-b border-border-subtle bg-bg-base/95 px-4 py-2 backdrop-blur [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:top-[73px] lg:hidden">
         <div className="inline-flex gap-2">
           <a href="#overview" className="inline-flex h-11 items-center rounded-full bg-accent px-4 text-sm font-medium text-white shadow-[0_10px_22px_rgba(79,70,229,0.22)]">
             Overview
@@ -42,8 +45,42 @@ export default async function ProfilePage({ params }: { params: { username: stri
             <div className="surface-panel p-5">
               <h2 className="text-xl font-semibold text-text-primary">Overview</h2>
               <p className="mt-1 text-sm text-text-secondary">
-                The fastest way to understand who this person is, what they know, and where they are earning trust.
+                {persona
+                  ? `The fastest way to understand this ${persona.label.toLowerCase()}, what they know, and where they are earning trust.`
+                  : 'The fastest way to understand who this person is, what they know, and where they are earning trust.'}
               </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="surface-panel p-5">
+                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Trust layer</div>
+                <div className="mt-3 text-2xl font-semibold text-text-primary">
+                  {profile.user.scoreSummary?.credibility_score ?? 0}
+                </div>
+                <p className="mt-2 text-sm text-text-secondary">
+                  Explainable credibility earned through useful work and trusted feedback.
+                </p>
+              </div>
+              <div className="surface-panel p-5">
+                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Trajectory</div>
+                <div className="mt-3 text-2xl font-semibold text-text-primary">
+                  {typeof profile.user.growthTrajectory?.identity_confidence_score === 'number'
+                    ? profile.user.growthTrajectory.identity_confidence_score
+                    : profile.user.scoreSummary?.persona_completion_score ?? 0}
+                </div>
+                <p className="mt-2 text-sm text-text-secondary">
+                  Higher when profile direction, contribution, and trust signals reinforce each other.
+                </p>
+              </div>
+              <div className="surface-panel p-5">
+                <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Contribution profile</div>
+                <div className="mt-3 text-2xl font-semibold text-text-primary">
+                  {profile.user.scoreSummary?.contribution_score ?? 0}
+                </div>
+                <p className="mt-2 text-sm text-text-secondary">
+                  The visible proof-of-work layer that drives discovery and opportunity.
+                </p>
+              </div>
             </div>
 
             <CareerProfileBlock isOwner={isOwner} />
@@ -53,7 +90,7 @@ export default async function ProfilePage({ params }: { params: { username: stri
               <div className="mt-3 flex flex-wrap gap-2">
                 {profile.user.skills.length === 0 ? (
                   <p className="text-sm text-text-secondary">
-                    No skills listed yet. Contributions still matter more than a long skill list.
+                    {persona?.emptyStateTone ?? 'No skills listed yet. Contributions still matter more than a long skill list.'}
                   </p>
                 ) : (
                   profile.user.skills.map((skill) => (
@@ -87,13 +124,15 @@ export default async function ProfilePage({ params }: { params: { username: stri
             <div className="surface-panel p-5">
               <h2 className="text-xl font-semibold text-text-primary">Posts</h2>
               <p className="mt-1 text-sm text-text-secondary">
-                Public questions, answers, and proof-of-work that help people judge trust quickly.
+                {persona
+                  ? `${persona.label} activity, proof-of-work, and contribution that help people judge trust quickly.`
+                  : 'Public questions, answers, and proof-of-work that help people judge trust quickly.'}
               </p>
             </div>
             {profile.posts.length === 0 ? (
               <div className="surface-panel space-y-3 p-5 text-sm text-text-secondary">
                 <p>No public posts yet.</p>
-                <p>This profile will feel much stronger once there are a few thoughtful questions, answers, or projects here.</p>
+                <p>{persona?.emptyStateTone ?? 'This profile will feel much stronger once there are a few thoughtful questions, answers, or projects here.'}</p>
               </div>
             ) : (
               profile.posts.map((post) => <PostCard key={post.id} post={post} />)

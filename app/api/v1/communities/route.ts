@@ -1,20 +1,20 @@
-import { ok, handleApiError } from '@/lib/api';
+import { handleApiError, ok } from '@/lib/api';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase
+    const result = await supabase
       .from('communities')
       .select('id, name, slug, description, member_count, post_count')
       .eq('status', 'active')
       .order('member_count', { ascending: false });
 
-    if (error) {
-      throw new Error(error.message);
+    if (result.error) {
+      throw new Error(result.error.message);
     }
 
-    return ok(data ?? []);
+    return ok(result.data ?? []);
   } catch (error) {
     return handleApiError(error);
   }

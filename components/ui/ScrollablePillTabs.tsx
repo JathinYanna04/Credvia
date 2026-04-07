@@ -27,7 +27,7 @@ export function ScrollablePillTabs<T extends string>({
     <div
       className={cn(
         sticky &&
-          'sticky top-[65px] z-20 -mx-4 border-b border-border-subtle bg-[rgba(246,247,251,0.96)] px-4 py-2 backdrop-blur dark:bg-[rgba(17,19,24,0.96)] sm:top-[73px]',
+          'sticky top-[65px] z-20 -mx-4 border-b border-border-subtle bg-bg-base/95 px-4 py-2 backdrop-blur sm:top-[73px]',
         className,
       )}
     >

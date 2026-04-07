@@ -6,7 +6,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ProfileCompletionChecklist } from '@/components/profile/ProfileCompletionChecklist';
 import { Textarea } from '@/components/ui/textarea';
+import type { ProfileCompletionState } from '@/lib/profile-completion';
 import { UpdateProfileSchema } from '@/lib/schemas/profile';
 
 type FormValues = {
@@ -33,6 +35,7 @@ interface MePayload {
       education: string | null;
       onboarding_complete: boolean;
     };
+    profileCompletion?: ProfileCompletionState;
   };
   error?: { message?: string };
 }
@@ -46,6 +49,7 @@ export function ProfileSettingsForm() {
   const [email, setEmail] = useState<string | null>(null);
   const [publicUsername, setPublicUsername] = useState<string | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean>(true);
+  const [profileCompletion, setProfileCompletion] = useState<ProfileCompletionState | null>(null);
 
   const { register, handleSubmit, reset, formState } = useForm<FormValues>({
     resolver: zodResolver(UpdateProfileSchema),
@@ -83,6 +87,7 @@ export function ProfileSettingsForm() {
       setEmail(payload.data.user?.email ?? null);
       setPublicUsername(profile.username);
       setOnboardingComplete(profile.onboarding_complete);
+      setProfileCompletion(payload.data.profileCompletion ?? null);
       reset({
         username: profile.username ?? '',
         full_name: profile.full_name ?? '',
@@ -105,84 +110,94 @@ export function ProfileSettingsForm() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <section className="surface-panel space-y-6 p-6">
-        <div>
-          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Identity</div>
-          <h1 className="text-3xl font-semibold">Profile settings</h1>
-          <p className="mt-2 text-sm text-text-secondary">
-            Keep your public profile sharp enough for people to trust your work and understand what you are growing into.
-          </p>
-        </div>
-
-        {authExpired ? (
-          <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-            Your session expired. Sign in again to update your profile.
-          </div>
+      <section className="space-y-6">
+        {profileCompletion ? (
+          <ProfileCompletionChecklist
+            completion={profileCompletion}
+            title="Keep improving your profile in layers"
+            description="Credvia now separates entry from enrichment, so you can add depth when it becomes useful."
+          />
         ) : null}
 
-        {error ? (
-          <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-            {error}
+        <div className="surface-panel space-y-6 p-6">
+          <div>
+            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Identity</div>
+            <h1 className="text-3xl font-semibold">Profile settings</h1>
+            <p className="mt-2 text-sm text-text-secondary">
+              Keep your public profile sharp enough for people to trust your work and understand what you are growing into.
+            </p>
           </div>
-        ) : null}
 
-        {success ? (
-          <div className="rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
-            {success}
-          </div>
-        ) : null}
+          {authExpired ? (
+            <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+              Your session expired. Sign in again to update your profile.
+            </div>
+          ) : null}
 
-        {loading ? (
-          <div className="space-y-3">
-            <div className="h-12 animate-pulse rounded-2xl bg-bg-surface" />
-            <div className="h-12 animate-pulse rounded-2xl bg-bg-surface" />
-            <div className="h-24 animate-pulse rounded-2xl bg-bg-surface" />
-          </div>
-        ) : (
-          <form
-            className="space-y-4"
-            onSubmit={handleSubmit(async (values) => {
-              setSaving(true);
-              setError(null);
-              setSuccess(null);
+          {error ? (
+            <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+              {error}
+            </div>
+          ) : null}
 
-              const normalizedValues = Object.fromEntries(
-                Object.entries(values).map(([key, value]) => [
-                  key,
-                  typeof value === 'string' ? value.trim() || undefined : value,
-                ]),
-              );
+          {success ? (
+            <div className="rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
+              {success}
+            </div>
+          ) : null}
 
-              try {
-                const response = await fetch('/api/v1/users/me', {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(normalizedValues),
-                });
-                const payload = (await response.json()) as MePayload;
+          {loading ? (
+            <div className="space-y-3">
+              <div className="h-12 animate-pulse rounded-2xl bg-bg-surface" />
+              <div className="h-12 animate-pulse rounded-2xl bg-bg-surface" />
+              <div className="h-24 animate-pulse rounded-2xl bg-bg-surface" />
+            </div>
+          ) : (
+            <form
+              className="space-y-4"
+              onSubmit={handleSubmit(async (values) => {
+                setSaving(true);
+                setError(null);
+                setSuccess(null);
 
-                if (response.status === 401) {
-                  setAuthExpired(true);
-                  setSaving(false);
-                  return;
-                }
-
-                if (!response.ok || !payload.data) {
-                  throw new Error(payload.error?.message ?? 'Could not update your profile.');
-                }
-
-                setPublicUsername(
-                  payload.data.profile?.username ??
-                    (typeof normalizedValues.username === 'string' ? normalizedValues.username : publicUsername),
+                const normalizedValues = Object.fromEntries(
+                  Object.entries(values).map(([key, value]) => [
+                    key,
+                    typeof value === 'string' ? value.trim() || undefined : value,
+                  ]),
                 );
-                setSuccess('Profile updated.');
-              } catch (saveError) {
-                setError(saveError instanceof Error ? saveError.message : 'Could not update your profile.');
-              } finally {
-                setSaving(false);
-              }
-            })}
-          >
+
+                try {
+                  const response = await fetch('/api/v1/users/me', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(normalizedValues),
+                  });
+                  const payload = (await response.json()) as MePayload;
+
+                  if (response.status === 401) {
+                    setAuthExpired(true);
+                    setSaving(false);
+                    return;
+                  }
+
+                  if (!response.ok || !payload.data) {
+                    throw new Error(payload.error?.message ?? 'Could not update your profile.');
+                  }
+
+                  setPublicUsername(
+                    payload.data.profile?.username ??
+                      (typeof normalizedValues.username === 'string' ? normalizedValues.username : publicUsername),
+                  );
+                  await loadProfile();
+                  setSuccess('Profile updated.');
+                } catch (saveError) {
+                  setError(saveError instanceof Error ? saveError.message : 'Could not update your profile.');
+                } finally {
+                  setSaving(false);
+                }
+              })}
+            >
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-text-primary" htmlFor="settings-username">
@@ -259,8 +274,9 @@ export function ProfileSettingsForm() {
                 </Button>
               ) : null}
             </div>
-          </form>
-        )}
+            </form>
+          )}
+        </div>
       </section>
 
       <aside className="space-y-4">
@@ -278,7 +294,7 @@ export function ProfileSettingsForm() {
               </div>
             </div>
             {!onboardingComplete ? (
-              <Link href="/onboarding/interests" className="text-accent">
+              <Link href="/onboarding" className="text-accent">
                 Continue onboarding
               </Link>
             ) : null}

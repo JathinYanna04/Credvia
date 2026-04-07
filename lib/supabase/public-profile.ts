@@ -1,3 +1,10 @@
+import {
+  getCredibilityBadge,
+  getPersonaDetails,
+  normalizePersonaSlug,
+  OPEN_TO_VALUES,
+  PROFILE_INTENT_VALUES,
+} from '@/lib/personas';
 import { notFound } from 'next/navigation';
 import type { CommentSummary, PostSummary, UserSummary } from '@/lib/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -100,11 +107,57 @@ export async function getPublicProfileBundle(username: string): Promise<PublicPr
       fullName: profile.full_name ?? profile.username,
       headline: profile.headline ?? '',
       avatarUrl: profile.avatar_url ?? '',
+      primaryPersona: normalizePersonaSlug(profile.primary_persona) ?? undefined,
+      secondaryPersonas: (profile.secondary_personas ?? [])
+        .map((persona) => normalizePersonaSlug(persona))
+        .filter((persona): persona is NonNullable<typeof persona> => Boolean(persona)),
+      profileIntent: (profile.profile_intent ?? []).filter((item): item is (typeof PROFILE_INTENT_VALUES)[number] =>
+        PROFILE_INTENT_VALUES.includes(item as (typeof PROFILE_INTENT_VALUES)[number]),
+      ),
+      openTo: (profile.open_to ?? []).filter((item): item is (typeof OPEN_TO_VALUES)[number] =>
+        OPEN_TO_VALUES.includes(item as (typeof OPEN_TO_VALUES)[number]),
+      ),
+      expertiseTags: profile.expertise_tags ?? [],
+      interestTags: profile.interest_tags ?? [],
+      personaDetails: getPersonaDetails(
+        profile.metadata ?? null,
+        normalizePersonaSlug(profile.primary_persona),
+      ),
       skills: (profileSkillsResult.data ?? [])
         .map((row) => row.name)
         .filter((value): value is string => Boolean(value)),
       location: profile.location ?? undefined,
+      website: profile.website ?? undefined,
       currentCompany: profile.current_company ?? undefined,
+      scoreSummary: {
+        contribution_score: profile.contribution_score ?? 0,
+        credibility_score: profile.credibility_score ?? 0,
+        helpfulness_score: profile.helpfulness_score ?? 0,
+        expertise_score: profile.expertise_score ?? 0,
+        community_score: profile.community_score ?? 0,
+        persona_completion_score: profile.persona_completion_score ?? 0,
+      },
+      badge: getCredibilityBadge({
+        contributionScore: profile.contribution_score,
+        credibilityScore: profile.credibility_score,
+        helpfulnessScore: profile.helpfulness_score,
+      }),
+      contributionProfile:
+        profile.contribution_profile && typeof profile.contribution_profile === 'object'
+          ? (profile.contribution_profile as Record<string, unknown>)
+          : undefined,
+      trustProfile:
+        profile.trust_profile && typeof profile.trust_profile === 'object'
+          ? (profile.trust_profile as Record<string, unknown>)
+          : undefined,
+      growthTrajectory:
+        profile.growth_trajectory && typeof profile.growth_trajectory === 'object'
+          ? (profile.growth_trajectory as Record<string, unknown>)
+          : undefined,
+      behavioralSignals:
+        profile.behavioral_signals && typeof profile.behavioral_signals === 'object'
+          ? (profile.behavioral_signals as Record<string, unknown>)
+          : undefined,
       reputation: topReputation,
     },
     posts,

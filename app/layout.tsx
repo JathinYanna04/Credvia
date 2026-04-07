@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google';
 import Script from 'next/script';
 import '@/app/globals.css';
 import { PostHogInit } from '@/components/analytics/PostHogInit';
+import { VoteSyncInit } from '@/components/voting/VoteSyncInit';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -57,6 +58,7 @@ export default function RootLayout({
           {themeScript}
         </Script>
         <PostHogInit />
+        <VoteSyncInit />
         {children}
       </body>
     </html>

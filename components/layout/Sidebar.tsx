@@ -16,6 +16,7 @@ export async function Sidebar() {
     { href: '/feed', label: 'Home', icon: 'home' },
     { href: '/explore', label: 'Explore', icon: 'explore' },
     { href: '/career', label: 'Career', icon: 'career' },
+    { href: '/messages', label: 'Messages', icon: 'messages' },
     { href: '/notifications', label: 'Notifications', icon: 'notifications', badge: unreadNotifications },
   ];
   const topReputation = currentUser.reputation[0];
@@ -69,7 +70,7 @@ export async function Sidebar() {
           <p className="text-sm text-text-secondary">
             You can keep reading now, then add skills and communities to sharpen your feed.
           </p>
-          <Link href="/onboarding/interests" className="text-sm font-medium text-accent">
+          <Link href="/onboarding" className="text-sm font-medium text-accent">
             Continue onboarding
           </Link>
         </div>

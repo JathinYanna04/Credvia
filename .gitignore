@@ -7,6 +7,9 @@
 
 # test output
 /coverage/
+/test-results/
+/playwright-report/
+/blob-report/
 
 # next.js / build output
 /.next/
@@ -62,5 +65,7 @@ supabase/.temp/
 
 # local workspace noise
 dev.log
+auth_session.json
+auth_storage.json
 
 .vercel
