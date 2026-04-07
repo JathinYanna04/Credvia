@@ -1,16 +1,98 @@
 'use client';
 
-import Link from 'next/link';
-import { MessageSquare } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  Pin,
+  Search,
+  Signal,
+  SignalHigh,
+  SignalMedium,
+  SignalZero,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { createClient } from '@/lib/supabase/client';
 import type { ChatConversationSummary } from '@/lib/chat/contracts';
 import type { ApiResponse } from '@/lib/types';
-import { formatRelativeTime } from '@/lib/utils/format';
+import { cn } from '@/lib/utils/cn';
+import { formatCompactRelativeTime } from '@/lib/utils/format';
 
 interface ConversationInboxClientProps {
   userId: string;
   initialConversations: ChatConversationSummary[];
+  selectedConversationId?: string | null;
+  className?: string;
+}
+
+function toTitleCase(value: string) {
+  return value
+    .replace(/[_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function getPersonaLabel(conversation: ChatConversationSummary) {
+  if (!conversation.counterpart?.primaryPersona) {
+    return null;
+  }
+
+  return toTitleCase(conversation.counterpart.primaryPersona);
+}
+
+function getPresenceLabel(
+  conversation: ChatConversationSummary,
+  options?: { includeRelativeTime?: boolean },
+) {
+  if (!conversation.counterpart) {
+    return null;
+  }
+
+  if (conversation.counterpart.presence === 'online') {
+    return 'Active now';
+  }
+
+  if (conversation.counterpart.lastSeenAt) {
+    if (!options?.includeRelativeTime) {
+      return 'Active recently';
+    }
+
+    const compact = formatCompactRelativeTime(conversation.counterpart.lastSeenAt);
+    return compact === 'now' ? 'Active now' : `Active ${compact}`;
+  }
+
+  if (conversation.counterpart.presence === 'away') {
+    return 'Active recently';
+  }
+
+  return 'Active earlier';
+}
+
+function fuzzyMatch(haystack: string, query: string) {
+  const normalizedHaystack = haystack.toLowerCase();
+  const normalizedQuery = query.toLowerCase();
+
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  let queryIndex = 0;
+  for (const character of normalizedHaystack) {
+    if (character === normalizedQuery[queryIndex]) {
+      queryIndex += 1;
+      if (queryIndex >= normalizedQuery.length) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 function getConversationTitle(conversation: ChatConversationSummary) {
@@ -35,13 +117,103 @@ function getConversationSubtitle(conversation: ChatConversationSummary) {
   return conversation.description ?? 'Collaborative idea thread';
 }
 
+function getConversationAvatarFallback(conversation: ChatConversationSummary) {
+  const title = getConversationTitle(conversation);
+  const [first, second] = title.split(' ');
+
+  return `${first?.[0] ?? ''}${second?.[0] ?? ''}`.toUpperCase() || 'CH';
+}
+
+function getPresenceDotClass(
+  presence: 'online' | 'away' | 'offline' | undefined,
+) {
+  if (!presence) {
+    return 'bg-text-tertiary';
+  }
+
+  if (presence === 'online') {
+    return 'bg-success';
+  }
+
+  if (presence === 'away') {
+    return 'bg-warning';
+  }
+
+  return 'bg-text-tertiary';
+}
+
+function getConnectionIcon(status: string) {
+  if (status === 'connected') {
+    return SignalHigh;
+  }
+
+  if (status === 'connecting') {
+    return SignalMedium;
+  }
+
+  if (status === 'offline') {
+    return SignalZero;
+  }
+
+  return Signal;
+}
+
+function getConnectionLabel(status: 'connecting' | 'connected' | 'offline') {
+  if (status === 'connected') {
+    return 'Live';
+  }
+
+  if (status === 'offline') {
+    return 'Offline';
+  }
+
+  return 'Syncing';
+}
+
+function stableConversationSort(
+  left: ChatConversationSummary,
+  right: ChatConversationSummary,
+) {
+  const leftPinned = left.participant.isPinned ? 1 : 0;
+  const rightPinned = right.participant.isPinned ? 1 : 0;
+  if (leftPinned !== rightPinned) {
+    return rightPinned - leftPinned;
+  }
+
+  const leftPinnedAt = left.participant.pinnedAt ? Date.parse(left.participant.pinnedAt) : 0;
+  const rightPinnedAt = right.participant.pinnedAt ? Date.parse(right.participant.pinnedAt) : 0;
+  if (leftPinnedAt !== rightPinnedAt) {
+    return rightPinnedAt - leftPinnedAt;
+  }
+
+  const leftTime = left.lastMessageAt ? Date.parse(left.lastMessageAt) : 0;
+  const rightTime = right.lastMessageAt ? Date.parse(right.lastMessageAt) : 0;
+  if (leftTime !== rightTime) {
+    return rightTime - leftTime;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
 export function ConversationInboxClient({
   userId,
   initialConversations,
+  selectedConversationId = null,
+  className,
 }: ConversationInboxClientProps) {
+  const router = useRouter();
   const [conversations, setConversations] = useState(initialConversations);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
+  const [updatingPreferenceFor, setUpdatingPreferenceFor] = useState<string | null>(null);
+  const prefersReducedMotion = useReducedMotion();
   const refreshTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   const refreshConversations = async () => {
     try {
@@ -54,7 +226,7 @@ export function ConversationInboxClient({
         throw new Error(payload.error?.message ?? 'Unable to refresh conversations.');
       }
 
-      setConversations(payload.data ?? []);
+      setConversations((payload.data ?? []).sort(stableConversationSort));
       setStatusError(null);
     } catch (error) {
       setStatusError(
@@ -62,6 +234,104 @@ export function ConversationInboxClient({
           ? error.message
           : 'Unable to refresh conversations.',
       );
+    }
+  };
+
+  const updateConversationPreferences = async (
+    conversation: ChatConversationSummary,
+    updates: {
+      notificationsMuted?: boolean;
+      isPinned?: boolean;
+    },
+  ) => {
+    if (updatingPreferenceFor === conversation.id) {
+      return;
+    }
+
+    const previous = conversations;
+    const optimisticTimestamp = new Date().toISOString();
+
+    setUpdatingPreferenceFor(conversation.id);
+    setConversations((current) =>
+      current
+        .map((item) => {
+          if (item.id !== conversation.id) {
+            return item;
+          }
+
+          return {
+            ...item,
+            participant: {
+              ...item.participant,
+              notificationsMuted:
+                typeof updates.notificationsMuted === 'boolean'
+                  ? updates.notificationsMuted
+                  : item.participant.notificationsMuted,
+              isPinned:
+                typeof updates.isPinned === 'boolean'
+                  ? updates.isPinned
+                  : item.participant.isPinned,
+              pinnedAt:
+                typeof updates.isPinned === 'boolean'
+                  ? updates.isPinned
+                    ? optimisticTimestamp
+                    : null
+                  : item.participant.pinnedAt,
+            },
+          };
+        })
+        .sort(stableConversationSort),
+    );
+
+    try {
+      const response = await fetch(`/api/v1/chat/conversations/${conversation.id}/preferences`, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(updates),
+      });
+
+      const payload = (await response.json()) as ApiResponse<{
+        conversationId: string;
+        notificationsMuted: boolean;
+        isPinned: boolean;
+        pinnedAt: string | null;
+      }>;
+
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.error?.message ?? 'Unable to update conversation preference.');
+      }
+
+      setConversations((current) =>
+        current
+          .map((item) => {
+            if (item.id !== conversation.id) {
+              return item;
+            }
+
+            return {
+              ...item,
+              participant: {
+                ...item.participant,
+                notificationsMuted: payload.data!.notificationsMuted,
+                isPinned: payload.data!.isPinned,
+                pinnedAt: payload.data!.pinnedAt,
+              },
+            };
+          })
+          .sort(stableConversationSort),
+      );
+      setStatusError(null);
+    } catch (error) {
+      setConversations(previous);
+      setStatusError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to update conversation preference.',
+      );
+    } finally {
+      setUpdatingPreferenceFor(null);
     }
   };
 
@@ -78,6 +348,10 @@ export function ConversationInboxClient({
         void refreshConversations();
       }, 180);
     };
+
+    const refreshInterval = window.setInterval(() => {
+      void refreshConversations();
+    }, 45_000);
 
     const channel = supabase
       .channel(`chat-inbox:${userId}`)
@@ -100,64 +374,155 @@ export function ConversationInboxClient({
         },
         scheduleRefresh,
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setConnectionStatus('connected');
+          return;
+        }
+
+        if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+          setConnectionStatus('offline');
+          return;
+        }
+
+        setConnectionStatus('connecting');
+      });
+
+    const onOffline = () => {
+      setConnectionStatus('offline');
+    };
+
+    const onOnline = () => {
+      setConnectionStatus('connecting');
+      void refreshConversations();
+    };
+
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
 
     return () => {
+      window.clearInterval(refreshInterval);
+
       if (refreshTimerRef.current !== null) {
         window.clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = null;
       }
 
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+
       void supabase.removeChannel(channel);
     };
   }, [userId]);
 
-  return (
-    <section className="space-y-3">
-      {statusError ? (
-        <div className="surface-panel rounded-2xl border border-border-subtle bg-bg-surface p-4 text-sm text-text-secondary">
-          {statusError}
-        </div>
-      ) : null}
+  useEffect(() => {
+    setConversations(initialConversations.sort(stableConversationSort));
+  }, [initialConversations]);
 
-      {conversations.length === 0 ? (
-        <div className="surface-panel space-y-4 p-5 text-sm text-text-secondary">
-          <p>No conversations yet. Start from a profile or startup idea discussion to open a secure thread.</p>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/explore"
-              className="inline-flex h-10 items-center rounded-full border border-border-subtle bg-bg-surface px-4 text-sm font-medium text-text-primary hover:border-border-default"
-            >
-              Browse profiles
-            </Link>
-            <Link
-              href="/ideas"
-              className="inline-flex h-10 items-center rounded-full border border-border-subtle bg-bg-surface px-4 text-sm font-medium text-text-primary hover:border-border-default"
-            >
-              Explore ideas
-            </Link>
-            <Link
-              href="/career/jobs"
-              className="inline-flex h-10 items-center rounded-full border border-border-subtle bg-bg-surface px-4 text-sm font-medium text-text-primary hover:border-border-default"
-            >
-              View opportunities
-            </Link>
-          </div>
-        </div>
-      ) : null}
+  const filteredConversations = useMemo(() => {
+    const trimmedQuery = query.trim().toLowerCase();
 
-      {conversations.map((conversation) => (
-        <Link
-          key={conversation.id}
-          href={`/messages/${conversation.id}`}
-          className="surface-panel flex items-center gap-4 p-4 transition-colors hover:border-border-default"
-        >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
-            <MessageSquare className="h-5 w-5" />
+    return conversations.filter((conversation) => {
+      if (!trimmedQuery) {
+        return true;
+      }
+
+      const searchHaystack = [
+        getConversationTitle(conversation),
+        getConversationSubtitle(conversation),
+        getPersonaLabel(conversation) ?? '',
+        getPresenceLabel(conversation, { includeRelativeTime: false }) ?? '',
+        conversation.lastMessage?.previewText ?? '',
+        conversation.sourceContext?.title ?? '',
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return searchHaystack.includes(trimmedQuery) || fuzzyMatch(searchHaystack, trimmedQuery);
+    });
+  }, [conversations, query]);
+
+  const unreadTotal = useMemo(
+    () => conversations.reduce((total, conversation) => total + conversation.unreadCount, 0),
+    [conversations],
+  );
+
+  const pinnedConversations = filteredConversations.filter(
+    (conversation) => conversation.participant.isPinned,
+  );
+  const otherConversations = filteredConversations.filter(
+    (conversation) => !conversation.participant.isPinned,
+  );
+
+  const ConnectionIcon = getConnectionIcon(connectionStatus);
+  const connectionLabel = getConnectionLabel(connectionStatus);
+  const rowTransition = {
+    duration: prefersReducedMotion ? 0 : 0.2,
+    ease: 'easeOut' as const,
+  };
+
+  const renderConversationRow = (conversation: ChatConversationSummary) => {
+    const muted = conversation.participant.notificationsMuted;
+    const unread = conversation.unreadCount > 0;
+    const presenceLabel =
+      conversation.type === 'dm'
+        ? getPresenceLabel(conversation, { includeRelativeTime: isHydrated })
+        : null;
+    const timestampLabel =
+      conversation.lastMessageAt
+        ? isHydrated
+          ? formatCompactRelativeTime(conversation.lastMessageAt)
+          : 'Recent'
+        : 'New';
+
+    return (
+      <motion.article
+        key={conversation.id}
+        layout
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+        transition={rowTransition}
+        whileHover={prefersReducedMotion ? undefined : { y: -2 }}
+        className={cn(
+          'group relative cursor-pointer rounded-2xl border p-3.5 transition-colors',
+          selectedConversationId === conversation.id
+            ? 'border-accent/35 bg-accent/10 shadow-[0_12px_26px_rgba(99,102,241,0.14)]'
+            : unread
+              ? 'border-accent/25 bg-bg-surface shadow-[0_10px_22px_rgba(99,102,241,0.1)] hover:border-accent/35'
+              : 'border-border-subtle bg-bg-surface hover:border-border-default hover:bg-bg-overlay/40',
+        )}
+        onClick={() => {
+          router.push(`/messages/${conversation.id}`);
+        }}
+      >
+        <div className="flex items-start gap-3">
+          <div className="relative">
+            <Avatar className="h-10 w-10 border border-border-subtle">
+              <AvatarImage
+                src={conversation.counterpart?.avatarUrl ?? undefined}
+                alt={getConversationTitle(conversation)}
+              />
+              <AvatarFallback>{getConversationAvatarFallback(conversation)}</AvatarFallback>
+            </Avatar>
+            {conversation.type === 'dm' ? (
+              <span
+                className={cn(
+                  'absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-bg-surface',
+                  getPresenceDotClass(conversation.counterpart?.presence),
+                )}
+              />
+            ) : null}
           </div>
+
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <p className="truncate text-sm font-semibold text-text-primary">
+              <p
+                className={cn(
+                  'truncate text-sm text-text-primary',
+                  unread ? 'font-semibold' : 'font-medium',
+                )}
+              >
                 {getConversationTitle(conversation)}
               </p>
               {conversation.unreadCount > 0 ? (
@@ -165,18 +530,175 @@ export function ConversationInboxClient({
                   {conversation.unreadCount}
                 </span>
               ) : null}
+              {muted ? <VolumeX className="h-3.5 w-3.5 text-text-tertiary" /> : null}
             </div>
-            <p className="truncate text-xs text-text-tertiary">
-              {getConversationSubtitle(conversation)}
+
+            <p className={cn('truncate text-xs', unread ? 'text-text-secondary font-medium' : 'text-text-tertiary')}>
+              {conversation.lastMessage?.previewText ?? getConversationSubtitle(conversation)}
             </p>
+            {presenceLabel ? <p className="mt-1 text-[11px] text-text-tertiary">{presenceLabel}</p> : null}
           </div>
-          <div className="text-xs text-text-tertiary">
-            {conversation.lastMessageAt
-              ? formatRelativeTime(conversation.lastMessageAt)
-              : 'No messages'}
+
+          <div className="flex shrink-0 items-center gap-1">
+            <span className="hidden text-[11px] text-text-tertiary sm:inline">
+              {timestampLabel}
+            </span>
+            <button
+              type="button"
+              aria-label={conversation.participant.isPinned ? 'Unpin conversation' : 'Pin conversation'}
+              className="rounded-lg p-1 text-text-tertiary transition-colors hover:bg-bg-overlay hover:text-text-primary"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void updateConversationPreferences(conversation, {
+                  isPinned: !conversation.participant.isPinned,
+                });
+              }}
+              disabled={updatingPreferenceFor === conversation.id}
+            >
+              <Pin className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              aria-label={muted ? 'Enable notifications' : 'Mute notifications'}
+              className="rounded-lg p-1 text-text-tertiary transition-colors hover:bg-bg-overlay hover:text-text-primary"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void updateConversationPreferences(conversation, {
+                  notificationsMuted: !muted,
+                });
+              }}
+              disabled={updatingPreferenceFor === conversation.id}
+            >
+              {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </button>
           </div>
-        </Link>
-      ))}
+        </div>
+      </motion.article>
+    );
+  };
+
+  return (
+    <section className={cn('surface-panel flex min-h-[56dvh] flex-col overflow-hidden', className)}>
+      <div className="space-y-3 border-b border-border-subtle p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.16em] text-text-tertiary">Inbox</p>
+            <h2 className="text-lg font-semibold text-text-primary">Messages</h2>
+          </div>
+          {unreadTotal > 0 ? (
+            <Badge variant="accent" className="rounded-full px-2.5 py-1 text-[11px]">
+              {unreadTotal} unread
+            </Badge>
+          ) : null}
+        </div>
+
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search conversations"
+            className="h-10 rounded-xl border-border-subtle pl-9"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-text-tertiary">
+            <ConnectionIcon
+              className={cn(
+                'h-3.5 w-3.5',
+                connectionStatus === 'connected'
+                  ? 'text-success'
+                  : connectionStatus === 'offline'
+                    ? 'text-danger'
+                    : 'text-warning',
+              )}
+            />
+            {connectionLabel}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-4 overflow-y-auto p-3">
+        {statusError ? (
+          <div className="rounded-xl border border-danger/30 bg-danger/10 p-3 text-xs text-danger">
+            {statusError}
+          </div>
+        ) : null}
+
+        {filteredConversations.length === 0 ? (
+          <div className="space-y-4 rounded-2xl border border-border-subtle bg-bg-overlay/60 p-5 text-sm text-text-secondary">
+            <p>No conversations yet. Start from a profile or idea discussion.</p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  router.push('/explore');
+                }}
+              >
+                Browse profiles
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  router.push('/ideas');
+                }}
+              >
+                Explore ideas
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  router.push('/career/jobs');
+                }}
+              >
+                View opportunities
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        <AnimatePresence initial={false}>
+          {pinnedConversations.length > 0 ? (
+            <motion.div
+              key="pinned-section"
+              layout
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={rowTransition}
+              className="space-y-3"
+            >
+              <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">
+                Pinned
+              </p>
+              {pinnedConversations.map((conversation) => renderConversationRow(conversation))}
+            </motion.div>
+          ) : null}
+
+          {otherConversations.length > 0 ? (
+            <motion.div
+              key="all-section"
+              layout
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={rowTransition}
+              className="space-y-3"
+            >
+              {pinnedConversations.length > 0 ? (
+                <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">
+                  All conversations
+                </p>
+              ) : null}
+              {otherConversations.map((conversation) => renderConversationRow(conversation))}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
     </section>
   );
 }

@@ -38,6 +38,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
       type="button"
       size={compact ? 'icon' : 'sm'}
       variant="secondary"
+      suppressHydrationWarning
       aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
       onClick={() => {
         const nextTheme = theme === 'dark' ? 'light' : 'dark';
@@ -45,8 +46,8 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
         applyTheme(nextTheme);
       }}
     >
-      {!ready ? null : theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-      {compact ? null : <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
+      {!ready ? <Moon className="h-4 w-4" /> : theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      {compact ? null : <span suppressHydrationWarning>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
     </Button>
   );
 }

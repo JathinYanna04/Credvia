@@ -63,3 +63,24 @@ export const UpsertConversationKeySchema = z
     keyVersion: z.number().int().positive().optional(),
   })
   .strict();
+
+export const UpdateConversationPreferencesSchema = z
+  .object({
+    notificationsMuted: z.boolean().optional(),
+    isPinned: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      typeof value.notificationsMuted === 'boolean' || typeof value.isPinned === 'boolean',
+    {
+      message: 'At least one preference field is required.',
+    },
+  );
+
+export const UpdateChatPresenceSchema = z
+  .object({
+    status: z.enum(['online', 'away', 'offline']).optional(),
+    heartbeatOnly: z.boolean().optional(),
+  })
+  .strict();

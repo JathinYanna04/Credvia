@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decryptMessageContent,
   encryptMessageContent,
+  exportConversationKeyRaw,
   generateClientGeneratedId,
   generateConversationKey,
   generateUserKeyPair,
@@ -44,6 +45,25 @@ describe('chat crypto primitives', () => {
 
     expect(decrypted).toBe(plaintext);
     expect(wrapped.keyEncryptionAlgorithm).toBe('RSA-OAEP-256');
+  });
+
+  it('allows exporting unwrapped conversation keys for local cache', async () => {
+    const conversationKey = await generateConversationKey();
+    const userKeypair = await generateUserKeyPair();
+
+    const wrapped = await wrapConversationKeyForParticipant(
+      conversationKey,
+      userKeypair.publicKey,
+    );
+
+    const unwrappedKey = await unwrapConversationKeyForParticipant(
+      wrapped.encryptedConversationKey,
+      userKeypair.privateKey,
+    );
+
+    const exported = await exportConversationKeyRaw(unwrappedKey);
+
+    expect(exported.length).toBeGreaterThan(0);
   });
 
   it('imports a raw conversation key and preserves decryption ability', async () => {

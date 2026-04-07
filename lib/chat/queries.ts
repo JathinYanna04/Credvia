@@ -3,9 +3,11 @@ import type {
   ChatConversationSummary,
   ChatMessageRecord,
   ChatMessageType,
+  ChatPresenceStatus,
   ChatThreadPage,
 } from '@/lib/chat/contracts';
 import { ChatServiceError } from '@/lib/chat/errors';
+import { isRecoverableSupabaseReadError } from '@/lib/supabase/helpers';
 import type { Database, Json } from '@/lib/supabase/types';
 
 type TypedSupabaseClient = SupabaseClient<Database>;
@@ -15,12 +17,15 @@ type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
 type ChatConversationKeyRow =
   Database['public']['Tables']['chat_conversation_keys']['Row'];
 type ChatUserKeypairRow = Database['public']['Tables']['chat_user_keypairs']['Row'];
+type ChatUserPresenceRow = Database['public']['Tables']['chat_user_presence']['Row'];
 
 type ParticipantProfile = {
   user_id: string;
   username: string;
   full_name: string | null;
   avatar_url: string | null;
+  headline: string | null;
+  primary_persona: string | null;
 };
 
 export interface ListConversationsInput {
@@ -72,6 +77,19 @@ export interface UpsertConversationKeyInput {
   encryptedConversationKey: string;
   keyEncryptionAlgorithm: string;
   keyVersion?: number;
+}
+
+export interface UpdateConversationPreferencesInput {
+  conversationId: string;
+  userId: string;
+  notificationsMuted?: boolean;
+  isPinned?: boolean;
+}
+
+export interface UpdateChatPresenceInput {
+  userId: string;
+  status?: ChatPresenceStatus;
+  heartbeatOnly?: boolean;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -138,6 +156,38 @@ async function assertActiveParticipant(
   return participantResult.data as ChatParticipantRow;
 }
 
+function toSourceHref(sourceType: string | null, sourceId: string | null) {
+  if (!sourceType || !sourceId) {
+    return null;
+  }
+
+  if (sourceType === 'idea') {
+    return `/ideas/${sourceId}`;
+  }
+
+  if (sourceType === 'opportunity') {
+    return `/career/jobs/${sourceId}`;
+  }
+
+  if (sourceType === 'career_match') {
+    return '/career-match';
+  }
+
+  if (sourceType === 'community') {
+    return `/c/${sourceId}`;
+  }
+
+  return null;
+}
+
+function normalizePresenceStatus(status: string | null | undefined): ChatPresenceStatus {
+  if (status === 'online' || status === 'away') {
+    return status;
+  }
+
+  return 'offline';
+}
+
 async function loadConversationSummaries(
   supabase: TypedSupabaseClient,
   userId: string,
@@ -150,7 +200,9 @@ async function loadConversationSummaries(
   const conversationIds = conversations.map((conversation) => conversation.id);
   const ownParticipantsResult = await supabase
     .from('chat_participants')
-    .select('conversation_id, user_id, status, role, joined_at, last_read_message_id, last_read_at')
+    .select(
+      'conversation_id, user_id, status, role, joined_at, last_read_message_id, last_read_at, notifications_muted, is_pinned, pinned_at',
+    )
     .eq('user_id', userId)
     .eq('status', 'active')
     .in('conversation_id', conversationIds);
@@ -169,7 +221,7 @@ async function loadConversationSummaries(
     throw new Error(allParticipantsResult.error.message);
   }
 
-  const ownParticipantMap = new Map(
+  const ownParticipantByConversation = new Map(
     (ownParticipantsResult.data ?? []).map((participant) => [
       participant.conversation_id,
       participant,
@@ -203,6 +255,29 @@ async function loadConversationSummaries(
     }
   }
 
+  const sourceIds = new Set<string>();
+  for (const conversation of conversations) {
+    if (conversation.source_id) {
+      sourceIds.add(conversation.source_id);
+    }
+  }
+
+  const sourceTitleMap = new Map<string, string | null>();
+  if (sourceIds.size > 0) {
+    const sourceResult = await supabase
+      .from('posts')
+      .select('id, title')
+      .in('id', [...sourceIds]);
+
+    if (sourceResult.error) {
+      throw new Error(sourceResult.error.message);
+    }
+
+    for (const source of sourceResult.data ?? []) {
+      sourceTitleMap.set(source.id, source.title ?? null);
+    }
+  }
+
   const counterpartUserIds = new Set<string>();
   for (const conversation of conversations) {
     if (conversation.type !== 'dm') {
@@ -223,47 +298,102 @@ async function loadConversationSummaries(
   const counterpartProfilesMap = new Map<string, ParticipantProfile>();
   const counterpartIds = [...counterpartUserIds];
   if (counterpartIds.length > 0) {
-    const profilesResult = await supabase
+    const profilesWithPersonaResult = await supabase
       .from('profiles')
-      .select('user_id, username, full_name, avatar_url')
+      .select('user_id, username, full_name, avatar_url, headline, primary_persona')
       .in('user_id', counterpartIds);
 
-    if (profilesResult.error) {
-      throw new Error(profilesResult.error.message);
+    if (profilesWithPersonaResult.error && !isRecoverableSupabaseReadError(profilesWithPersonaResult.error)) {
+      throw new Error(profilesWithPersonaResult.error.message);
     }
 
-    for (const profile of profilesResult.data ?? []) {
-      counterpartProfilesMap.set(profile.user_id, profile as ParticipantProfile);
+    if (!profilesWithPersonaResult.error) {
+      for (const profile of profilesWithPersonaResult.data ?? []) {
+        counterpartProfilesMap.set(profile.user_id, profile as ParticipantProfile);
+      }
+    } else {
+      const legacyProfilesResult = await supabase
+        .from('profiles')
+        .select('user_id, username, full_name, avatar_url')
+        .in('user_id', counterpartIds);
+
+      if (legacyProfilesResult.error) {
+        throw new Error(legacyProfilesResult.error.message);
+      }
+
+      for (const profile of legacyProfilesResult.data ?? []) {
+        counterpartProfilesMap.set(profile.user_id, {
+          user_id: profile.user_id,
+          username: profile.username,
+          full_name: profile.full_name,
+          avatar_url: profile.avatar_url,
+          headline: null,
+          primary_persona: null,
+        });
+      }
+    }
+  }
+
+  const counterpartPresenceMap = new Map<string, ChatUserPresenceRow>();
+  if (counterpartIds.length > 0) {
+    const presenceResult = await supabase
+      .from('chat_user_presence')
+      .select('user_id, status, last_seen_at, updated_at')
+      .in('user_id', counterpartIds);
+
+    if (presenceResult.error && !isRecoverableSupabaseReadError(presenceResult.error)) {
+      throw new Error(presenceResult.error.message);
+    }
+
+    if (!presenceResult.error) {
+      for (const presence of presenceResult.data ?? []) {
+        counterpartPresenceMap.set(presence.user_id, presence as ChatUserPresenceRow);
+      }
     }
   }
 
   const unreadCounts = new Map<string, number>();
-  await Promise.all(
-    conversations.map(async (conversation) => {
-      const ownParticipant = ownParticipantMap.get(conversation.id);
+  const unreadMessagesResult = await supabase
+    .from('chat_messages')
+    .select('conversation_id, created_at, sender_id, is_deleted')
+    .in('conversation_id', conversationIds)
+    .eq('is_deleted', false)
+    .neq('sender_id', userId);
 
-      let unreadQuery = supabase
-        .from('chat_messages')
-        .select('id', { count: 'exact', head: true })
-        .eq('conversation_id', conversation.id)
-        .eq('is_deleted', false)
-        .neq('sender_id', userId);
+  if (unreadMessagesResult.error) {
+    throw new Error(unreadMessagesResult.error.message);
+  }
 
-      const readBoundary = ownParticipant?.last_read_at ?? ownParticipant?.joined_at ?? null;
-      if (readBoundary) {
-        unreadQuery = unreadQuery.gt('created_at', readBoundary);
-      }
+  for (const conversation of conversations) {
+    unreadCounts.set(conversation.id, 0);
+  }
 
-      const unreadResult = await unreadQuery;
-      if (unreadResult.error) {
-        throw new Error(unreadResult.error.message);
-      }
+  for (const message of unreadMessagesResult.data ?? []) {
+    const participant = ownParticipantByConversation.get(message.conversation_id);
+    const readBoundary = participant?.last_read_at ?? participant?.joined_at ?? null;
+    const isUnread = !readBoundary || message.created_at > readBoundary;
 
-      unreadCounts.set(conversation.id, unreadResult.count ?? 0);
-    }),
-  );
+    if (!isUnread) {
+      continue;
+    }
+
+    unreadCounts.set(
+      message.conversation_id,
+      (unreadCounts.get(message.conversation_id) ?? 0) + 1,
+    );
+  }
 
   return conversations.map((conversation) => {
+    const ownParticipant = ownParticipantByConversation.get(conversation.id);
+
+    if (!ownParticipant) {
+      throw new ChatServiceError(
+        'FORBIDDEN',
+        'You are not an active participant in this conversation.',
+        403,
+      );
+    }
+
     let counterpart: ChatConversationSummary['counterpart'] = null;
 
     if (conversation.type === 'dm') {
@@ -275,11 +405,16 @@ async function loadConversationSummaries(
 
       if (counterpartId) {
         const profile = counterpartProfilesMap.get(counterpartId);
+        const presence = counterpartPresenceMap.get(counterpartId);
         counterpart = {
           userId: counterpartId,
           username: profile?.username ?? `user_${counterpartId.slice(0, 8)}`,
           fullName: profile?.full_name ?? profile?.username ?? null,
           avatarUrl: profile?.avatar_url ?? null,
+          headline: profile?.headline ?? null,
+          primaryPersona: profile?.primary_persona ?? null,
+          presence: normalizePresenceStatus(presence?.status),
+          lastSeenAt: presence?.last_seen_at ?? null,
         };
       }
     }
@@ -300,6 +435,26 @@ async function loadConversationSummaries(
       lastMessageId: conversation.last_message_id,
       messageCount: conversation.message_count,
       unreadCount: unreadCounts.get(conversation.id) ?? 0,
+      participant: {
+        role: ownParticipant.role as ChatConversationSummary['participant']['role'],
+        status: ownParticipant.status as ChatConversationSummary['participant']['status'],
+        lastReadMessageId: ownParticipant.last_read_message_id,
+        lastReadAt: ownParticipant.last_read_at,
+        notificationsMuted: ownParticipant.notifications_muted,
+        isPinned: ownParticipant.is_pinned ?? false,
+        pinnedAt: ownParticipant.pinned_at ?? null,
+      },
+      sourceContext:
+        conversation.source_id && conversation.source_type
+          ? {
+              kind:
+                conversation.source_type as NonNullable<
+                  ChatConversationSummary['sourceContext']
+                >['kind'],
+              title: sourceTitleMap.get(conversation.source_id) ?? null,
+              href: toSourceHref(conversation.source_type, conversation.source_id),
+            }
+          : null,
       counterpart,
       lastMessage: lastMessage
         ? {
@@ -308,6 +463,7 @@ async function loadConversationSummaries(
             messageType: lastMessage.message_type as ChatMessageType,
             isDeleted: lastMessage.is_deleted,
             createdAt: lastMessage.created_at,
+            previewText: null,
           }
         : null,
     };
@@ -655,6 +811,107 @@ export async function markConversationRead(
     conversationId,
     lastReadMessageId: resolvedMessageId,
     lastReadAt: resolvedReadAt,
+  };
+}
+
+export async function updateConversationPreferences(
+  supabase: TypedSupabaseClient,
+  input: UpdateConversationPreferencesInput,
+) {
+  await assertActiveParticipant(supabase, input.conversationId, input.userId);
+
+  const update: {
+    notifications_muted?: boolean;
+    is_pinned?: boolean;
+    pinned_at?: string | null;
+  } = {};
+
+  if (typeof input.notificationsMuted === 'boolean') {
+    update.notifications_muted = input.notificationsMuted;
+  }
+
+  if (typeof input.isPinned === 'boolean') {
+    update.is_pinned = input.isPinned;
+    update.pinned_at = input.isPinned ? new Date().toISOString() : null;
+  }
+
+  if (Object.keys(update).length === 0) {
+    throw new ChatServiceError(
+      'VALIDATION_ERROR',
+      'At least one preference field is required.',
+      400,
+    );
+  }
+
+  const result = await supabase
+    .from('chat_participants')
+    .update(update)
+    .eq('conversation_id', input.conversationId)
+    .eq('user_id', input.userId)
+    .eq('status', 'active')
+    .select('conversation_id, user_id, notifications_muted, is_pinned, pinned_at, updated_at')
+    .single();
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return {
+    conversationId: result.data.conversation_id,
+    userId: result.data.user_id,
+    notificationsMuted: result.data.notifications_muted,
+    isPinned: result.data.is_pinned ?? false,
+    pinnedAt: result.data.pinned_at ?? null,
+    updatedAt: result.data.updated_at,
+  };
+}
+
+export async function updateChatPresence(
+  supabase: TypedSupabaseClient,
+  input: UpdateChatPresenceInput,
+) {
+  const existingResult = await supabase
+    .from('chat_user_presence')
+    .select('user_id, status')
+    .eq('user_id', input.userId)
+    .maybeSingle();
+
+  if (existingResult.error && !isRecoverableSupabaseReadError(existingResult.error)) {
+    throw new Error(existingResult.error.message);
+  }
+
+  const now = new Date().toISOString();
+  const fallbackStatus: ChatPresenceStatus = existingResult.data
+    ? normalizePresenceStatus(existingResult.data.status)
+    : 'online';
+  const status = input.status ?? fallbackStatus;
+
+  const upsertResult = await supabase
+    .from('chat_user_presence')
+    .upsert(
+      {
+        user_id: input.userId,
+        status,
+        last_seen_at: now,
+        updated_at: now,
+      },
+      {
+        onConflict: 'user_id',
+      },
+    )
+    .select('user_id, status, last_seen_at, updated_at')
+    .single();
+
+  if (upsertResult.error) {
+    throw new Error(upsertResult.error.message);
+  }
+
+  return {
+    userId: upsertResult.data.user_id,
+    status: normalizePresenceStatus(upsertResult.data.status),
+    lastSeenAt: upsertResult.data.last_seen_at,
+    updatedAt: upsertResult.data.updated_at,
+    heartbeatOnly: input.heartbeatOnly ?? false,
   };
 }
 

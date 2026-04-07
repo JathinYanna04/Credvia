@@ -7,6 +7,7 @@ import {
 } from '@/lib/chat/crypto';
 import type { ChatConversationSummary } from '@/lib/chat/contracts';
 import type { ApiResponse } from '@/lib/types';
+import { logInfo } from '@/lib/utils/logger';
 
 interface LocalUserKeypair {
   publicKey: string;
@@ -108,9 +109,14 @@ function saveStoredUserKeypair(keypair: LocalUserKeypair) {
 async function ensureLocalUserKeypair() {
   const existing = readStoredUserKeypair();
   if (existing) {
+    logInfo('chat-bootstrap', 'Loaded local keypair', {
+      source: 'storage',
+      keyVersion: existing.keyVersion,
+    });
     return existing;
   }
 
+  logInfo('chat-bootstrap', 'Generating local keypair');
   const generated = await generateUserKeyPair();
   const created: LocalUserKeypair = {
     publicKey: generated.publicKey,
@@ -120,10 +126,17 @@ async function ensureLocalUserKeypair() {
   };
 
   saveStoredUserKeypair(created);
+  logInfo('chat-bootstrap', 'Local keypair generated', {
+    keyVersion: created.keyVersion,
+    algorithm: created.algorithm,
+  });
   return created;
 }
 
 async function syncLocalPublicKey(keypair: LocalUserKeypair) {
+  logInfo('chat-bootstrap', 'Syncing public key', {
+    keyVersion: keypair.keyVersion,
+  });
   const response = await fetch('/api/v1/chat/me/keypair', {
     method: 'PUT',
     headers: {
@@ -138,8 +151,15 @@ async function syncLocalPublicKey(keypair: LocalUserKeypair) {
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as ApiResponse<unknown> | null;
-    throw new Error(payload?.error?.message ?? 'Unable to sync your chat keypair.');
+    logInfo('chat-bootstrap', 'Public key sync failed', {
+      reason: payload?.error?.message ?? 'unknown_error',
+    });
+    throw new Error(payload?.error?.message ?? 'Unable to prepare messaging on this device.');
   }
+
+  logInfo('chat-bootstrap', 'Public key sync succeeded', {
+    keyVersion: keypair.keyVersion,
+  });
 }
 
 async function fetchUserPublicKey(userId: string) {
@@ -153,7 +173,7 @@ async function fetchUserPublicKey(userId: string) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new Error(getErrorMessage(payload, 'Unable to fetch recipient keypair.'));
+    throw new Error(getErrorMessage(payload, 'Unable to prepare this conversation right now.'));
   }
 
   const payload = (await response.json()) as ApiResponse<{ publicKey: string }>;
@@ -175,14 +195,14 @@ async function fetchConversationSummaryOrThrow(url: string, body: Record<string,
     const reason = getChatErrorReason(payload);
 
     if (reason === 'REQUESTER_CHAT_IDENTITY_MISSING') {
-      throw new Error('Your secure chat identity is not initialized yet. Please refresh and try again.');
+      throw new Error('Messaging setup is still in progress. Please refresh and try again.');
     }
 
     if (reason === 'RECIPIENT_CHAT_IDENTITY_MISSING') {
-      throw new Error('This user is not ready for secure messaging yet.');
+      throw new Error('This person is not available for messaging yet.');
     }
 
-    throw new Error(payload?.error?.message ?? 'Unable to start chat.');
+    throw new Error(payload?.error?.message ?? 'Unable to open this conversation right now.');
   }
 
   return payload.data;
@@ -199,7 +219,7 @@ async function fetchConversationKeyEnvelope(conversationId: string) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new Error(getErrorMessage(payload, 'Unable to load your conversation key.'));
+    throw new Error(getErrorMessage(payload, 'Unable to prepare this conversation right now.'));
   }
 
   const payload = (await response.json()) as ApiResponse<ConversationKeyEnvelope | null>;
@@ -211,26 +231,53 @@ async function storeConversationKeyFromEnvelope(
   envelope: ConversationKeyEnvelope,
   privateKey: string,
 ) {
+  logInfo('chat-bootstrap', 'Unwrapping conversation key envelope', {
+    conversationId,
+    keyVersion: envelope.keyVersion,
+  });
   const conversationKey = await unwrapConversationKeyForParticipant(
     envelope.encryptedConversationKey,
     privateKey,
   );
+
+  logInfo('chat-bootstrap', 'Exporting conversation key for local cache', {
+    conversationId,
+    keyVersion: envelope.keyVersion,
+  });
   const rawConversationKey = await exportConversationKeyRaw(conversationKey);
   localStorage.setItem(conversationKeyStorageKey(conversationId), rawConversationKey);
+  logInfo('chat-bootstrap', 'Conversation key cached locally', {
+    conversationId,
+    keyVersion: envelope.keyVersion,
+  });
 }
 
 async function ensureConversationKeyCached(
   conversationId: string,
   privateKey: string,
 ) {
+  logInfo('chat-bootstrap', 'Fetching conversation key envelope', {
+    conversationId,
+  });
   const keyEnvelope = await fetchConversationKeyEnvelope(conversationId);
 
   if (!keyEnvelope) {
+    logInfo('chat-bootstrap', 'Conversation key envelope not found', {
+      conversationId,
+    });
     return false;
   }
 
-  await storeConversationKeyFromEnvelope(conversationId, keyEnvelope, privateKey);
-  return true;
+  try {
+    await storeConversationKeyFromEnvelope(conversationId, keyEnvelope, privateKey);
+    return true;
+  } catch (error) {
+    logInfo('chat-bootstrap', 'Conversation key cache step failed', {
+      conversationId,
+      reason: error instanceof Error ? error.message : 'unknown_error',
+    });
+    return false;
+  }
 }
 
 async function buildWrappedKeysForConversation(
@@ -298,7 +345,7 @@ export async function bootstrapDirectMessageConversation(
     if (!hasKey && initialSummary.messageCount === 0) {
       const targetPublicKey = await fetchUserPublicKey(targetUserId);
       if (!targetPublicKey) {
-        throw new Error('This user is not ready for secure messaging yet.');
+        throw new Error('This person is not available for messaging yet.');
       }
 
       const wrappedKeys = await buildWrappedKeysForConversation(
@@ -323,7 +370,7 @@ export async function bootstrapDirectMessageConversation(
       conversationId: initialSummary.id,
       warning: hasKey
         ? null
-        : 'Conversation opened, but this device does not have a decryptable key for this thread yet.',
+        : 'Conversation opened. Finishing setup on this device.',
     };
   })();
 
@@ -389,6 +436,6 @@ export async function bootstrapIdeaGroupConversation(
     conversationId: initialSummary.id,
     warning: hasKey
       ? null
-      : 'Conversation opened, but this device does not have a decryptable key for this thread yet.',
+      : 'Conversation opened. Finishing setup on this device.',
   };
 }

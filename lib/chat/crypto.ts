@@ -227,7 +227,8 @@ export async function unwrapConversationKeyForParticipant(
       name: AES_ALGORITHM,
       length: AES_KEY_LENGTH,
     },
-    false,
+    // This key is cached locally for this device, so it must remain exportable.
+    true,
     ['encrypt', 'decrypt'],
   );
 }

@@ -1188,6 +1188,8 @@ export interface Database {
           last_read_message_id: string | null;
           last_read_at: string | null;
           notifications_muted: boolean;
+          is_pinned: boolean;
+          pinned_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1202,6 +1204,8 @@ export interface Database {
           last_read_message_id?: string | null;
           last_read_at?: string | null;
           notifications_muted?: boolean;
+          is_pinned?: boolean;
+          pinned_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1288,6 +1292,24 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['chat_user_keypairs']['Insert']>;
+        Relationships: [];
+      };
+      chat_user_presence: {
+        Row: {
+          user_id: string;
+          status: string;
+          last_seen_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          status?: string;
+          last_seen_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_user_presence']['Insert']>;
         Relationships: [];
       };
       chat_blocks: {

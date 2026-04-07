@@ -36,29 +36,40 @@ export default async function MessagesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <section className="surface-panel p-5">
-        <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Private channels</div>
-        <h1 className="mt-2 text-3xl font-semibold text-text-primary">Messages</h1>
-        <p className="mt-2 text-sm text-text-secondary">
-          End-to-end encrypted conversations. Only ciphertext is persisted server-side.
-        </p>
+    <div className="mx-auto w-full max-w-[1500px] space-y-3 sm:space-y-4">
+      <section className="surface-panel premium-soft-gradient px-4 py-3 sm:px-5 sm:py-3.5">
+        <p className="text-[11px] uppercase tracking-[0.16em] text-text-tertiary">Conversations</p>
+        <h1 className="mt-1 text-xl font-semibold text-text-primary sm:text-2xl">Messages</h1>
       </section>
 
       {schemaUnavailable ? (
         <section className="surface-panel border-amber-300/40 bg-amber-50/70 p-5 text-sm text-amber-900">
-          <p className="font-semibold">Chat schema is not provisioned yet for this project.</p>
-          <p className="mt-2">
-            Apply Supabase migrations to create chat tables (`020_chat_core.sql` and `021_chat_rls.sql`) and then reload this page.
-          </p>
+          <p className="font-semibold">Messaging data is still being prepared for this environment.</p>
+          <p className="mt-2">Run the latest project migrations, then refresh this page.</p>
         </section>
       ) : null}
 
       {!schemaUnavailable ? (
-        <ConversationInboxClient
-          userId={user.id}
-          initialConversations={conversations}
-        />
+        <div className="grid min-h-[60dvh] gap-3 lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-3.5">
+          <ConversationInboxClient
+            userId={user.id}
+            initialConversations={conversations}
+            selectedConversationId={null}
+            className="min-h-[58dvh] lg:max-h-[calc(100dvh-11.25rem)]"
+          />
+
+          <section className="surface-panel hidden min-h-[58dvh] items-center justify-center px-6 py-8 text-center lg:flex">
+            <div className="space-y-3">
+              <div className="mx-auto inline-flex rounded-full border border-border-subtle bg-bg-overlay/60 px-4 py-2 text-sm text-text-tertiary">
+                Open a conversation
+              </div>
+              <h2 className="text-xl font-semibold text-text-primary">Select a thread to start messaging</h2>
+              <p className="mx-auto max-w-md text-sm text-text-secondary">
+                Conversation stays in focus with instant message updates.
+              </p>
+            </div>
+          </section>
+        </div>
       ) : null}
     </div>
   );

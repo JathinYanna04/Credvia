@@ -1,10 +1,11 @@
 import type { Json } from '@/lib/supabase/types';
 
 export type ChatConversationType = 'dm' | 'idea_group';
-export type ChatSourceType = 'idea';
+export type ChatSourceType = 'idea' | 'opportunity' | 'career_match' | 'community';
 export type ChatParticipantRole = 'owner' | 'member';
 export type ChatParticipantStatus = 'active' | 'left' | 'removed';
 export type ChatMessageType = 'text' | 'system' | 'context_card';
+export type ChatPresenceStatus = 'online' | 'away' | 'offline';
 
 export interface ChatEncryptedMessagePayload {
   ciphertext: string;
@@ -26,12 +27,32 @@ export interface ChatConversationSummary {
   lastMessageId: string | null;
   messageCount: number;
   unreadCount: number;
+  participant: {
+    role: ChatParticipantRole;
+    status: ChatParticipantStatus;
+    lastReadMessageId: string | null;
+    lastReadAt: string | null;
+    notificationsMuted: boolean;
+    isPinned: boolean;
+    pinnedAt: string | null;
+  };
+  sourceContext:
+    | {
+        kind: ChatSourceType;
+        title: string | null;
+        href: string | null;
+      }
+    | null;
   counterpart:
     | {
         userId: string;
         username: string;
         fullName: string | null;
         avatarUrl: string | null;
+        headline: string | null;
+        primaryPersona: string | null;
+        presence: ChatPresenceStatus;
+        lastSeenAt: string | null;
       }
     | null;
   lastMessage:
@@ -41,6 +62,7 @@ export interface ChatConversationSummary {
         messageType: ChatMessageType;
         isDeleted: boolean;
         createdAt: string;
+        previewText: string | null;
       }
     | null;
 }

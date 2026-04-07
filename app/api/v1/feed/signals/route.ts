@@ -2,6 +2,7 @@ import { fail, handleApiError, ok, parseJson } from '@/lib/api';
 import { z } from 'zod';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequiredUser } from '@/lib/supabase/helpers';
+import { logError } from '@/lib/utils/logger';
 
 const FeedSignalSchema = z
   .object({
@@ -27,7 +28,19 @@ export async function POST(request: Request) {
     });
 
     if (result.error) {
-      throw new Error(result.error.message);
+      logError('feed-signals', 'Failed to persist feed signal event', {
+        userId: user.id,
+        postId: body.postId ?? null,
+        signalType: body.signalType,
+        errorMessage: result.error.message,
+        errorCode: result.error.code,
+      });
+
+      return ok({
+        recorded: false,
+        degraded: true,
+        reason: 'signal_store_unavailable',
+      });
     }
 
     return ok({ recorded: true });

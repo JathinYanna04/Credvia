@@ -1,14 +1,38 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ChevronLeft } from 'lucide-react';
-import { ConversationThreadClient } from '@/components/chat/ConversationThreadClient';
+import Link from 'next/link';
+import { ConversationThreadClient } from '../../../../components/chat/ConversationThreadClient';
+import { ConversationInboxClient } from '../../../../components/chat/ConversationInboxClient';
 import { ChatServiceError } from '@/lib/chat/errors';
-import { getConversationSummary, getConversationThreadPage } from '@/lib/chat/queries';
+import {
+  getConversationSummary,
+  getConversationThreadPage,
+  listConversationSummaries,
+} from '@/lib/chat/queries';
 import {
   getRequiredUser,
   isRecoverableSupabaseReadError,
 } from '@/lib/supabase/helpers';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+
+function getOriginLabel(sourceType: string | null) {
+  if (sourceType === 'idea') {
+    return 'From Startup Idea';
+  }
+
+  if (sourceType === 'opportunity') {
+    return 'From Job Opportunity';
+  }
+
+  if (sourceType === 'career_match') {
+    return 'From Career Match';
+  }
+
+  if (sourceType === 'community') {
+    return 'From Community';
+  }
+
+  return 'General conversation';
+}
 
 export default async function MessageConversationPage({
   params,
@@ -19,10 +43,14 @@ export default async function MessageConversationPage({
   const user = await getRequiredUser(supabase);
 
   try {
-    const [conversation, thread] = await Promise.all([
+    const [conversation, thread, conversationsList] = await Promise.all([
       getConversationSummary(supabase, user.id, params.id),
       getConversationThreadPage(supabase, user.id, params.id, {
         limit: 50,
+      }),
+      listConversationSummaries(supabase, user.id, {
+        cursor: 0,
+        limit: 40,
       }),
     ]);
 
@@ -30,40 +58,72 @@ export default async function MessageConversationPage({
       notFound();
     }
 
-    const title =
-      conversation.type === 'dm'
-        ? conversation.counterpart?.fullName ?? conversation.counterpart?.username ?? 'Direct message'
-        : conversation.title ?? 'Idea group chat';
-
-    const subtitle =
-      conversation.type === 'dm'
-        ? conversation.counterpart?.username
-          ? `@${conversation.counterpart.username}`
-          : 'Direct message'
-        : conversation.description ?? 'Encrypted idea collaboration';
-
     return (
-      <div className="mx-auto max-w-4xl space-y-4">
-        <section className="surface-panel flex items-start gap-4 p-4">
-          <Link
-            href="/messages"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border-subtle bg-bg-surface text-text-secondary hover:border-border-default hover:text-text-primary"
-            aria-label="Back to messages"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Link>
-          <div className="min-w-0">
-            <h1 className="truncate text-2xl font-semibold text-text-primary">{title}</h1>
-            <p className="truncate text-sm text-text-secondary">{subtitle}</p>
-          </div>
+      <div className="mx-auto w-full max-w-[1480px] space-y-4">
+        <section className="surface-panel premium-soft-gradient px-4 py-3 sm:px-5 sm:py-3.5">
+          <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Conversation</div>
+          <h1 className="mt-1 text-xl font-semibold text-text-primary sm:text-2xl">Messages</h1>
         </section>
 
-        <ConversationThreadClient
-          conversationId={conversation.id}
-          currentUserId={user.id}
-          initialMessages={thread.messages}
-          initialNextCursor={thread.nextCursor}
-        />
+        <div className="space-y-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-3.5 lg:space-y-0">
+          <ConversationInboxClient
+            userId={user.id}
+            initialConversations={conversationsList.conversations}
+            selectedConversationId={conversation.id}
+            className="hidden h-[calc(100dvh-16rem)] lg:flex"
+          />
+
+          <div className="space-y-3">
+            <ConversationThreadClient
+              conversationId={conversation.id}
+              currentUserId={user.id}
+              conversation={conversation}
+              initialMessages={thread.messages}
+              initialNextCursor={thread.nextCursor}
+              showBackLink
+            />
+
+            <details className="surface-panel hidden lg:block">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text-primary">
+                Show thread details
+              </summary>
+              <div className="space-y-3 border-t border-border-subtle p-4">
+                <div className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-text-tertiary">Origin</p>
+                  <p className="mt-1 text-sm font-medium text-text-primary">{getOriginLabel(conversation.sourceType)}</p>
+                </div>
+
+                {conversation.sourceContext?.title ? (
+                  <div className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-text-tertiary">Source</p>
+                    <p className="mt-1 text-sm font-medium text-text-primary">{conversation.sourceContext.title}</p>
+                    {conversation.sourceContext.href ? (
+                      <Link
+                        href={conversation.sourceContext.href}
+                        className="mt-2 inline-flex text-xs font-medium text-accent hover:underline"
+                      >
+                        Open source context
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {conversation.counterpart ? (
+                  <div className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-text-tertiary">Profile</p>
+                    <p className="mt-1 text-sm font-medium text-text-primary">
+                      {conversation.counterpart.fullName ?? conversation.counterpart.username}
+                    </p>
+                    <p className="mt-1 text-xs text-text-secondary">@{conversation.counterpart.username}</p>
+                    {conversation.counterpart.headline ? (
+                      <p className="mt-2 text-xs text-text-secondary">{conversation.counterpart.headline}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </details>
+          </div>
+        </div>
       </div>
     );
   } catch (error) {
@@ -77,25 +137,15 @@ export default async function MessageConversationPage({
     if (isRecoverableSupabaseReadError(recoverableCandidate)) {
       return (
         <div className="mx-auto max-w-4xl space-y-4">
-          <section className="surface-panel flex items-start gap-4 p-4">
-            <Link
-              href="/messages"
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border-subtle bg-bg-surface text-text-secondary hover:border-border-default hover:text-text-primary"
-              aria-label="Back to messages"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Link>
-            <div className="min-w-0">
-              <h1 className="truncate text-2xl font-semibold text-text-primary">Messages</h1>
-              <p className="truncate text-sm text-text-secondary">Chat schema unavailable</p>
-            </div>
+          <section className="surface-panel p-5">
+            <div className="text-xs uppercase tracking-[0.16em] text-text-tertiary">Conversation</div>
+            <h1 className="mt-2 text-3xl font-semibold text-text-primary">Messages</h1>
+            <p className="mt-2 text-sm text-text-secondary">Messaging setup is not ready yet.</p>
           </section>
 
           <section className="surface-panel border-amber-300/40 bg-amber-50/70 p-5 text-sm text-amber-900">
-            <p className="font-semibold">Chat schema is not provisioned yet for this project.</p>
-            <p className="mt-2">
-              Apply Supabase migrations to create chat tables (`020_chat_core.sql` and `021_chat_rls.sql`) and then reload this page.
-            </p>
+            <p className="font-semibold">Messaging data is still being prepared for this environment.</p>
+            <p className="mt-2">Run the latest project migrations, then refresh this page.</p>
           </section>
         </div>
       );

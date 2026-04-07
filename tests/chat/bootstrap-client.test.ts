@@ -121,6 +121,7 @@ describe('chat bootstrap client', () => {
       }
 
       throw new Error(`Unexpected fetch call: ${url} ${init?.method ?? 'GET'}`);
+
     });
 
     vi.stubGlobal('fetch', fetchMock);
@@ -300,7 +301,7 @@ describe('chat bootstrap client', () => {
 
     await expect(
       bootstrapDirectMessageConversation('user-1', 'user-2'),
-    ).rejects.toThrow('This user is not ready for secure messaging yet.');
+    ).rejects.toThrow('This person is not available for messaging yet.');
 
     expect(dmCalls).toBe(1);
     expect(keyEnvelopeCalls).toBe(1);
