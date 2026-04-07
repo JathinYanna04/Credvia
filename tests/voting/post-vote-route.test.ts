@@ -11,7 +11,9 @@ vi.mock('@/lib/supabase/server', () => ({
 }));
 
 vi.mock('@/lib/supabase/helpers', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/supabase/helpers')>('@/lib/supabase/helpers');
+  const actual = await vi.importActual<typeof import('@/lib/supabase/helpers')>(
+    '@/lib/supabase/helpers',
+  );
   return {
     ...actual,
     getRequiredUser,
@@ -31,44 +33,66 @@ vi.mock('@/lib/supabase/service', () => ({
 }));
 
 type VoteValue = -1 | 0 | 1;
+type VoteDirection = 'up' | 'down';
 
-function createPostVoteSupabaseMock(initialVote: VoteValue) {
-  let currentVote: VoteValue = initialVote;
-  let voteScore = initialVote;
+interface PostVoteMockOptions {
+  initialVote: VoteValue;
+  postExists?: boolean;
+  rpcConflictMode?: 'none' | 'first' | 'always';
+  recoveredVote?: VoteValue;
+}
+
+function createPostVoteSupabaseMock(options: PostVoteMockOptions) {
+  let currentVote: VoteValue = options.initialVote;
+  let voteScore = options.initialVote;
   let version = 0;
+  let rpcCalls = 0;
+
+  const postExists = options.postExists ?? true;
+  const rpcConflictMode = options.rpcConflictMode ?? 'none';
+  const recoveredVote = options.recoveredVote ?? currentVote;
 
   const postsFrom = {
     select: vi.fn((columns: string) => {
-      if (columns.includes('vote_score')) {
-        const scoreBuilder = {
-          eq: vi.fn(() => scoreBuilder),
-          single: vi.fn(async () => ({
-            data: {
-              id: 'post-1',
-              vote_score: voteScore,
-              updated_at: `2026-04-06T10:00:${String(version).padStart(2, '0')}.000Z`,
-            },
+      if (columns.includes('author_id')) {
+        const lookupBuilder = {
+          eq: vi.fn(),
+          maybeSingle: vi.fn(async () => ({
+            data: postExists
+              ? {
+                  id: 'post-1',
+                  author_id: 'author-1',
+                  title: 'A post',
+                  community_id: 'community-1',
+                }
+              : null,
             error: null,
           })),
         };
 
-        return scoreBuilder;
+        lookupBuilder.eq.mockImplementation(() => lookupBuilder);
+        return lookupBuilder;
       }
 
-      const lookupBuilder = {
-        eq: vi.fn(() => lookupBuilder),
-        maybeSingle: vi.fn(async () => ({
-          data: {
-            id: 'post-1',
-            author_id: 'author-1',
-            title: 'A post',
-            community_id: 'community-1',
-          },
-          error: null,
-        })),
-      };
+      if (columns.includes('vote_score')) {
+        const stateBuilder = {
+          eq: vi.fn(),
+          maybeSingle: vi.fn(async () => ({
+            data: postExists
+              ? {
+                  vote_score: recoveredVote,
+                  updated_at: `2026-04-07T10:00:${String(version).padStart(2, '0')}.000Z`,
+                }
+              : null,
+            error: null,
+          })),
+        };
 
-      return lookupBuilder;
+        stateBuilder.eq.mockImplementation(() => stateBuilder);
+        return stateBuilder;
+      }
+
+      throw new Error(`Unexpected posts select: ${columns}`);
     }),
   };
 
@@ -76,11 +100,12 @@ function createPostVoteSupabaseMock(initialVote: VoteValue) {
     select: vi.fn((_columns: string, options?: { count?: 'exact'; head?: boolean }) => {
       if (options?.count === 'exact') {
         const countBuilder = {
-          error: null as { message?: string } | null,
           count: 0,
+          error: null as { message?: string } | null,
           eq: vi.fn((column: string, value: unknown) => {
             if (column === 'value') {
-              countBuilder.count = currentVote === value ? 1 : 0;
+              const authoritativeVote = rpcConflictMode === 'always' ? recoveredVote : currentVote;
+              countBuilder.count = authoritativeVote === value ? 1 : 0;
             }
 
             return countBuilder;
@@ -90,36 +115,82 @@ function createPostVoteSupabaseMock(initialVote: VoteValue) {
         return countBuilder;
       }
 
-      const voteBuilder = {
-        eq: vi.fn(() => voteBuilder),
-        maybeSingle: vi.fn(async () => ({
-          data: currentVote === 0 ? null : { value: currentVote },
-          error: null,
-        })),
+      const ownVoteBuilder = {
+        eq: vi.fn(),
+        maybeSingle: vi.fn(async () => {
+          const authoritativeVote = rpcConflictMode === 'always' ? recoveredVote : currentVote;
+          return {
+            data: authoritativeVote === 0 ? null : { value: authoritativeVote },
+            error: null,
+          };
+        }),
       };
 
-      return voteBuilder;
-    }),
-    upsert: vi.fn(async (payload: { value: VoteValue }) => {
-      voteScore += payload.value - currentVote;
-      currentVote = payload.value;
-      version += 1;
-      return { error: null };
-    }),
-    delete: vi.fn(() => {
-      voteScore -= currentVote;
-      currentVote = 0;
-      version += 1;
-      const deleteBuilder = {
-        error: null as { message?: string } | null,
-        eq: vi.fn(() => deleteBuilder),
-      };
-
-      return deleteBuilder;
+      ownVoteBuilder.eq.mockImplementation(() => ownVoteBuilder);
+      return ownVoteBuilder;
     }),
   };
 
   return {
+    rpc: vi.fn(
+      (
+        fn: string,
+        args: {
+          p_direction?: number | null;
+        },
+      ) => {
+        if (fn !== 'mutate_post_vote_atomic') {
+          return {
+            single: async () => ({
+              data: null,
+              error: { message: `Unexpected function: ${fn}` },
+            }),
+          };
+        }
+
+        rpcCalls += 1;
+        if (
+          rpcConflictMode === 'always' ||
+          (rpcConflictMode === 'first' && rpcCalls === 1)
+        ) {
+          return {
+            single: async () => ({
+              data: null,
+              error: {
+                code: '23505',
+                message: 'duplicate key value violates unique constraint',
+                details: 'duplicate vote row',
+                hint: null,
+              },
+            }),
+          };
+        }
+
+        const previousVote = currentVote;
+        const requestedVote = args.p_direction === 1 ? 1 : -1;
+        const desiredVote = previousVote === requestedVote ? 0 : requestedVote;
+
+        currentVote = desiredVote;
+        voteScore += desiredVote - previousVote;
+        version += 1;
+
+        return {
+          single: async () => ({
+            data: {
+              entity_id: 'post-1',
+              previous_vote: previousVote,
+              current_user_vote: desiredVote,
+              score: voteScore,
+              upvote_count: desiredVote === 1 ? 1 : 0,
+              downvote_count: desiredVote === -1 ? 1 : 0,
+              updated_at: `2026-04-07T10:00:${String(version).padStart(2, '0')}.000Z`,
+              contribution_delta: desiredVote - previousVote,
+            },
+            error: null,
+          }),
+        };
+      },
+    ),
     from: vi.fn((table: string) => {
       if (table === 'posts') {
         return postsFrom;
@@ -134,20 +205,25 @@ function createPostVoteSupabaseMock(initialVote: VoteValue) {
   };
 }
 
-async function vote(value: VoteValue) {
+async function vote(direction: VoteDirection) {
   const { POST } = await import('@/app/api/v1/posts/[id]/vote/route');
 
-  return POST(
+  const response = await POST(
     new Request('http://localhost:3000/api/v1/posts/post-1/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value }),
+      body: JSON.stringify({ direction }),
     }),
     { params: { id: 'post-1' } },
   );
+
+  return {
+    response,
+    payload: await response.json(),
+  };
 }
 
-describe('post vote route transitions', () => {
+describe('post vote route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
@@ -156,56 +232,95 @@ describe('post vote route transitions', () => {
     createServiceRoleClient.mockReturnValue(null);
   });
 
-  it.each([
-    { initialVote: 0 as VoteValue, desiredVote: 1 as VoteValue, expectedVote: 1 as VoteValue, expectedScore: 1 },
-    { initialVote: 0 as VoteValue, desiredVote: -1 as VoteValue, expectedVote: -1 as VoteValue, expectedScore: -1 },
-    { initialVote: 1 as VoteValue, desiredVote: 0 as VoteValue, expectedVote: 0 as VoteValue, expectedScore: 0 },
-    { initialVote: -1 as VoteValue, desiredVote: 0 as VoteValue, expectedVote: 0 as VoteValue, expectedScore: 0 },
-    { initialVote: 1 as VoteValue, desiredVote: -1 as VoteValue, expectedVote: -1 as VoteValue, expectedScore: -1 },
-    { initialVote: -1 as VoteValue, desiredVote: 1 as VoteValue, expectedVote: 1 as VoteValue, expectedScore: 1 },
-  ])(
-    'applies deterministic transition: $initialVote -> $desiredVote',
-    async ({ initialVote, desiredVote, expectedVote, expectedScore }) => {
-      createServerSupabaseClient.mockResolvedValue(createPostVoteSupabaseMock(initialVote));
+  it('returns 401 when unauthenticated', async () => {
+    getRequiredUser.mockRejectedValue(new Error('UNAUTHORIZED'));
+    createServerSupabaseClient.mockResolvedValue(
+      createPostVoteSupabaseMock({ initialVote: 0 }),
+    );
 
-      const response = await vote(desiredVote);
-      const payload = await response.json();
+    const { response, payload } = await vote('up');
+
+    expect(response.status).toBe(401);
+    expect(payload.error?.code).toBe('UNAUTHORIZED');
+  });
+
+  it('returns 400 for invalid vote payload', async () => {
+    createServerSupabaseClient.mockResolvedValue(
+      createPostVoteSupabaseMock({ initialVote: 0 }),
+    );
+
+    const { POST } = await import('@/app/api/v1/posts/[id]/vote/route');
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/posts/post-1/vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 1 }),
+      }),
+      { params: { id: 'post-1' } },
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error?.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 404 when post is missing', async () => {
+    createServerSupabaseClient.mockResolvedValue(
+      createPostVoteSupabaseMock({ initialVote: 0, postExists: false }),
+    );
+
+    const { response, payload } = await vote('up');
+
+    expect(response.status).toBe(404);
+    expect(payload.error?.code).toBe('NOT_FOUND');
+  });
+
+  it.each([
+    { initialVote: 0 as VoteValue, direction: 'up' as VoteDirection, expectedVote: 'up', expectedScore: 1 },
+    { initialVote: 0 as VoteValue, direction: 'down' as VoteDirection, expectedVote: 'down', expectedScore: -1 },
+    { initialVote: 1 as VoteValue, direction: 'up' as VoteDirection, expectedVote: null, expectedScore: 0 },
+    { initialVote: -1 as VoteValue, direction: 'down' as VoteDirection, expectedVote: null, expectedScore: 0 },
+    { initialVote: 1 as VoteValue, direction: 'down' as VoteDirection, expectedVote: 'down', expectedScore: -1 },
+    { initialVote: -1 as VoteValue, direction: 'up' as VoteDirection, expectedVote: 'up', expectedScore: 1 },
+  ])(
+    'applies canonical transition for initial=$initialVote direction=$direction',
+    async ({ initialVote, direction, expectedVote, expectedScore }) => {
+      createServerSupabaseClient.mockResolvedValue(
+        createPostVoteSupabaseMock({ initialVote }),
+      );
+
+      const { response, payload } = await vote(direction);
 
       expect(response.status).toBe(200);
       expect(payload.data).toMatchObject({
         entityId: 'post-1',
-        entityType: 'post',
-        currentUserVote: expectedVote,
+        userVote: expectedVote,
         score: expectedScore,
       });
+      expect(typeof payload.data.upvoteCount).toBe('number');
+      expect(typeof payload.data.downvoteCount).toBe('number');
     },
-    20000,
   );
 
-  it('keeps stable final state under rapid sequential toggles', async () => {
-    createServerSupabaseClient.mockResolvedValue(createPostVoteSupabaseMock(0));
+  it('recovers to authoritative state on unique race conflicts', async () => {
+    createServerSupabaseClient.mockResolvedValue(
+      createPostVoteSupabaseMock({
+        initialVote: 0,
+        rpcConflictMode: 'always',
+        recoveredVote: 1,
+      }),
+    );
 
-    const values: VoteValue[] = [1, -1, 1, 0];
-    let lastPayload: any = null;
+    const { response, payload } = await vote('up');
 
-    for (const value of values) {
-      const response = await vote(value);
-      lastPayload = await response.json();
-      expect(response.status).toBe(200);
-    }
-
-    expect(lastPayload.data.currentUserVote).toBe(0);
-    expect(lastPayload.data.score).toBe(0);
-  });
-
-  it('returns 401 when unauthenticated', async () => {
-    getRequiredUser.mockRejectedValue(new Error('UNAUTHORIZED'));
-    createServerSupabaseClient.mockResolvedValue(createPostVoteSupabaseMock(0));
-
-    const response = await vote(1);
-    const payload = await response.json();
-
-    expect(response.status).toBe(401);
-    expect(payload.error?.code).toBe('UNAUTHORIZED');
+    expect(response.status).toBe(200);
+    expect(payload.data).toMatchObject({
+      entityId: 'post-1',
+      userVote: 'up',
+      score: 1,
+      upvoteCount: 1,
+      downvoteCount: 0,
+    });
   });
 });

@@ -31,17 +31,26 @@ vi.mock('@/lib/supabase/service', () => ({
 }));
 
 type VoteValue = -1 | 0 | 1;
+type VoteDirection = 'up' | 'down';
 
 function createPostVoteSupabaseMock(initialVote: VoteValue) {
   let currentVote: VoteValue = initialVote;
   let voteScore = initialVote;
   let version = 0;
 
+  const resolveDesiredVote = (
+    previousVote: VoteValue,
+    direction: number | null | undefined,
+  ): VoteValue => {
+    const requestedDirection = direction === 1 ? 1 : -1;
+    return previousVote === requestedDirection ? 0 : requestedDirection;
+  };
+
   const postsFrom = {
     select: vi.fn((columns: string) => {
       if (columns.includes('vote_score')) {
         const scoreBuilder = {
-          eq: vi.fn(() => scoreBuilder),
+          eq: vi.fn(),
           single: vi.fn(async () => ({
             data: {
               id: 'post-1',
@@ -52,11 +61,13 @@ function createPostVoteSupabaseMock(initialVote: VoteValue) {
           })),
         };
 
+        scoreBuilder.eq.mockImplementation(() => scoreBuilder);
+
         return scoreBuilder;
       }
 
       const lookupBuilder = {
-        eq: vi.fn(() => lookupBuilder),
+        eq: vi.fn(),
         maybeSingle: vi.fn(async () => ({
           data: {
             id: 'post-1',
@@ -68,65 +79,58 @@ function createPostVoteSupabaseMock(initialVote: VoteValue) {
         })),
       };
 
+      lookupBuilder.eq.mockImplementation(() => lookupBuilder);
+
       return lookupBuilder;
     }),
   };
 
-  const votesFrom = {
-    select: vi.fn((_columns: string, options?: { count?: 'exact'; head?: boolean }) => {
-      if (options?.count === 'exact') {
-        const countBuilder = {
-          error: null as { message?: string } | null,
-          count: 0,
-          eq: vi.fn((column: string, value: unknown) => {
-            if (column === 'value') {
-              countBuilder.count = currentVote === value ? 1 : 0;
-            }
+  return {
+    rpc: vi.fn(
+      (
+        fn: string,
+        args: {
+          p_direction?: number | null;
+        },
+      ) => {
+        if (fn !== 'mutate_post_vote_atomic') {
+          return {
+            single: async () => ({
+              data: null,
+              error: { message: `Unexpected function: ${fn}` },
+            }),
+          };
+        }
 
-            return countBuilder;
-          }),
+        const previousVote = currentVote;
+        const desiredVote = resolveDesiredVote(
+          previousVote,
+          args.p_direction,
+        );
+
+        currentVote = desiredVote;
+        voteScore += desiredVote - previousVote;
+        version += 1;
+
+        const rpcPayload = {
+          entity_id: 'post-1',
+          previous_vote: previousVote,
+          current_user_vote: desiredVote,
+          score: voteScore,
+          upvote_count: currentVote === 1 ? 1 : 0,
+          downvote_count: currentVote === -1 ? 1 : 0,
+          updated_at: `2026-04-07T10:00:${String(version).padStart(2, '0')}.000Z`,
+          contribution_delta: desiredVote - previousVote,
         };
 
-        return countBuilder;
-      }
-
-      const voteBuilder = {
-        eq: vi.fn(() => voteBuilder),
-        maybeSingle: vi.fn(async () => ({
-          data: currentVote === 0 ? null : { value: currentVote },
-          error: null,
-        })),
-      };
-
-      return voteBuilder;
-    }),
-    upsert: vi.fn(async (payload: { value: VoteValue }) => {
-      voteScore += payload.value - currentVote;
-      currentVote = payload.value;
-      version += 1;
-      return { error: null };
-    }),
-    delete: vi.fn(() => {
-      voteScore -= currentVote;
-      currentVote = 0;
-      version += 1;
-      const deleteBuilder = {
-        error: null as { message?: string } | null,
-        eq: vi.fn(() => deleteBuilder),
-      };
-
-      return deleteBuilder;
-    }),
-  };
-
-  return {
+        return {
+          single: async () => ({ data: rpcPayload, error: null }),
+        };
+      },
+    ),
     from: vi.fn((table: string) => {
       if (table === 'posts') {
         return postsFrom;
-      }
-
-      if (table === 'votes') {
-        return votesFrom;
       }
 
       throw new Error(`Unexpected table: ${table}`);
@@ -134,7 +138,7 @@ function createPostVoteSupabaseMock(initialVote: VoteValue) {
   };
 }
 
-async function voteWithDirection(direction: -1 | 1, initialVote: VoteValue) {
+async function voteWithDirection(direction: VoteDirection, initialVote: VoteValue) {
   createServerSupabaseClient.mockResolvedValue(createPostVoteSupabaseMock(initialVote));
   const { POST } = await import('@/app/api/v1/startup-ideas/[id]/vote/route');
 
@@ -163,11 +167,12 @@ describe('startup idea vote route', () => {
   });
 
   it('supports direction payload and applies neutral -> upvote', async () => {
-    const { response, payload } = await voteWithDirection(1, 0);
+    const { response, payload } = await voteWithDirection('up', 0);
 
     expect(response.status).toBe(200);
     expect(payload.data).toMatchObject({
       entityType: 'startup_idea',
+      userVote: 'up',
       currentUserVote: 1,
       score: 1,
     });
@@ -175,11 +180,12 @@ describe('startup idea vote route', () => {
   });
 
   it('toggles off when clicking same direction again', async () => {
-    const { response, payload } = await voteWithDirection(1, 1);
+    const { response, payload } = await voteWithDirection('up', 1);
 
     expect(response.status).toBe(200);
     expect(payload.data).toMatchObject({
       entityType: 'startup_idea',
+      userVote: null,
       currentUserVote: 0,
       score: 0,
     });

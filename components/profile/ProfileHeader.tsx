@@ -3,12 +3,14 @@ import Link from 'next/link';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { StartDirectMessageButton } from '@/components/chat/StartDirectMessageButton';
 import { getPersonaDefinition } from '@/lib/personas';
 import type { UserSummary } from '@/lib/types';
 import { ReputationBadge } from '@/components/reputation/ReputationBadge';
 
 export interface ProfileHeaderProps {
   user: UserSummary;
+  currentUserId?: string | null;
   showFollowAction?: boolean;
   editHref?: string | null;
   contributionCount?: number;
@@ -17,6 +19,7 @@ export interface ProfileHeaderProps {
 
 export function ProfileHeader({
   user,
+  currentUserId,
   showFollowAction = false,
   editHref = null,
   contributionCount = 0,
@@ -96,6 +99,14 @@ export function ProfileHeader({
               <Button asChild variant="secondary">
                 <Link href={editHref}>Edit profile</Link>
               </Button>
+            ) : null}
+            {!editHref ? (
+              <StartDirectMessageButton
+                currentUserId={currentUserId}
+                targetUserId={user.id}
+                label="Message"
+                variant="secondary"
+              />
             ) : null}
             {showFollowAction ? <Button variant="secondary">Follow</Button> : null}
             <Button asChild>

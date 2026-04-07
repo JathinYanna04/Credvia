@@ -113,7 +113,7 @@ export const getAppShellData = cache(
     };
 
     const joinedCommunities = (
-      (membershipsResult.data ?? []) as Array<{
+      (membershipsResult.data ?? []) as unknown as Array<{
         communities: JoinedCommunityRow | JoinedCommunityRow[] | null;
       }>
     )

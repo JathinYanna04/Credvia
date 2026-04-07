@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
+import { JoinIdeaDiscussionButton } from '@/components/chat/JoinIdeaDiscussionButton';
+import { StartDirectMessageButton } from '@/components/chat/StartDirectMessageButton';
 import { CommentEditor } from "@/components/comments/CommentEditor";
 import { CommentThread } from "@/components/comments/CommentThread";
 import { PostTypeBadge } from "@/components/post/PostTypeBadge";
@@ -20,6 +22,7 @@ import { formatRelativeTime } from "@/lib/utils/format";
 export interface PostDetailProps {
   post: PostSummary;
   comments: CommentSummary[];
+  currentUserId?: string | null;
   startupIdeaContext?: {
     revisions: StartupIdeaRevisionSummary[];
     canRevise: boolean;
@@ -31,6 +34,7 @@ export interface PostDetailProps {
 export function PostDetail({
   post,
   comments,
+  currentUserId = null,
   startupIdeaContext,
 }: PostDetailProps) {
   const topRep = post.author.reputation[0];
@@ -181,6 +185,23 @@ export function PostDetail({
           ) : null}
 
           <div className="grid gap-2 text-sm text-text-secondary sm:flex sm:flex-wrap sm:items-center">
+            <StartDirectMessageButton
+              currentUserId={currentUserId}
+              targetUserId={post.author.id}
+              label={post.postType === 'startup_idea' ? 'Message founder' : 'Message author'}
+              variant="secondary"
+              size="sm"
+            />
+            {post.postType === 'startup_idea' ? (
+              <JoinIdeaDiscussionButton
+                currentUserId={currentUserId}
+                ideaId={post.id}
+                founderUserId={post.author.id}
+                label="Join discussion"
+                variant="outline"
+                size="sm"
+              />
+            ) : null}
             {post.startupIdea && startupIdeaContext?.advancedFeaturesEnabled ? (
               <IdeaFollowButton
                 postId={post.id}

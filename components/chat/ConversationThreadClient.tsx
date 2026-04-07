@@ -13,6 +13,8 @@ import {
   importConversationKeyRaw,
   unwrapConversationKeyForParticipant,
 } from '@/lib/chat/crypto';
+import { createClient } from '@/lib/supabase/client';
+import type { Database } from '@/lib/supabase/types';
 import type { ApiResponse } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
 import { formatRelativeTime } from '@/lib/utils/format';
@@ -23,6 +25,8 @@ interface ConversationThreadClientProps {
   initialMessages: ChatMessageRecord[];
   initialNextCursor: string | null;
 }
+
+type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
 
 interface LocalUserKeypair {
   publicKey: string;
@@ -45,6 +49,54 @@ const USER_KEYPAIR_STORAGE_KEY = 'credvia.chat.user-keypair.v1';
 
 function conversationKeyStorageKey(conversationId: string) {
   return `credvia.chat.conversation-key.${conversationId}.v1`;
+}
+
+function toMessageRecord(row: ChatMessageRow): ChatMessageRecord {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    senderId: row.sender_id,
+    messageType: row.message_type as ChatMessageRecord['messageType'],
+    ciphertext: row.ciphertext,
+    iv: row.iv,
+    algorithm: row.algorithm,
+    keyVersion: row.key_version,
+    payloadMeta: row.payload_meta,
+    clientGeneratedId: row.client_generated_id,
+    replyToMessageId: row.reply_to_message_id,
+    isDeleted: row.is_deleted,
+    deletedAt: row.deleted_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mergeMessages(
+  previous: ChatMessageRecord[],
+  incoming: ChatMessageRecord,
+) {
+  const index = previous.findIndex((message) => message.id === incoming.id);
+  const next = index === -1 ? [...previous, incoming] : previous.map((message, currentIndex) => {
+    if (currentIndex !== index) {
+      return message;
+    }
+
+    return {
+      ...message,
+      ...incoming,
+    };
+  });
+
+  return next.sort((left, right) => {
+    const leftTime = Date.parse(left.createdAt);
+    const rightTime = Date.parse(right.createdAt);
+
+    if (leftTime !== rightTime) {
+      return leftTime - rightTime;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
 }
 
 function readStoredUserKeypair() {
@@ -290,6 +342,44 @@ export function ConversationThreadClient({
     });
   }, [conversationId, messages]);
 
+  useEffect(() => {
+    const supabase = createClient();
+
+    const channel = supabase
+      .channel(`chat-thread:${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const row = payload.new as ChatMessageRow;
+          setMessages((previous) => mergeMessages(previous, toMessageRecord(row)));
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const row = payload.new as ChatMessageRow;
+          setMessages((previous) => mergeMessages(previous, toMessageRecord(row)));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [conversationId]);
+
   const renderedMessages = useMemo(() => {
     return messages.map((message) => {
       const mine = message.senderId === currentUserId;
@@ -327,7 +417,15 @@ export function ConversationThreadClient({
         throw new Error(payload.error?.message ?? 'Unable to load older messages.');
       }
 
-      setMessages((previous) => [...(payload.data ?? []), ...previous]);
+      setMessages((previous) => {
+        let next = previous;
+
+        for (const message of payload.data ?? []) {
+          next = mergeMessages(next, message);
+        }
+
+        return next;
+      });
       setNextCursor(payload.meta?.cursor ?? null);
     } catch (error) {
       setStatusError(
@@ -377,7 +475,9 @@ export function ConversationThreadClient({
       }
 
       setDraft('');
-      setMessages((previous) => [...previous, payload.data as ChatMessageRecord]);
+      setMessages((previous) =>
+        mergeMessages(previous, payload.data as ChatMessageRecord),
+      );
       setDecryptedText((previous) => ({
         ...previous,
         [payload.data!.id]: plaintext,

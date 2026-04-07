@@ -6,6 +6,7 @@ import {
   applyOptimisticVote,
   computeNextVote,
   resolveVoteMutationPayload,
+  toVoteRequestDirection,
   toCanonicalVoteSnapshot,
   toVoteEntityKey,
   type VoteDirection,
@@ -161,8 +162,7 @@ export function VoteButtons({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          direction: clickedDirection,
-          value: optimisticSnapshot.currentUserVote,
+          direction: toVoteRequestDirection(clickedDirection),
         }),
       });
 
@@ -269,7 +269,7 @@ export function VoteButtons({
       >
         <button
           type="button"
-          disabled={false}
+          disabled={isMutating}
           aria-pressed={activeSnapshot.currentUserVote === 1}
           aria-busy={isMutating}
           className={cn(
@@ -294,7 +294,7 @@ export function VoteButtons({
         </span>
         <button
           type="button"
-          disabled={false}
+          disabled={isMutating}
           aria-pressed={activeSnapshot.currentUserVote === -1}
           aria-busy={isMutating}
           className={cn(

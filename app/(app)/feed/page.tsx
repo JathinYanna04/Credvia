@@ -18,6 +18,7 @@ export default function FeedPage() {
   const [tab, setTab] = useState<FeedTab>("for-you");
   const [showOnboardingPrompt, setShowOnboardingPrompt] = useState(false);
   const [persona, setPersona] = useState<PersonaSlug | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [profileCompletion, setProfileCompletion] = useState<ProfileCompletionState | null>(null);
   const { posts, isLoading, isEmpty, error, authExpired, retry } =
     useFeed(tab);
@@ -31,11 +32,15 @@ export default function FeedPage() {
 
         const payload = (await response.json()) as {
           data?: {
+            user?: {
+              id?: string;
+            };
             profile?: { onboarding_complete?: boolean; primary_persona?: string | null };
             profileCompletion?: ProfileCompletionState;
           };
         };
 
+        setCurrentUserId(payload.data?.user?.id ?? null);
         const nextPersona = normalizePersonaSlug(payload.data?.profile?.primary_persona);
         setPersona(nextPersona);
         setProfileCompletion(payload.data?.profileCompletion ?? null);
@@ -162,7 +167,7 @@ export default function FeedPage() {
         ) : null}
         {isEmpty ? <FeedEmpty persona={persona} /> : null}
         {posts?.map((post) => (
-          <PostCard key={post.id} post={post} />
+          <PostCard key={post.id} post={post} currentUserId={currentUserId} />
         ))}
       </div>
 

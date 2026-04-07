@@ -1,5 +1,7 @@
 export type VoteValue = -1 | 0 | 1;
 export type VoteDirection = -1 | 1;
+export type VoteRequestDirection = 'up' | 'down';
+export type UserVote = VoteRequestDirection | null;
 export type VoteEntityType = 'post' | 'comment' | 'startup_idea';
 export type VoteEntityKey = `${VoteEntityType}:${string}`;
 
@@ -9,6 +11,7 @@ export interface VoteMutationPayload {
   score: number;
   upvoteCount?: number;
   downvoteCount?: number;
+  userVote?: UserVote;
   currentUserVote: VoteValue;
   version?: string | null;
   updatedAt?: string | null;
@@ -164,6 +167,70 @@ export function isVoteValue(value: unknown): value is VoteValue {
   return value === -1 || value === 0 || value === 1;
 }
 
+export function isVoteRequestDirection(value: unknown): value is VoteRequestDirection {
+  return value === 'up' || value === 'down';
+}
+
+export function toVoteDirectionValue(direction: VoteRequestDirection): VoteDirection {
+  return direction === 'up' ? 1 : -1;
+}
+
+export function toVoteRequestDirection(direction: VoteDirection): VoteRequestDirection {
+  return direction === 1 ? 'up' : 'down';
+}
+
+export function toUserVote(value: VoteValue): UserVote {
+  if (value === 1) {
+    return 'up';
+  }
+
+  if (value === -1) {
+    return 'down';
+  }
+
+  return null;
+}
+
+export function toVoteValue(userVote: UserVote): VoteValue {
+  if (userVote === 'up') {
+    return 1;
+  }
+
+  if (userVote === 'down') {
+    return -1;
+  }
+
+  return 0;
+}
+
+export function describeVoteMutationBranch(previousVote: VoteValue, nextVote: VoteValue) {
+  if (previousVote === 0 && nextVote === 1) {
+    return 'create_up';
+  }
+
+  if (previousVote === 0 && nextVote === -1) {
+    return 'create_down';
+  }
+
+  if (previousVote === 1 && nextVote === 0) {
+    return 'remove_up';
+  }
+
+  if (previousVote === -1 && nextVote === 0) {
+    return 'remove_down';
+  }
+
+  if (previousVote === 1 && nextVote === -1) {
+    return 'switch_up_to_down';
+  }
+
+  if (previousVote === -1 && nextVote === 1) {
+    return 'switch_down_to_up';
+  }
+
+  return 'no_change';
+}
+
 export function computeNextVote(currentVote: VoteValue, clickedDirection: VoteDirection): VoteValue {
   return currentVote === clickedDirection ? 0 : clickedDirection;
 }
@@ -273,17 +340,28 @@ export function resolveVoteMutationPayload(raw: unknown): VoteSnapshot | null {
       : (raw as Record<string, unknown>)
   );
 
-  const entityType = candidate.entityType;
-  const entityId = candidate.entityId;
-  const score = candidate.score;
-  const currentUserVote = candidate.currentUserVote;
+  const {
+    entityType,
+    entityId,
+    score,
+    userVote: rawUserVote,
+    currentUserVote: rawCurrentUserVote,
+  } = candidate;
+  const userVoteCandidate =
+    isVoteRequestDirection(rawUserVote) || rawUserVote === null
+      ? (rawUserVote as UserVote)
+      : null;
+  const currentUserVoteCandidate = isVoteValue(rawCurrentUserVote)
+    ? (rawCurrentUserVote as VoteValue)
+    : null;
+  const currentUserVote = currentUserVoteCandidate ?? toVoteValue(userVoteCandidate);
 
   if (
     !isVoteEntityType(entityType) ||
     typeof entityId !== 'string' ||
     typeof score !== 'number' ||
     !Number.isFinite(score) ||
-    !isVoteValue(currentUserVote)
+    (!isVoteValue(currentUserVoteCandidate) && userVoteCandidate === null && rawUserVote !== null)
   ) {
     return null;
   }

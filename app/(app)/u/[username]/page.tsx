@@ -19,6 +19,7 @@ export default async function ProfilePage({ params }: { params: { username: stri
     <div className="mx-auto max-w-5xl space-y-6">
       <ProfileHeader
         user={profile.user}
+        currentUserId={currentUser?.id ?? null}
         showFollowAction={false}
         editHref={isOwner ? '/settings' : null}
         contributionCount={profile.posts.length}

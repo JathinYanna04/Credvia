@@ -1,5 +1,15 @@
 import { fail, handleApiError, ok, parseJson } from "@/lib/api";
-import { buildServerVersion, type VoteDirection, type VoteValue } from '@/lib/voting';
+import {
+  describeVoteMutationBranch,
+  toVoteDirectionValue,
+  type VoteValue,
+} from '@/lib/voting';
+import {
+  buildVoteRouteResponse,
+  getVoteDbErrorMeta,
+  mapVoteMutationError,
+  recoverAuthoritativeVoteState,
+} from '@/lib/voting-server';
 import { VoteCommentSchema } from "@/lib/schemas/comment";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -11,7 +21,6 @@ export async function POST(
   request: Request,
   { params }: { params: { id: string } },
 ) {
-  const verboseLogging = process.env.NODE_ENV !== 'production';
   let authUserId: string | null = null;
 
   try {
@@ -19,20 +28,12 @@ export async function POST(
     const user = await getRequiredUser(supabase);
     authUserId = user.id;
     const body = await parseJson(request, VoteCommentSchema);
-    const requestedDirection =
-      body.direction ??
-      (body.value === 1 || body.value === -1
-        ? (body.value as VoteDirection)
-        : undefined);
 
-    if (verboseLogging) {
-      logInfo('api-vote-comment', 'Vote request received', {
-        userId: user.id,
-        commentId: params.id,
-        requestedDirection: requestedDirection ?? null,
-        requestedValue: body.value ?? null,
-      });
-    }
+    logInfo('api-vote-comment', 'Vote request received', {
+      userId: user.id,
+      commentId: params.id,
+      requestedVote: body.direction,
+    });
 
     const limit = await enforceRateLimit(
       "vote",
@@ -58,110 +59,79 @@ export async function POST(
       return fail("NOT_FOUND", "Comment not found.", 404);
     }
 
-    const previousVoteResult = await supabase
-      .from('votes')
-      .select('value')
-      .eq('user_id', user.id)
-      .eq('entity_type', 'comment')
-      .eq('entity_id', params.id)
-      .maybeSingle();
+    const mutationResult = await supabase
+      .rpc('mutate_comment_vote_atomic', {
+        p_entity_id: params.id,
+        p_direction: toVoteDirectionValue(body.direction),
+        p_value: null,
+      })
+      .single();
 
-    if (previousVoteResult.error) {
-      throw new Error(previousVoteResult.error.message);
-    }
+    if (mutationResult.error) {
+      const mapped = mapVoteMutationError(mutationResult.error);
+      const dbError = getVoteDbErrorMeta(mutationResult.error);
 
-    const previousVote = (previousVoteResult.data?.value ?? 0) as VoteValue;
-    const desiredVote =
-      requestedDirection === undefined
-        ? (body.value ?? 0)
-        : previousVote === requestedDirection
-          ? 0
-          : requestedDirection;
-
-    if (desiredVote === 0) {
-      const deleteResult = await supabase
-        .from("votes")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("entity_type", "comment")
-        .eq("entity_id", params.id);
-
-      if (deleteResult.error) {
-        throw new Error(deleteResult.error.message);
-      }
-    } else {
-      const insertResult = await supabase.from("votes").upsert(
-        {
-          user_id: user.id,
-          entity_type: "comment",
-          entity_id: params.id,
-          value: desiredVote,
-        },
-        {
-          onConflict: "user_id,entity_type,entity_id",
-        },
-      );
-
-      if (insertResult.error) {
-        throw new Error(insertResult.error.message);
-      }
-    }
-
-    const [refreshedComment, refreshedVote, upvoteCountResult, downvoteCountResult] = await Promise.all([
-      supabase
-      .from("comments")
-      .select("id, vote_score, updated_at")
-      .eq("id", params.id)
-      .single(),
-      supabase
-        .from("votes")
-        .select("value")
-        .eq("user_id", user.id)
-        .eq("entity_type", "comment")
-        .eq("entity_id", params.id)
-        .maybeSingle(),
-      supabase
-        .from('votes')
-        .select('id', { count: 'exact', head: true })
-        .eq('entity_type', 'comment')
-        .eq('entity_id', params.id)
-        .eq('value', 1),
-      supabase
-        .from('votes')
-        .select('id', { count: 'exact', head: true })
-        .eq('entity_type', 'comment')
-        .eq('entity_id', params.id)
-        .eq('value', -1),
-    ]);
-
-    if (refreshedComment.error) {
-      throw new Error(refreshedComment.error.message);
-    }
-
-    if (refreshedVote.error) {
-      throw new Error(refreshedVote.error.message);
-    }
-
-    if (upvoteCountResult.error) {
-      throw new Error(upvoteCountResult.error.message);
-    }
-
-    if (downvoteCountResult.error) {
-      throw new Error(downvoteCountResult.error.message);
-    }
-
-    const nextVote = (refreshedVote.data?.value ?? 0) as VoteValue;
-    const contributionDelta = nextVote - previousVote;
-
-    if (verboseLogging) {
-      logInfo('api-vote-comment', 'Vote mutation applied', {
+      logError('api-vote-comment', 'Vote RPC failed', {
         userId: user.id,
         commentId: params.id,
-        previousVote,
-        nextVote,
-        contributionDelta,
+        requestedVote: body.direction,
+        dbErrorCode: dbError.code,
+        dbErrorMessage: dbError.message,
+        dbErrorDetails: dbError.details,
+        dbErrorHint: dbError.hint,
       });
+
+      if (mapped) {
+        if (mapped.code === 'NOT_FOUND') {
+          return fail('NOT_FOUND', 'Comment not found.', 404);
+        }
+
+        return fail(mapped.code, mapped.message, mapped.status);
+      }
+
+      if (mutationResult.error.code === '23505') {
+        const recovered = await recoverAuthoritativeVoteState(
+          supabase,
+          'comment',
+          params.id,
+          user.id,
+        );
+
+        if (recovered) {
+          logInfo('api-vote-comment', 'Recovered authoritative vote state after conflict', {
+            userId: user.id,
+            commentId: params.id,
+            requestedVote: body.direction,
+            branch: 'race_recovered',
+          });
+
+          return ok(recovered);
+        }
+      }
+
+      throw new Error(mutationResult.error.message);
     }
+
+    if (!mutationResult.data?.updated_at) {
+      throw new Error('Vote mutation did not return canonical updated_at.');
+    }
+
+    const previousVote = (mutationResult.data.previous_vote ?? 0) as VoteValue;
+    const nextVote = (mutationResult.data.current_user_vote ?? 0) as VoteValue;
+    const contributionDelta =
+      mutationResult.data.contribution_delta ?? nextVote - previousVote;
+
+    const mutationBranch = describeVoteMutationBranch(previousVote, nextVote);
+
+    logInfo('api-vote-comment', 'Vote mutation applied', {
+      userId: user.id,
+      commentId: params.id,
+      requestedVote: body.direction,
+      previousVote,
+      nextVote,
+      branch: mutationBranch,
+      contributionDelta,
+    });
 
     if (contributionDelta !== 0 && commentResult.data.author_id !== user.id) {
       const sideEffectClient = createServiceRoleClient();
@@ -334,13 +304,11 @@ export async function POST(
                 : undefined;
 
           if (isRecoverableSupabaseReadError(sideEffectErrorForClassification)) {
-            if (verboseLogging) {
-              logInfo('api-vote-comment', 'Recoverable vote side effect failure', {
-                userId: user.id,
-                commentId: params.id,
-                error: sideEffectErrorMessage,
-              });
-            }
+            logInfo('api-vote-comment', 'Recoverable vote side effect failure', {
+              userId: user.id,
+              commentId: params.id,
+              error: sideEffectErrorMessage,
+            });
           } else {
             logError('api-vote-comment', 'Vote side effects failed', {
               userId: user.id,
@@ -349,7 +317,7 @@ export async function POST(
             });
           }
         }
-      } else if (verboseLogging) {
+      } else {
         logInfo('api-vote-comment', 'Skipped vote side effects because service role client is unavailable', {
           userId: user.id,
           commentId: params.id,
@@ -357,27 +325,27 @@ export async function POST(
       }
     }
 
-    if (verboseLogging) {
-      logInfo('api-vote-comment', 'Vote response emitted', {
-        userId: user.id,
-        commentId: params.id,
-        score: refreshedComment.data.vote_score,
-        currentUserVote: nextVote,
-      });
-    }
-
-    return ok({
+    const response = buildVoteRouteResponse({
       entityId: params.id,
-      entityType: "comment",
-      score: refreshedComment.data.vote_score,
-      upvoteCount: upvoteCountResult.count ?? 0,
-      downvoteCount: downvoteCountResult.count ?? 0,
+      entityType: 'comment',
       currentUserVote: nextVote,
-      version: buildServerVersion(refreshedComment.data.updated_at),
-      updatedAt: refreshedComment.data.updated_at,
+      upvoteCount: mutationResult.data.upvote_count,
+      downvoteCount: mutationResult.data.downvote_count,
+      score: mutationResult.data.score,
+      updatedAt: mutationResult.data.updated_at,
       contributionDelta,
-      rankDeltaHint: contributionDelta,
     });
+
+    logInfo('api-vote-comment', 'Vote response emitted', {
+      userId: user.id,
+      commentId: params.id,
+      userVote: response.userVote,
+      score: response.score,
+      upvoteCount: response.upvoteCount,
+      downvoteCount: response.downvoteCount,
+    });
+
+    return ok(response);
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return fail("UNAUTHORIZED", "You need to sign in.", 401);

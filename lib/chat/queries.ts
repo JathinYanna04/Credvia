@@ -41,6 +41,12 @@ export interface CreateOrGetDmConversationInput {
   wrappedKeys?: ConversationKeyEnvelopeInput[];
 }
 
+export interface CreateOrGetDmConversationResult {
+  conversation: ChatConversationRow;
+  created: boolean;
+  recoveredFromUniqueConflict: boolean;
+}
+
 export interface CreateOrJoinIdeaConversationInput {
   requesterUserId: string;
   ideaId: string;
@@ -306,6 +312,90 @@ async function loadConversationSummaries(
         : null,
     };
   });
+}
+
+async function ensureDmParticipantsActive(
+  supabase: TypedSupabaseClient,
+  conversation: ChatConversationRow,
+  requesterUserId: string,
+  targetUserId: string,
+) {
+  const existingParticipantsResult = await supabase
+    .from('chat_participants')
+    .select('user_id, status, role, left_at')
+    .eq('conversation_id', conversation.id)
+    .in('user_id', [requesterUserId, targetUserId]);
+
+  if (existingParticipantsResult.error) {
+    throw new Error(existingParticipantsResult.error.message);
+  }
+
+  const existingByUser = new Map<string, {
+    user_id: string;
+    status: string;
+    role: string;
+    left_at: string | null;
+  }>();
+
+  for (const participant of existingParticipantsResult.data ?? []) {
+    existingByUser.set(participant.user_id, {
+      user_id: participant.user_id,
+      status: participant.status,
+      role: participant.role,
+      left_at: participant.left_at,
+    });
+  }
+
+  const missingParticipants: Array<{
+    conversation_id: string;
+    user_id: string;
+    role: string;
+    status: 'active';
+    left_at: null;
+  }> = [];
+
+  for (const userId of [requesterUserId, targetUserId]) {
+    const existing = existingByUser.get(userId);
+    const inferredRole = conversation.created_by === userId ? 'owner' : 'member';
+
+    if (!existing) {
+      missingParticipants.push({
+        conversation_id: conversation.id,
+        user_id: userId,
+        role: inferredRole,
+        status: 'active',
+        left_at: null,
+      });
+      continue;
+    }
+
+    if (existing.status !== 'active' || existing.left_at !== null) {
+      const reactivateResult = await supabase
+        .from('chat_participants')
+        .update({
+          status: 'active',
+          left_at: null,
+        })
+        .eq('conversation_id', conversation.id)
+        .eq('user_id', userId);
+
+      if (reactivateResult.error) {
+        throw new Error(reactivateResult.error.message);
+      }
+    }
+  }
+
+  if (missingParticipants.length === 0) {
+    return;
+  }
+
+  const insertMissingResult = await supabase
+    .from('chat_participants')
+    .insert(missingParticipants);
+
+  if (insertMissingResult.error && insertMissingResult.error.code !== '23505') {
+    throw new Error(insertMissingResult.error.message);
+  }
 }
 
 export async function listConversationSummaries(
@@ -672,6 +762,8 @@ export async function createOrGetDmConversation(
   }
 
   let conversation = existingResult.data as ChatConversationRow | null;
+  let created = false;
+  let recoveredFromUniqueConflict = false;
 
   if (!conversation) {
     const insertResult = await supabase
@@ -687,6 +779,7 @@ export async function createOrGetDmConversation(
 
     if (insertResult.error) {
       if (insertResult.error.code === '23505') {
+        recoveredFromUniqueConflict = true;
         const retryResult = await supabase
           .from('chat_conversations')
           .select('*')
@@ -709,6 +802,7 @@ export async function createOrGetDmConversation(
       }
     } else {
       conversation = insertResult.data as ChatConversationRow;
+      created = true;
     }
   }
 
@@ -716,52 +810,50 @@ export async function createOrGetDmConversation(
     throw new Error('Conversation could not be created.');
   }
 
-  const participantsResult = await supabase.from('chat_participants').upsert(
-    [
-      {
-        conversation_id: conversation.id,
-        user_id: requesterUserId,
-        role: 'owner',
-        status: 'active',
-        left_at: null,
-      },
-      {
-        conversation_id: conversation.id,
-        user_id: targetUserId,
-        role: 'member',
-        status: 'active',
-        left_at: null,
-      },
-    ],
-    {
-      onConflict: 'conversation_id,user_id',
-    },
+  await ensureDmParticipantsActive(
+    supabase,
+    conversation,
+    requesterUserId,
+    targetUserId,
   );
 
-  if (participantsResult.error) {
-    throw new Error(participantsResult.error.message);
-  }
-
   if ((wrappedKeys ?? []).length > 0) {
-    const normalized = normalizeWrappedKeys(wrappedKeys ?? []);
-    const allowedUserIds = new Set([requesterUserId, targetUserId]);
+    const keyCountResult = await supabase
+      .from('chat_conversation_keys')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', conversation.id);
 
-    for (const key of normalized) {
-      if (!allowedUserIds.has(key.userId)) {
-        throw new ChatServiceError('VALIDATION_ERROR', 'Wrapped key user is not a DM participant.', 400);
-      }
+    if (keyCountResult.error) {
+      throw new Error(keyCountResult.error.message);
     }
 
-    await upsertConversationKeys(
-      supabase,
-      normalized.map((key) => ({
-        ...key,
-        conversationId: conversation!.id,
-      })),
-    );
+    const canProvisionWrappedKeys = (keyCountResult.count ?? 0) === 0;
+
+    if (canProvisionWrappedKeys) {
+      const normalized = normalizeWrappedKeys(wrappedKeys ?? []);
+      const allowedUserIds = new Set([requesterUserId, targetUserId]);
+
+      for (const key of normalized) {
+        if (!allowedUserIds.has(key.userId)) {
+          throw new ChatServiceError('VALIDATION_ERROR', 'Wrapped key user is not a DM participant.', 400);
+        }
+      }
+
+      await upsertConversationKeys(
+        supabase,
+        normalized.map((key) => ({
+          ...key,
+          conversationId: conversation!.id,
+        })),
+      );
+    }
   }
 
-  return conversation;
+  return {
+    conversation,
+    created,
+    recoveredFromUniqueConflict,
+  } as CreateOrGetDmConversationResult;
 }
 
 export async function createOrJoinIdeaConversation(
@@ -891,14 +983,27 @@ export async function createOrJoinIdeaConversation(
   }
 
   if ((wrappedKeys ?? []).length > 0) {
-    const normalized = normalizeWrappedKeys(wrappedKeys ?? []);
-    await upsertConversationKeys(
-      supabase,
-      normalized.map((key) => ({
-        ...key,
-        conversationId: conversation!.id,
-      })),
-    );
+    const keyCountResult = await supabase
+      .from('chat_conversation_keys')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', conversation.id);
+
+    if (keyCountResult.error) {
+      throw new Error(keyCountResult.error.message);
+    }
+
+    const canProvisionWrappedKeys = (keyCountResult.count ?? 0) === 0;
+
+    if (canProvisionWrappedKeys) {
+      const normalized = normalizeWrappedKeys(wrappedKeys ?? []);
+      await upsertConversationKeys(
+        supabase,
+        normalized.map((key) => ({
+          ...key,
+          conversationId: conversation!.id,
+        })),
+      );
+    }
   }
 
   return conversation;

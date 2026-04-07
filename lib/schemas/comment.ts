@@ -10,19 +10,9 @@ export const CreateCommentSchema = z
 
 export const VoteCommentSchema = z
   .object({
-    value: z.union([z.literal(-1), z.literal(0), z.literal(1)]).optional(),
-    direction: z.union([z.literal(-1), z.literal(1)]).optional(),
+    direction: z.enum(['up', 'down']),
   })
-  .strict()
-  .superRefine((value, ctx) => {
-    if (value.direction === undefined && value.value === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['direction'],
-        message: 'Either direction or value is required.',
-      });
-    }
-  });
+  .strict();
 
 export const BestAnswerSchema = z
   .object({

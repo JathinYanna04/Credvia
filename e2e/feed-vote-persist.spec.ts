@@ -157,6 +157,8 @@ test('homepage toggled neutral vote persists after reload', async ({ page }) => 
   });
 
   expect(firstVotePayload?.data?.currentUserVote).toBe(1);
+  expect(firstVotePayload?.data?.score).toBe(1);
+  expect(typeof firstVotePayload?.data?.version).toBe('string');
   await expect(upvoteButton).toHaveAttribute('aria-busy', 'false', { timeout: 20_000 });
   await expect(score).toHaveText('1');
 
@@ -165,6 +167,9 @@ test('homepage toggled neutral vote persists after reload', async ({ page }) => 
   });
 
   expect(secondVotePayload?.data?.currentUserVote).toBe(0);
+  expect(secondVotePayload?.data?.score).toBe(0);
+  expect(typeof secondVotePayload?.data?.version).toBe('string');
+  expect(secondVotePayload?.data?.version).not.toBe(firstVotePayload?.data?.version);
   await expect(upvoteButton).toHaveAttribute('aria-busy', 'false', { timeout: 20_000 });
   await expect(score).toHaveText('0');
   await expect(upvoteButton).not.toHaveClass(/text-accent/);

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowUpRight, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { StartDirectMessageButton } from '@/components/chat/StartDirectMessageButton';
 import { PostTypeBadge } from "@/components/post/PostTypeBadge";
 import { ReputationBadge } from "@/components/reputation/ReputationBadge";
 import { VoteButtons } from "@/components/voting/VoteButtons";
@@ -16,9 +17,10 @@ import { formatRelativeTime } from "@/lib/utils/format";
 
 export interface PostCardProps {
   post: PostSummary;
+  currentUserId?: string | null;
 }
 
-export function PostCard({ post }: PostCardProps) {
+export function PostCard({ post, currentUserId = null }: PostCardProps) {
   const topRep = post.author.reputation[0];
   const voteEntityType = toVoteEntityTypeFromPostType(post.postType);
   const voteSnapshot = useVoteSnapshot(voteEntityType, post.id, {
@@ -164,6 +166,16 @@ export function PostCard({ post }: PostCardProps) {
             />
           </div>
         )}
+
+        {currentUserId ? (
+          <StartDirectMessageButton
+            currentUserId={currentUserId}
+            targetUserId={post.author.id}
+            label={post.postType === 'startup_idea' ? 'Message founder' : 'Message author'}
+            variant="outline"
+            size="sm"
+          />
+        ) : null}
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2 border-t border-border-subtle pt-4">

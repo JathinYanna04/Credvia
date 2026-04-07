@@ -1308,7 +1308,42 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      mutate_post_vote_atomic: {
+        Args: {
+          p_entity_id: string;
+          p_direction?: number | null;
+          p_value?: number | null;
+        };
+        Returns: {
+          entity_id: string;
+          previous_vote: number;
+          current_user_vote: number;
+          score: number;
+          upvote_count: number;
+          downvote_count: number;
+          updated_at: string;
+          contribution_delta: number;
+        }[];
+      };
+      mutate_comment_vote_atomic: {
+        Args: {
+          p_entity_id: string;
+          p_direction?: number | null;
+          p_value?: number | null;
+        };
+        Returns: {
+          entity_id: string;
+          previous_vote: number;
+          current_user_vote: number;
+          score: number;
+          upvote_count: number;
+          downvote_count: number;
+          updated_at: string;
+          contribution_delta: number;
+        }[];
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
