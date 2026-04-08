@@ -80,7 +80,7 @@ function isPublicPath(pathname: string) {
 
 function isPublicApiRequest(pathname: string, method: string) {
   if (method !== 'GET') {
-    return pathname.startsWith('/api/v1/auth');
+    return pathname.startsWith('/api/v1/auth') || pathname === '/api/v1/ai/worker';
   }
 
   return (

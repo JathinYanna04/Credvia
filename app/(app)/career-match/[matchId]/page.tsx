@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { CareerCopilotPanel } from '@/components/career-match/CareerCopilotPanel';
 import { MatchExplanation } from '@/components/career-match/MatchExplanation';
 import { SavedMatchButton } from '@/components/career-match/SavedMatchButton';
 import { SkillGapPanel } from '@/components/career-match/SkillGapPanel';
@@ -142,6 +143,8 @@ export default function CareerMatchDetailPage({
             strengths={match.strengths}
             warnings={match.warnings}
           />
+
+          <CareerCopilotPanel matchId={match.id} resumeId={match.resume_id} />
 
           <section className="surface-panel space-y-4 p-5">
             <div>

@@ -1098,6 +1098,246 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['moderation_actions']['Insert']>;
         Relationships: [];
       };
+      ai_runs: {
+        Row: {
+          id: string;
+          feature: string;
+          subject_type: string;
+          subject_id: string;
+          requested_by: string;
+          status: string;
+          provider: string | null;
+          model: string | null;
+          model_version: string | null;
+          prompt_version: string;
+          prompt_key: string;
+          input_hash: string | null;
+          run_identity: string | null;
+          input_schema_version: string;
+          output_schema_version: string;
+          request_id: string | null;
+          trace_id: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          metadata: Json;
+          provider_metadata: Json;
+          attempt_count: number;
+          max_attempts: number;
+          latency_ms: number | null;
+          created_at: string;
+          started_at: string | null;
+          completed_at: string | null;
+          failed_at: string | null;
+          next_retry_at: string;
+          lease_token: string | null;
+          processor_id: string | null;
+          lease_expires_at: string | null;
+          last_heartbeat_at: string | null;
+          timeout_at: string | null;
+          parent_run_id: string | null;
+          output_checksum: string | null;
+          completed_reason: string | null;
+        };
+        Insert: {
+          id?: string;
+          feature: string;
+          subject_type: string;
+          subject_id: string;
+          requested_by: string;
+          status?: string;
+          provider?: string | null;
+          model?: string | null;
+          model_version?: string | null;
+          prompt_version: string;
+          prompt_key?: string;
+          input_hash?: string | null;
+          run_identity?: string | null;
+          input_schema_version?: string;
+          output_schema_version?: string;
+          request_id?: string | null;
+          trace_id?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          metadata?: Json;
+          provider_metadata?: Json;
+          attempt_count?: number;
+          max_attempts?: number;
+          latency_ms?: number | null;
+          created_at?: string;
+          started_at?: string | null;
+          completed_at?: string | null;
+          failed_at?: string | null;
+          next_retry_at?: string;
+          lease_token?: string | null;
+          processor_id?: string | null;
+          lease_expires_at?: string | null;
+          last_heartbeat_at?: string | null;
+          timeout_at?: string | null;
+          parent_run_id?: string | null;
+          output_checksum?: string | null;
+          completed_reason?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['ai_runs']['Insert']>;
+        Relationships: [];
+      };
+      founder_idea_reviews: {
+        Row: {
+          id: string;
+          run_id: string;
+          post_id: string;
+          founder_user_id: string;
+          verdict: string;
+          confidence: number | null;
+          summary: string;
+          strengths: Json;
+          risks: Json;
+          suggestions: Json;
+          market_signals: Json;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          run_id: string;
+          post_id: string;
+          founder_user_id: string;
+          verdict: string;
+          confidence?: number | null;
+          summary: string;
+          strengths?: Json;
+          risks?: Json;
+          suggestions?: Json;
+          market_signals?: Json;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['founder_idea_reviews']['Insert']>;
+        Relationships: [];
+      };
+      career_copilot_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          resume_id: string | null;
+          match_id: string | null;
+          run_id: string | null;
+          title: string | null;
+          status: string;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          resume_id?: string | null;
+          match_id?: string | null;
+          run_id?: string | null;
+          title?: string | null;
+          status?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['career_copilot_sessions']['Insert']>;
+        Relationships: [];
+      };
+      career_copilot_insights: {
+        Row: {
+          id: string;
+          session_id: string;
+          run_id: string;
+          user_id: string;
+          insight_type: string;
+          headline: string;
+          summary: string;
+          strengths: Json;
+          gaps: Json;
+          next_steps: Json;
+          suggested_roles: Json;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          session_id: string;
+          run_id: string;
+          user_id: string;
+          insight_type?: string;
+          headline: string;
+          summary: string;
+          strengths?: Json;
+          gaps?: Json;
+          next_steps?: Json;
+          suggested_roles?: Json;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['career_copilot_insights']['Insert']>;
+        Relationships: [];
+      };
+      moderation_ai_reviews: {
+        Row: {
+          id: string;
+          run_id: string;
+          report_id: string;
+          moderator_user_id: string;
+          target_type: string;
+          target_id: string;
+          risk_label: string;
+          confidence: number | null;
+          rationale: string;
+          suggested_action: string;
+          suggested_reason: string | null;
+          evidence: Json;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          run_id: string;
+          report_id: string;
+          moderator_user_id: string;
+          target_type: string;
+          target_id: string;
+          risk_label: string;
+          confidence?: number | null;
+          rationale: string;
+          suggested_action: string;
+          suggested_reason?: string | null;
+          evidence?: Json;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['moderation_ai_reviews']['Insert']>;
+        Relationships: [];
+      };
+      moderation_ai_overrides: {
+        Row: {
+          id: string;
+          review_id: string;
+          report_id: string;
+          moderator_user_id: string;
+          suggested_action: string;
+          selected_action: string;
+          override_reason: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          review_id: string;
+          report_id: string;
+          moderator_user_id: string;
+          suggested_action: string;
+          selected_action: string;
+          override_reason?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['moderation_ai_overrides']['Insert']>;
+        Relationships: [];
+      };
       startup_ideas: {
         Row: {
           post_id: string;
@@ -1353,6 +1593,15 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      claim_ai_runs: {
+        Args: {
+          p_worker_id: string;
+          p_batch_size?: number;
+          p_lease_seconds?: number;
+          p_max_attempts?: number;
+        };
+        Returns: Database['public']['Tables']['ai_runs']['Row'][];
+      };
       mutate_post_vote_atomic: {
         Args: {
           p_entity_id: string;

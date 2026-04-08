@@ -11,6 +11,9 @@ const ModerationActionSchema = z
     reportId: z.string().uuid(),
     action: z.enum(['dismiss', 'hide', 'remove']),
     reason: z.string().max(500).optional(),
+    aiReviewId: z.string().uuid().optional(),
+    suggestedAction: z.enum(['dismiss', 'hide', 'remove']).optional(),
+    overrideReason: z.string().max(500).optional(),
   })
   .strict();
 

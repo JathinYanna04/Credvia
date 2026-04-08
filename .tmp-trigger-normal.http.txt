@@ -1,0 +1,14 @@
+﻿HTTP/1.1 200 OK
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+Referrer-Policy: strict-origin-when-cross-origin
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+set-cookie: sb-user-id=30d779dc-247c-49b5-8ab6-0c3c019443f1; Path=/
+vary: RSC, Next-Router-State-Tree, Next-Router-Prefetch
+content-type: application/json
+Date: Wed, 08 Apr 2026 06:27:34 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+{"data":{"run":{"id":"373418d8-5912-4321-b353-60bcfa053d72","feature":"founder_idea_feedback","subjectType":"startup_idea","subjectId":"70e6507e-f4bb-4809-8c79-4be9f3153a74","requestedBy":"30d779dc-247c-49b5-8ab6-0c3c019443f1","status":"queued","promptVersion":"founder-v1","promptKey":"founder-feedback-core","inputHash":"de507028216d97c9159b7700c9147a7601f645ed52e5d82da522316d45be9a09","runIdentity":"7882aa39a300b6c6ee97699391c4965d22d2ceb6d9d016cb17a4f9bee86c949b","maxAttempts":3,"attemptCount":0,"latencyMs":null,"provider":null,"model":null,"modelVersion":null,"requestId":null,"traceId":"41fbe0ff-3d85-4047-988b-649a8f327294","errorCode":null,"errorMessage":null,"metadata":{"contextSnapshot":{"stage":"problem_validation","postId":"70e6507e-f4bb-4809-8c79-4be9f3153a74","updatedAt":"2026-04-08T06:23:27.573548+00:00","commentCount":0,"founderUserId":"30d779dc-247c-49b5-8ab6-0c3c019443f1","revisionCount":1,"lastRevisionAt":"2026-04-08T06:23:30.001+00:00","validationScore":0}},"providerMetadata":{},"processorId":null,"leaseToken":null,"leaseExpiresAt":null,"nextRetryAt":"2026-04-08T06:27:33.508213+00:00","createdAt":"2026-04-08T06:27:33.508213+00:00","startedAt":null,"completedAt":null,"failedAt":null},"reused":false}}

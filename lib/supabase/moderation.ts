@@ -14,6 +14,16 @@ export interface ModerationQueueItem {
   communityName: string | null;
   reporterUserId: string;
   preview: string;
+  aiReview?: {
+    id: string;
+    riskLabel: string;
+    confidence: number | null;
+    rationale: string;
+    suggestedAction: 'dismiss' | 'hide' | 'remove';
+    suggestedReason: string | null;
+    evidence: unknown[];
+    createdAt: string;
+  } | null;
 }
 
 export interface ModerationActionItem {
@@ -50,7 +60,7 @@ export async function requireModeratorAccess() {
 }
 
 export async function getModerationQueue(): Promise<ModerationQueueItem[]> {
-  const { communityIds } = await requireModeratorAccess();
+  const { communityIds, user } = await requireModeratorAccess();
   const serviceClient = createServiceRoleClient();
 
   if (!serviceClient) {
@@ -177,7 +187,58 @@ export async function getModerationQueue(): Promise<ModerationQueueItem[]> {
     }
   });
 
-  return queue;
+  if (queue.length === 0) {
+    return queue;
+  }
+
+  const aiReviewsResult = await serviceClient
+    .from('moderation_ai_reviews')
+    .select('*')
+    .eq('moderator_user_id', user.id)
+    .in('report_id', queue.map((item) => item.id))
+    .order('created_at', { ascending: false });
+
+  if (aiReviewsResult.error) {
+    throw new Error(aiReviewsResult.error.message);
+  }
+
+  const latestReviewByReport = new Map<string, (typeof aiReviewsResult.data)[number]>();
+
+  for (const row of aiReviewsResult.data ?? []) {
+    if (!latestReviewByReport.has(row.report_id)) {
+      latestReviewByReport.set(row.report_id, row);
+    }
+  }
+
+  return queue.map((item) => {
+    const review = latestReviewByReport.get(item.id);
+
+    if (!review) {
+      return {
+        ...item,
+        aiReview: null,
+      };
+    }
+
+    return {
+      ...item,
+      aiReview: {
+        id: review.id,
+        riskLabel: review.risk_label,
+        confidence: review.confidence,
+        rationale: review.rationale,
+        suggestedAction:
+          review.suggested_action === 'dismiss'
+          || review.suggested_action === 'hide'
+          || review.suggested_action === 'remove'
+            ? review.suggested_action
+            : 'dismiss',
+        suggestedReason: review.suggested_reason,
+        evidence: Array.isArray(review.evidence) ? review.evidence : [],
+        createdAt: review.created_at,
+      },
+    };
+  });
 }
 
 export async function getModerationActions(): Promise<ModerationActionItem[]> {
@@ -213,6 +274,9 @@ export async function applyModerationAction(input: {
   reportId: string;
   action: 'dismiss' | 'hide' | 'remove';
   reason?: string;
+  aiReviewId?: string;
+  suggestedAction?: 'dismiss' | 'hide' | 'remove';
+  overrideReason?: string;
 }) {
   const { user, communityIds } = await requireModeratorAccess();
   const serviceClient = createServiceRoleClient();
@@ -335,5 +399,44 @@ export async function applyModerationAction(input: {
 
   if (reportUpdate.error) {
     throw new Error(reportUpdate.error.message);
+  }
+
+  if (
+    input.aiReviewId
+    && input.suggestedAction
+    && input.suggestedAction !== input.action
+  ) {
+    const reviewResult = await serviceClient
+      .from('moderation_ai_reviews')
+      .select('id, report_id, moderator_user_id, suggested_action')
+      .eq('id', input.aiReviewId)
+      .eq('report_id', report.id)
+      .eq('moderator_user_id', user.id)
+      .maybeSingle();
+
+    if (reviewResult.error) {
+      throw new Error(reviewResult.error.message);
+    }
+
+    if (reviewResult.data) {
+      const overrideInsert = await serviceClient
+        .from('moderation_ai_overrides')
+        .insert({
+          review_id: reviewResult.data.id,
+          report_id: report.id,
+          moderator_user_id: user.id,
+          suggested_action: reviewResult.data.suggested_action,
+          selected_action: input.action,
+          override_reason: input.overrideReason ?? input.reason ?? null,
+          metadata: {
+            report_status_after_action: reviewedStatus,
+            action_reason: input.reason ?? null,
+          },
+        });
+
+      if (overrideInsert.error) {
+        throw new Error(overrideInsert.error.message);
+      }
+    }
   }
 }

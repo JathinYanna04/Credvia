@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { JoinIdeaDiscussionButton } from '@/components/chat/JoinIdeaDiscussionButton';
 import { StartDirectMessageButton } from '@/components/chat/StartDirectMessageButton';
+import { FounderIdeaFeedbackPanel } from '@/components/ai/founder/FounderIdeaFeedbackPanel';
 import { CommentEditor } from "@/components/comments/CommentEditor";
 import { CommentThread } from "@/components/comments/CommentThread";
 import { PostTypeBadge } from "@/components/post/PostTypeBadge";
@@ -153,6 +154,15 @@ export function PostDetail({
             without overwriting earlier thinking, so the validation trail
             remains transparent.
           </div>
+        ) : null}
+        {post.startupIdea ? (
+          <FounderIdeaFeedbackPanel
+            ideaId={post.id}
+            canRequest={currentUserId === post.author.id}
+            targetAudience={post.startupIdea.targetAudience}
+            marketCategory={post.startupIdea.marketCategory}
+            stage={post.startupIdea.stage}
+          />
         ) : null}
       </header>
 

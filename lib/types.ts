@@ -176,6 +176,18 @@ export interface ApiError {
     | "FORBIDDEN"
     | "NOT_FOUND"
     | "VALIDATION_ERROR"
+    | "AI_FEATURE_UNSUPPORTED"
+    | "AI_FEATURE_DISABLED"
+    | "AI_SUBJECT_MISMATCH"
+    | "AI_PROVIDER_NOT_CONFIGURED"
+    | "AI_PROVIDER_UNAVAILABLE"
+    | "AI_EXECUTOR_UNAVAILABLE"
+    | "AI_OUTPUT_INVALID"
+    | "AI_OUTPUT_REPAIR_FAILED"
+    | "AI_RUN_STATE_INVALID"
+    | "AI_RUN_CLAIM_CONFLICT"
+    | "AI_RUN_DUPLICATE"
+    | "AI_RUN_NOT_READY"
     | "ANALYSIS_IN_PROGRESS"
     | "RESUME_FILE_MISSING"
     | "RESUME_FILE_UNSUPPORTED"
@@ -204,6 +216,71 @@ export interface ApiResponse<T> {
     cursor?: string | null;
     total?: number;
   };
+}
+
+export type AiFeature =
+  | "founder_idea_feedback"
+  | "career_copilot"
+  | "moderation_review";
+
+export type AiSubjectType = "startup_idea" | "resume" | "report";
+
+export type AiRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed";
+
+export interface AiRunSummary {
+  id: string;
+  feature: AiFeature;
+  subjectType: AiSubjectType;
+  subjectId: string;
+  requestedBy?: string;
+  status: AiRunStatus;
+  promptVersion: string;
+  promptKey?: string;
+  inputHash?: string | null;
+  runIdentity?: string | null;
+  attemptCount?: number;
+  maxAttempts?: number;
+  latencyMs?: number | null;
+  provider?: string | null;
+  model?: string | null;
+  modelVersion?: string | null;
+  requestId?: string | null;
+  traceId?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  metadata?: Record<string, unknown>;
+  providerMetadata?: Record<string, unknown>;
+  processorId?: string | null;
+  leaseToken?: string | null;
+  leaseExpiresAt?: string | null;
+  nextRetryAt?: string | null;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  failedAt?: string | null;
+}
+
+export interface CreateAiRunRequest {
+  feature: AiFeature;
+  subjectType: AiSubjectType;
+  subjectId: string;
+  promptVersion: string;
+  promptKey?: string;
+  forceRegenerate?: boolean;
+  maxAttempts?: number;
+  traceId?: string;
+  idempotencyPayload?: Record<string, unknown>;
+  requestId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CreateAiRunResponse {
+  run: AiRunSummary;
+  reused?: boolean;
 }
 
 export interface AnalyzeResumeRequest {

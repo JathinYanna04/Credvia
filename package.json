@@ -12,6 +12,7 @@
     "probe:career-production": "node scripts/probe-production-career-routes.mjs",
     "verify:career-manifest": "node scripts/verify-career-manifest.mjs",
     "verify:career-routes": "node scripts/verify-career-routes.mjs",
+    "ai:worker": "node scripts/ai-worker-loop.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write ."
@@ -67,6 +68,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20.19.13",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
@@ -76,6 +79,7 @@
     "autoprefixer": "^10.4.21",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.25",
+    "jsdom": "^29.0.2",
     "postcss": "^8.5.6",
     "prettier": "^3.6.2",
     "supabase": "^2.84.10",
