@@ -11,13 +11,15 @@ export function AppShell({ children }: PropsWithChildren) {
     <div className="min-h-screen bg-bg-base">
       <div className="shell-main-shell flex min-h-screen w-full">
         <Sidebar />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex flex-1 flex-col">
           <TopBar />
-          <main className="min-w-0 px-4 pb-24 pt-5 sm:px-6 lg:px-8 xl:px-10 lg:pb-8 lg:pt-6">
-            <div className="content-shell">{children}</div>
-          </main>
+          <div className="flex min-w-0 flex-1">
+            <main className="min-w-0 flex-1 px-4 pb-24 pt-5 sm:px-6 lg:px-8 xl:px-10 lg:pb-8 lg:pt-6">
+              <div className="content-shell">{children}</div>
+            </main>
+            <RightPanel />
+          </div>
         </div>
-        <RightPanel />
       </div>
       <Link
         href="/post/new"

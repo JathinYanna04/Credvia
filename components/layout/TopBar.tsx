@@ -9,7 +9,7 @@ export async function TopBar() {
 
   return (
     <div className="shell-topbar-surface sticky top-0 z-30 border-b border-border-subtle">
-      <div className="content-shell flex w-full items-center gap-3 px-4 py-3 sm:px-2 lg:gap-4 xl:gap-5">
+      <div className="flex w-full items-center gap-3 px-4 py-3 sm:px-6 lg:gap-4 lg:px-8 xl:gap-5 xl:px-10">
         <div className="min-w-0 flex flex-1 items-center">
           <Link href="/feed" className="font-display text-lg font-semibold text-text-primary lg:hidden">
             Credvia

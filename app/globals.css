@@ -321,7 +321,7 @@
   }
 
   .shell-main-shell {
-    @apply mx-auto w-full max-w-[1740px];
+    @apply w-full;
   }
 
   .marketing-shell {
