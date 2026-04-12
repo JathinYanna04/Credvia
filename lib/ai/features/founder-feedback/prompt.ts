@@ -1,20 +1,47 @@
 import type { FounderIdeaPromptContext } from '@/lib/ai/features/founder-feedback/context';
 
 export const FOUNDER_RESPONSE_FORMAT_INSTRUCTIONS = [
-  'Return one JSON object only.',
-  'Required keys:',
-  'verdict, confidence, summary, rewrite, strengths, risks, suggestions, marketSignals, reasoning, evidence.',
-  'Optional keys:',
-  'investorPushback, bestNextExperiment, communityRead, moatConcern.',
-  'confidence must be a number in [0,1].',
-  'strengths, risks, suggestions, marketSignals, reasoning must be string arrays.',
-  'evidence must be an array of objects with keys claim, evidence, source, confidence.',
+  'STRICT JSON ONLY: return exactly one JSON object and nothing else.',
+  'Do not include markdown fences.',
+  'Required keys: verdict, confidence, summary.',
+  'All other keys are optional: rewrite, strengths, risks, suggestions, marketSignals, reasoning, evidence, investorPushback, bestNextExperiment, communityRead, moatConcern.',
+  'Allowed verdict values: promising, needs_work, high_risk.',
+  'confidence must be a number in [0, 1].',
+  'summary must start with "One-liner:".',
+  'If optional arrays are unknown, return [].',
+  'If optional text fields are unknown, return null.',
+  'rewrite, if present, should include both labels exactly: "Title:" and "Body:".',
+  'strengths, risks, suggestions, marketSignals, reasoning must be arrays of strings.',
+  'evidence, if present, must be an array of objects with fields claim, evidence, source, confidence.',
   'source must be one of: idea, revision, discussion, market.',
-  'summary must begin with "One-liner:" and be concrete, not motivational.',
-  'rewrite must include two labeled sections: "Title:" and "Body:".',
-  'suggestions must include at least one item prefixed "Missing answer:" and one item prefixed "Next step experiment:".',
-  'Do not include extra keys beyond the required and optional keys listed above.',
+  'When uncertain, prefer empty arrays or null optional values instead of inventing facts.',
+  'No extra keys.',
+  'Minimal valid example:',
+  '{"verdict":"needs_work","confidence":0.62,"summary":"One-liner: Problem exists, but distribution proof is currently weak."}',
 ].join('\n');
+
+export const FOUNDER_RESPONSE_FALLBACK_FORMAT_INSTRUCTIONS = [
+  'STRICT JSON ONLY. Return exactly one JSON object.',
+  'Required keys: verdict, confidence, summary.',
+  'Optional keys: rewrite, strengths, risks, suggestions, marketSignals, reasoning, evidence, investorPushback, bestNextExperiment, communityRead, moatConcern.',
+  'summary must start with "One-liner:".',
+  'If unknown, use [] for arrays and null for optional fields.',
+  'Do not include extra keys.',
+].join('\n');
+
+function compactText(value: string, maxLength: number) {
+  return value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function normalizeForDedupe(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 export function buildFounderIdeaSystemPrompt(promptVersion: string) {
   return [
@@ -44,34 +71,71 @@ export function buildFounderIdeaSystemPrompt(promptVersion: string) {
 }
 
 export function buildFounderIdeaUserPrompt(context: FounderIdeaPromptContext) {
-  const revisionLines = context.revisions.length > 0
-    ? context.revisions
-        .map(
-          (revision) =>
-            `- Revision ${revision.revisionNumber} (${revision.createdAt}): ${revision.title}\n  Change summary: ${revision.changeSummary ?? 'n/a'}\n  Body: ${revision.body.slice(0, 900)}`,
-        )
-        .join('\n')
-    : '- No revisions yet.';
+  const ideaTitle = compactText(context.title, 180);
+  const ideaBody = compactText(context.body, 1400);
+  const ideaProblem = compactText(context.problem, 380);
+  const ideaAudience = compactText(context.targetAudience, 320);
+  const ideaSolution = compactText(context.solution, 420);
+  const ideaMarketCategory = compactText(context.marketCategory, 220);
 
-  const discussionLines = context.topComments.length > 0
-    ? context.topComments
-        .map(
-          (comment, index) =>
-            `- Comment ${index + 1} (score ${comment.voteScore}, ${comment.createdAt}): ${comment.body.slice(0, 500)}`,
-        )
-        .join('\n')
-    : '- No community discussion yet.';
+  const seenSegments = new Set<string>([
+    normalizeForDedupe(ideaTitle),
+    normalizeForDedupe(ideaBody),
+    normalizeForDedupe(ideaProblem),
+    normalizeForDedupe(ideaAudience),
+    normalizeForDedupe(ideaSolution),
+    normalizeForDedupe(ideaMarketCategory),
+  ].filter((value) => value.length > 0));
+
+  const revisionLines = context.revisions
+    .slice(0, 1)
+    .map((revision) => {
+      const compactRevisionTitle = compactText(revision.title, 160);
+      const compactRevisionBody = compactText(revision.body, 420);
+      const compactRevisionSummary = compactText(revision.changeSummary ?? 'n/a', 220);
+
+      const revisionKey = normalizeForDedupe(
+        `${compactRevisionTitle} ${compactRevisionSummary} ${compactRevisionBody}`,
+      );
+
+      if (!revisionKey || seenSegments.has(revisionKey)) {
+        return null;
+      }
+
+      seenSegments.add(revisionKey);
+
+      return `- Revision ${revision.revisionNumber} (${revision.createdAt}): ${compactRevisionTitle}\n  Change summary: ${compactRevisionSummary}\n  Body: ${compactRevisionBody}`;
+    })
+    .filter((line): line is string => Boolean(line))
+    .join('\n') || '- No revisions yet.';
+
+  const discussionLines = context.topComments
+    .slice(0, 2)
+    .map((comment, index) => {
+      const compactCommentBody = compactText(comment.body, 260);
+      const commentKey = normalizeForDedupe(compactCommentBody);
+
+      if (!commentKey || seenSegments.has(commentKey)) {
+        return null;
+      }
+
+      seenSegments.add(commentKey);
+
+      return `- Comment ${index + 1} (score ${comment.voteScore}, ${comment.createdAt}): ${compactCommentBody}`;
+    })
+    .filter((line): line is string => Boolean(line))
+    .join('\n') || '- No community discussion yet.';
 
   return [
     'Assess this startup idea and produce hard-nosed founder feedback.',
     'Ground every point in the provided context only.',
     '',
-    `Idea title: ${context.title}`,
-    `Idea body: ${context.body}`,
-    `Problem: ${context.problem}`,
-    `Target audience: ${context.targetAudience}`,
-    `Solution: ${context.solution}`,
-    `Market category: ${context.marketCategory}`,
+    `Idea title: ${ideaTitle}`,
+    `Idea body: ${ideaBody}`,
+    `Problem: ${ideaProblem}`,
+    `Target audience: ${ideaAudience}`,
+    `Solution: ${ideaSolution}`,
+    `Market category: ${ideaMarketCategory}`,
     `Stage: ${context.stage}`,
     `Monetization: ${context.monetizationModel ?? 'not specified'}`,
     `Validation score: ${context.validationScore}`,
@@ -93,6 +157,7 @@ export function buildFounderIdeaUserPrompt(context: FounderIdeaPromptContext) {
     '- Rewrite must be materially better and include labeled sections exactly: "Title:" then "Body:".',
     '- Market signals should be observations, not fabricated stats.',
     '- Evidence entries must quote or tightly paraphrase supplied context with accurate source tags.',
+    '- If any field is uncertain, return structurally valid JSON with concise placeholders instead of dropping keys.',
     '- Keep tone crisp and non-flattering. Avoid generic startup advice.',
   ].join('\n');
 }

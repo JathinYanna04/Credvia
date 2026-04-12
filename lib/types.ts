@@ -233,6 +233,7 @@ export type AiRunStatus =
 
 export interface AiRunSummary {
   id: string;
+  parentRunId?: string | null;
   feature: AiFeature;
   subjectType: AiSubjectType;
   subjectId: string;

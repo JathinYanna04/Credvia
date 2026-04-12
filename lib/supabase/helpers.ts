@@ -9,6 +9,62 @@ type SupabaseClientLike = SupabaseClient<Database>;
 const LEGACY_PROFILE_SELECT =
   'user_id, username, full_name, headline, bio, avatar_url, location, website, current_company, education, metadata, profile_visibility, onboarding_complete, onboarding_completed_at, created_at, updated_at';
 
+const AUTH_TRANSPORT_ERROR_PATTERNS = [
+  'und_err_connect_timeout',
+  'und_err_socket',
+  'econnreset',
+  'etimedout',
+  'socket',
+  'network',
+  'fetch failed',
+  'connection closed',
+  'timeout',
+];
+
+export interface GetRequiredUserOptions {
+  timeoutMs?: number;
+  retries?: number;
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === 'object' && 'message' in error) {
+    const value = (error as { message?: unknown }).message;
+    return typeof value === 'string' ? value : '';
+  }
+
+  return '';
+}
+
+export function isSupabaseAuthTransportError(error: unknown) {
+  const message = errorMessage(error).toLowerCase();
+  return AUTH_TRANSPORT_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+async function resolveSupabaseUserWithTimeout(
+  supabase: SupabaseClientLike,
+  timeoutMs: number,
+) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const authPromise = supabase.auth.getUser();
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error('AUTH_SESSION_TIMEOUT'));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([authPromise, timeoutPromise]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 export function isSchemaCompatibilityError(error: { message?: string } | Error | null | undefined) {
   const message = error instanceof Error ? error.message : error?.message ?? '';
   return (
@@ -188,17 +244,60 @@ async function selectProfileRecord(supabase: SupabaseClientLike, user: User) {
   return null;
 }
 
-export async function getRequiredUser(supabase: SupabaseClientLike) {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+export async function getRequiredUser(
+  supabase: SupabaseClientLike,
+  options: GetRequiredUserOptions = {},
+) {
+  const timeoutMs = Math.max(250, options.timeoutMs ?? 3000);
+  const retries = Math.max(0, options.retries ?? 1);
 
-  if (error || !user) {
-    throw new Error('UNAUTHORIZED');
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const result = await resolveSupabaseUserWithTimeout(supabase, timeoutMs);
+      const {
+        data: { user },
+        error,
+      } = result;
+
+      if (error) {
+        if (isSupabaseAuthTransportError(error) && attempt < retries) {
+          continue;
+        }
+
+        if (isSupabaseAuthTransportError(error)) {
+          throw new Error('AUTH_SESSION_UNAVAILABLE');
+        }
+
+        throw new Error('UNAUTHORIZED');
+      }
+
+      if (!user) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      return user;
+    } catch (error) {
+      const message = errorMessage(error);
+      const isTimeout = message === 'AUTH_SESSION_TIMEOUT';
+      const isTransportFailure = isTimeout || isSupabaseAuthTransportError(error);
+
+      if (isTransportFailure && attempt < retries) {
+        continue;
+      }
+
+      if (isTransportFailure) {
+        throw new Error('AUTH_SESSION_UNAVAILABLE');
+      }
+
+      if (message === 'UNAUTHORIZED') {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      throw error instanceof Error ? error : new Error('UNAUTHORIZED');
+    }
   }
 
-  return user;
+  throw new Error('AUTH_SESSION_UNAVAILABLE');
 }
 
 function buildProfileUsername(user: User) {

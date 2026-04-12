@@ -1,12 +1,11 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AiCopyButton } from '@/components/ai/AiCopyButton';
 import { AiEvidenceList, type AiEvidenceItem } from '@/components/ai/AiEvidenceList';
 import { AiEmptyState } from '@/components/ai/AiEmptyState';
 import { AiErrorState } from '@/components/ai/AiErrorState';
 import { AiMetadataRow } from '@/components/ai/AiMetadataRow';
-import { AiRegenerateControl } from '@/components/ai/AiRegenerateControl';
 import { AiScoreMeter } from '@/components/ai/AiScoreMeter';
 import { AiShareButton } from '@/components/ai/AiShareButton';
 import { AiSkeletonCard } from '@/components/ai/AiSkeletonCard';
@@ -42,14 +41,24 @@ interface FounderIdeaReviewView {
 }
 
 interface FounderFeedbackState {
+  state?: 'empty' | 'queued' | 'processing' | 'succeeded' | 'failed' | 'stale';
+  terminal?: boolean;
+  shouldPoll?: boolean;
   latestRun: AiRunSummary | null;
   review: FounderIdeaReviewView | null;
   stale: boolean;
+  recoveredFromLegacyOutputFailure?: boolean;
+}
+
+interface FounderFeedbackError {
+  code?: string;
+  message?: string;
+  suggestedAction?: string;
 }
 
 interface FounderFeedbackResponse {
   data?: FounderFeedbackState;
-  error?: { message?: string };
+  error?: FounderFeedbackError;
 }
 
 interface FounderFeedbackCreateResponse {
@@ -57,9 +66,110 @@ interface FounderFeedbackCreateResponse {
     run: AiRunSummary;
     reused: boolean;
   };
-  error?: {
-    message?: string;
-  };
+  error?: FounderFeedbackError;
+}
+
+type FeedbackLoadResult =
+  | { kind: 'success'; data: FounderFeedbackState }
+  | { kind: 'unauthorized'; message: string; code: string | null }
+  | { kind: 'temporary'; message: string; code: string | null }
+  | { kind: 'error'; message: string; code: string | null }
+  | { kind: 'aborted' };
+
+type PollStopReason =
+  | 'succeeded'
+  | 'failed'
+  | 'unauthenticated'
+  | 'network-degraded'
+  | 'max-attempts'
+  | 'hidden-tab'
+  | 'idle';
+
+type GenerationBlockReason =
+  | 'cannot_request'
+  | 'already_loading'
+  | 'already_polling'
+  | 'missing_idea_id';
+
+type GenerationInfoReason = 'stale_recovered_state';
+
+const MAX_POLL_ATTEMPTS = 24;
+const MAX_TRANSIENT_POLL_FAILURES = 4;
+const FAST_POLL_DELAY_MS = 1500;
+const MEDIUM_POLL_DELAY_MS = 3500;
+const SLOW_POLL_DELAY_MS = 7000;
+const FOUNDER_CONFIG_ERROR_MESSAGE =
+  'AI review is not configured yet. Groq is selected, but no API key is available to process this request.';
+
+function getGenerationBlockReason(args: {
+  ideaId: string;
+  canRequest: boolean;
+  isLoading: boolean;
+  isPolling: boolean;
+}): GenerationBlockReason | null {
+  if (!args.ideaId.trim()) {
+    return 'missing_idea_id';
+  }
+
+  if (!args.canRequest) {
+    return 'cannot_request';
+  }
+
+  if (args.isLoading) {
+    return 'already_loading';
+  }
+
+  if (args.isPolling) {
+    return 'already_polling';
+  }
+
+  return null;
+}
+
+function isGenerationButtonDisabled(reason: GenerationBlockReason | null) {
+  return reason === 'already_loading' || reason === 'already_polling';
+}
+
+function isGenerationActionBlocked(reason: GenerationBlockReason | null) {
+  return reason !== null;
+}
+
+function getGenerationBlockReasonMessage(reason: GenerationBlockReason | null) {
+  if (reason === 'cannot_request') {
+    return 'cannot_request: founder permissions are missing for this idea.';
+  }
+
+  if (reason === 'already_loading') {
+    return 'already_loading: feedback state is still loading.';
+  }
+
+  if (reason === 'already_polling') {
+    return 'already_polling: a generation run is already queued/running.';
+  }
+
+  if (reason === 'missing_idea_id') {
+    return 'missing_idea_id: cannot send generation request without a valid idea id.';
+  }
+
+  return null;
+}
+
+function getGenerationInfoReason(args: {
+  hasRecoveredLegacyEmptyState: boolean;
+}): GenerationInfoReason | null {
+  if (args.hasRecoveredLegacyEmptyState) {
+    return 'stale_recovered_state';
+  }
+
+  return null;
+}
+
+function getGenerationInfoReasonMessage(reason: GenerationInfoReason | null) {
+  if (reason === 'stale_recovered_state') {
+    return 'A prior malformed output was cleared. You can request a fresh AI review now.';
+  }
+
+  return null;
 }
 
 interface ScoreBreakdownRow {
@@ -191,6 +301,121 @@ function scoreTone(score: number) {
   return 'bg-rose-400';
 }
 
+function isPollableRunStatus(status: AiRunSummary['status'] | null) {
+  return status === 'queued' || status === 'running';
+}
+
+function shouldPollState(state: FounderFeedbackState | null) {
+  if (!state) {
+    return false;
+  }
+
+  const hasPollableRun = isPollableRunStatus(state.latestRun?.status ?? null);
+  if (!hasPollableRun) {
+    return false;
+  }
+
+  if (state.shouldPoll === false) {
+    return false;
+  }
+
+  return true;
+}
+
+function nextPollDelay(attempt: number) {
+  if (attempt <= 3) {
+    return FAST_POLL_DELAY_MS;
+  }
+
+  if (attempt <= 10) {
+    return MEDIUM_POLL_DELAY_MS;
+  }
+
+  return SLOW_POLL_DELAY_MS;
+}
+
+function isTemporaryErrorStatus(status: number, code: string | null) {
+  return status >= 500 || status === 429 || code === 'ANALYSIS_SERVICE_UNAVAILABLE';
+}
+
+function isUnauthorizedStatus(status: number, code: string | null) {
+  return status === 401 || code === 'UNAUTHORIZED';
+}
+
+function resolveRunErrorMessage(run: AiRunSummary | null | undefined) {
+  if (!run) {
+    return null;
+  }
+
+  const metadata = run.providerMetadata && typeof run.providerMetadata === 'object'
+    ? (run.providerMetadata as Record<string, unknown>)
+    : {};
+  const metadataErrorCode = typeof metadata.errorCode === 'string' ? metadata.errorCode : null;
+  const effectiveCode = run.errorCode ?? metadataErrorCode;
+
+  if (effectiveCode === 'AI_OUTPUT_REPAIR_FAILED') {
+    const validationIssues = Array.isArray(metadata.validationIssues)
+      ? metadata.validationIssues.filter((item): item is string => typeof item === 'string')
+      : [];
+    const primaryIssue = validationIssues[0] ?? null;
+
+    if (primaryIssue) {
+      return `AI review output needed recovery and was returned as partial success. ${primaryIssue}`;
+    }
+
+    return 'AI review output needed recovery and was returned as partial success. Retry to regenerate for a fully structured response.';
+  }
+
+  if (effectiveCode === 'AI_PROVIDER_NOT_CONFIGURED') {
+    return FOUNDER_CONFIG_ERROR_MESSAGE;
+  }
+
+  if (effectiveCode === 'RATE_LIMITED') {
+    return 'AI review is temporarily rate-limited. Please retry in a few seconds.';
+  }
+
+  return run.errorMessage ?? null;
+}
+
+function resolveStructuredMode(run: AiRunSummary | null | undefined) {
+  const metadata = run?.providerMetadata && typeof run.providerMetadata === 'object'
+    ? (run.providerMetadata as Record<string, unknown>)
+    : {};
+
+  return typeof metadata.structuredMode === 'string' ? metadata.structuredMode : null;
+}
+
+function isRecoveredPartialMode(mode: string | null) {
+  return mode === 'best_effort_raw_fallback' || mode === 'local_summary_fallback';
+}
+
+function logPollEvent(event: string, meta: Record<string, unknown> = {}) {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+
+  // eslint-disable-next-line no-console
+  console.info(
+    JSON.stringify({
+      scope: 'founder-feedback-poll',
+      event,
+      ...meta,
+    }),
+  );
+}
+
+function terminalReasonFromState(state: FounderFeedbackState): PollStopReason {
+  if (state.latestRun?.status === 'failed' || state.state === 'failed') {
+    return 'failed';
+  }
+
+  if (state.review || state.state === 'succeeded' || state.state === 'stale') {
+    return 'succeeded';
+  }
+
+  return 'idle';
+}
+
 export function FounderIdeaFeedbackPanel({
   ideaId,
   canRequest,
@@ -202,65 +427,570 @@ export function FounderIdeaFeedbackPanel({
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pollingActive, setPollingActive] = useState(false);
+  const [pollAttempt, setPollAttempt] = useState(0);
+  const [pollFailureStreak, setPollFailureStreak] = useState(0);
+  const [pollTick, setPollTick] = useState(0);
+  const [pollNotice, setPollNotice] = useState<string | null>(null);
+  const [pollStopReason, setPollStopReason] = useState<PollStopReason | null>(null);
+  const [visibilityPaused, setVisibilityPaused] = useState(false);
 
-  const runStatus = state?.latestRun?.status ?? null;
-  const isProcessing = runStatus === 'queued' || runStatus === 'running';
-
-  const loadState = useCallback(async () => {
-    if (!canRequest) {
-      setState(null);
-      return;
-    }
-
-    const response = await fetch(`/api/v1/ideas/${ideaId}/ai-feedback`, {
-      cache: 'no-store',
-    });
-
-    const payload = (await response.json().catch(() => null)) as FounderFeedbackResponse | null;
-
-    if (!response.ok || !payload?.data) {
-      throw new Error(payload?.error?.message ?? 'Could not load founder feedback.');
-    }
-
-    setState(payload.data);
-  }, [canRequest, ideaId]);
+  const stateRef = useRef<FounderFeedbackState | null>(null);
+  const pollInFlightRef = useRef(false);
+  const pollAbortRef = useRef<AbortController | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingActiveRef = useRef(false);
+  const pollAttemptRef = useRef(0);
+  const pollFailureRef = useRef(0);
 
   useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    pollingActiveRef.current = pollingActive;
+  }, [pollingActive]);
+
+  useEffect(() => {
+    pollAttemptRef.current = pollAttempt;
+  }, [pollAttempt]);
+
+  useEffect(() => {
+    pollFailureRef.current = pollFailureStreak;
+  }, [pollFailureStreak]);
+
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.info('[founder-feedback] panel mounted', {
+      version: 'debug-1',
+      ideaId,
+      canRequest,
+    });
+  }, [canRequest, ideaId]);
+
+  const runStatus = state?.latestRun?.status ?? null;
+  const structuredMode = resolveStructuredMode(state?.latestRun ?? null);
+  const isPartialRecoveredSuccess = Boolean(state?.review && isRecoveredPartialMode(structuredMode));
+  const isProcessing = shouldPollState(state);
+  const isGenerationLoading = loading || requesting;
+  const isGenerationPolling = isProcessing || pollingActive;
+  const hasRecoveredLegacyEmptyState = Boolean(
+    !loading
+    && state?.state === 'empty'
+    && !state?.latestRun
+    && !state?.review
+    && state?.recoveredFromLegacyOutputFailure,
+  );
+  const generationBlockReason = getGenerationBlockReason({
+    ideaId,
+    canRequest,
+    isLoading: isGenerationLoading,
+    isPolling: isGenerationPolling,
+  });
+  const generationBlockMessage = getGenerationBlockReasonMessage(generationBlockReason);
+  const generationInfoReason = getGenerationInfoReason({
+    hasRecoveredLegacyEmptyState,
+  });
+  const generationInfoMessage = getGenerationInfoReasonMessage(generationInfoReason);
+  const generationDisabled = isGenerationButtonDisabled(generationBlockReason);
+
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.info('[founder-feedback] button render', {
+      canRequest,
+      isLoading: isGenerationLoading,
+      isPolling: isGenerationPolling,
+      latestRunStatus: runStatus,
+      latestRunErrorCode: state?.latestRun?.errorCode ?? null,
+      hasReview: Boolean(state?.review),
+      disabled: generationDisabled,
+      disabledReason: generationDisabled ? generationBlockReason : null,
+      gateReason: generationBlockReason,
+      infoReason: generationInfoReason,
+    });
+  }, [
+    canRequest,
+    generationBlockReason,
+    generationInfoReason,
+    generationDisabled,
+    isGenerationLoading,
+    isGenerationPolling,
+    runStatus,
+    state?.latestRun?.errorCode,
+    state?.review,
+  ]);
+
+  const clearPollTimer = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  const abortPollRequest = useCallback(() => {
+    if (pollAbortRef.current) {
+      pollAbortRef.current.abort();
+      pollAbortRef.current = null;
+    }
+  }, []);
+
+  const stopPolling = useCallback(
+    (reason: PollStopReason, message?: string) => {
+      clearPollTimer();
+      abortPollRequest();
+      pollInFlightRef.current = false;
+      pollingActiveRef.current = false;
+      setPollingActive(false);
+      setPollStopReason(reason);
+
+      if (message) {
+        setPollNotice(message);
+      }
+
+      if (reason === 'hidden-tab') {
+        setVisibilityPaused(true);
+      }
+
+      logPollEvent('stop', {
+        reason,
+        attempts: pollAttemptRef.current,
+        transientFailures: pollFailureRef.current,
+      });
+    },
+    [abortPollRequest, clearPollTimer],
+  );
+
+  const startPolling = useCallback(
+    (source: 'initial' | 'trigger' | 'resume') => {
+      if (!canRequest || pollingActiveRef.current) {
+        // eslint-disable-next-line no-console
+        console.warn('[founder-feedback] aborted before request', {
+          reason: canRequest ? 'already_polling' : 'cannot_request',
+          stage: 'start_polling',
+          source,
+        });
+        return;
+      }
+
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        setVisibilityPaused(true);
+        setPollStopReason('hidden-tab');
+        setPollNotice('Polling paused while this tab is in the background.');
+        // eslint-disable-next-line no-console
+        console.warn('[founder-feedback] aborted before request', {
+          reason: 'hidden_tab_visibility',
+          stage: 'start_polling',
+          source,
+        });
+        return;
+      }
+
+      setVisibilityPaused(false);
+      setPollStopReason(null);
+      setPollNotice(null);
+      setPollAttempt(0);
+      setPollFailureStreak(0);
+      pollingActiveRef.current = true;
+      setPollingActive(true);
+      setPollTick((value) => value + 1);
+
+      logPollEvent('start', {
+        source,
+      });
+    },
+    [canRequest],
+  );
+
+  const fetchFeedbackState = useCallback(
+    async (
+      source: 'initial' | 'manual' | 'poll',
+      signal?: AbortSignal,
+    ): Promise<FeedbackLoadResult> => {
+      try {
+        const response = await fetch(`/api/v1/ideas/${ideaId}/ai-feedback`, {
+          cache: 'no-store',
+          signal,
+          headers: {
+            'x-credvia-ai-feedback-source': source,
+          },
+        });
+
+        const payload = (await response.json().catch(() => null)) as FounderFeedbackResponse | null;
+
+        if (response.ok && payload?.data) {
+          return {
+            kind: 'success',
+            data: payload.data,
+          };
+        }
+
+        const code = payload?.error?.code ?? null;
+        const message = payload?.error?.message ?? 'Could not load founder feedback.';
+
+        if (isUnauthorizedStatus(response.status, code)) {
+          return {
+            kind: 'unauthorized',
+            message: 'Your session is no longer available. Sign in again to continue polling.',
+            code,
+          };
+        }
+
+        if (isTemporaryErrorStatus(response.status, code)) {
+          return {
+            kind: 'temporary',
+            message: 'Temporarily unable to refresh AI review.',
+            code,
+          };
+        }
+
+        return {
+          kind: 'error',
+          message,
+          code,
+        };
+      } catch (fetchError) {
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          return {
+            kind: 'aborted',
+          };
+        }
+
+        return {
+          kind: 'temporary',
+          message: 'Temporarily unable to refresh AI review.',
+          code: null,
+        };
+      }
+    },
+    [ideaId],
+  );
+
+  const applyLoadedState = useCallback((nextState: FounderFeedbackState) => {
+    setState((current) => {
+      const preserveLastReview =
+        Boolean(current?.review)
+        && !nextState.review
+        && shouldPollState(nextState);
+
+      return {
+        ...nextState,
+        review: preserveLastReview ? current?.review ?? null : nextState.review,
+      };
+    });
+    setError(null);
+  }, []);
+
+  const refreshState = useCallback(
+    async (source: 'initial' | 'manual') => {
+      const outcome = await fetchFeedbackState(source);
+
+      if (outcome.kind === 'success') {
+        applyLoadedState(outcome.data);
+      }
+
+      return outcome;
+    },
+    [applyLoadedState, fetchFeedbackState],
+  );
+
+  useEffect(() => {
+    let disposed = false;
+
     if (!canRequest) {
       setLoading(false);
       setError(null);
       setState(null);
+      setPollNotice(null);
+      setPollStopReason('idle');
+      stopPolling('idle');
       return;
     }
 
     setLoading(true);
     setError(null);
+    setPollNotice(null);
 
-    loadState()
-      .catch((fetchError) => {
-        setError(fetchError instanceof Error ? fetchError.message : 'Could not load founder feedback.');
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [canRequest, loadState]);
+    void (async () => {
+      const outcome = await refreshState('initial');
+      if (disposed) {
+        return;
+      }
+
+      if (outcome.kind === 'success') {
+        if (shouldPollState(outcome.data)) {
+          startPolling('initial');
+        } else {
+          setPollStopReason(terminalReasonFromState(outcome.data));
+        }
+      } else if (outcome.kind === 'unauthorized') {
+        setPollStopReason('unauthenticated');
+        setError(outcome.message);
+      } else if (outcome.kind === 'temporary') {
+        setPollStopReason('network-degraded');
+        setPollNotice('Temporarily unable to refresh AI review.');
+      } else if (outcome.kind === 'error') {
+        setError(outcome.message);
+      }
+
+      setLoading(false);
+    })();
+
+    return () => {
+      disposed = true;
+    };
+  }, [canRequest, ideaId, refreshState, startPolling, stopPolling]);
 
   useEffect(() => {
-    if (!canRequest || !isProcessing) {
+    if (!pollingActive || visibilityPaused) {
       return;
     }
 
-    const interval = setInterval(() => {
-      void loadState().catch(() => {
-        // Keep existing UI state and allow manual retry if a poll fails.
-      });
-    }, 3000);
+    clearPollTimer();
+    const delayMs = pollAttempt === 0 ? 0 : nextPollDelay(pollAttempt);
+    pollTimerRef.current = setTimeout(() => {
+      setPollTick((value) => value + 1);
+    }, delayMs);
 
-    return () => clearInterval(interval);
-  }, [canRequest, isProcessing, loadState]);
+    return () => {
+      clearPollTimer();
+    };
+  }, [clearPollTimer, pollAttempt, pollingActive, visibilityPaused]);
+
+  useEffect(() => {
+    if (!pollingActive || visibilityPaused) {
+      return;
+    }
+
+    if (pollInFlightRef.current) {
+      return;
+    }
+
+    const controller = new AbortController();
+    pollAbortRef.current = controller;
+    pollInFlightRef.current = true;
+
+    void (async () => {
+      const outcome = await fetchFeedbackState('poll', controller.signal);
+
+      if (outcome.kind === 'aborted') {
+        return;
+      }
+
+      if (outcome.kind === 'success') {
+        applyLoadedState(outcome.data);
+        setPollFailureStreak(0);
+
+        const nextAttemptValue = pollAttemptRef.current + 1;
+        if (!shouldPollState(outcome.data)) {
+          stopPolling(terminalReasonFromState(outcome.data));
+          return;
+        }
+
+        if (nextAttemptValue >= MAX_POLL_ATTEMPTS) {
+          stopPolling(
+            'max-attempts',
+            'AI analysis is taking longer than expected. Polling paused. Use Resume Polling to continue.',
+          );
+          return;
+        }
+
+        setPollAttempt(nextAttemptValue);
+        return;
+      }
+
+      if (outcome.kind === 'unauthorized') {
+        setError(null);
+        stopPolling('unauthenticated', outcome.message);
+        return;
+      }
+
+      if (outcome.kind === 'temporary') {
+        const nextFailureValue = pollFailureRef.current + 1;
+        const nextAttemptValue = pollAttemptRef.current + 1;
+        setPollFailureStreak(nextFailureValue);
+
+        if (nextFailureValue >= MAX_TRANSIENT_POLL_FAILURES) {
+          stopPolling(
+            'network-degraded',
+            'Temporarily unable to refresh AI review. Polling paused to avoid repeated failures.',
+          );
+          return;
+        }
+
+        if (nextAttemptValue >= MAX_POLL_ATTEMPTS) {
+          stopPolling(
+            'max-attempts',
+            'AI analysis is taking longer than expected. Polling paused. Use Resume Polling to continue.',
+          );
+          return;
+        }
+
+        setPollNotice('Temporarily unable to refresh AI review. Retrying with backoff.');
+        setPollAttempt(nextAttemptValue);
+        return;
+      }
+
+      setError(outcome.message);
+      stopPolling('network-degraded', 'Unable to refresh AI review. Retry when ready.');
+    })().finally(() => {
+      if (pollAbortRef.current === controller) {
+        pollAbortRef.current = null;
+      }
+
+      pollInFlightRef.current = false;
+    });
+  }, [applyLoadedState, fetchFeedbackState, pollTick, pollingActive, stopPolling, visibilityPaused]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const onVisibilityChange = () => {
+      const hidden = document.visibilityState === 'hidden';
+
+      if (hidden) {
+        if (pollingActive) {
+          stopPolling('hidden-tab', 'Polling paused while this tab is in the background.');
+        }
+        return;
+      }
+
+      setVisibilityPaused(false);
+
+      if (pollStopReason === 'hidden-tab' && shouldPollState(stateRef.current)) {
+        startPolling('resume');
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [pollStopReason, pollingActive, startPolling, stopPolling]);
+
+  useEffect(() => {
+    return () => {
+      clearPollTimer();
+      abortPollRequest();
+    };
+  }, [abortPollRequest, clearPollTimer]);
+
+  async function resumePolling() {
+    setError(null);
+    setPollNotice(null);
+
+    const outcome = await refreshState('manual');
+
+    if (outcome.kind === 'success') {
+      if (shouldPollState(outcome.data)) {
+        startPolling('resume');
+        return;
+      }
+
+      setPollStopReason(terminalReasonFromState(outcome.data));
+      return;
+    }
+
+    if (outcome.kind === 'unauthorized') {
+      stopPolling('unauthenticated', outcome.message);
+      return;
+    }
+
+    if (outcome.kind === 'temporary') {
+      stopPolling('network-degraded', 'Temporarily unable to refresh AI review.');
+      return;
+    }
+
+    if (outcome.kind === 'error') {
+      setError(outcome.message);
+    }
+  }
+
+  async function retryRefresh() {
+    setError(null);
+    const outcome = await refreshState('manual');
+
+    if (outcome.kind === 'success') {
+      if (shouldPollState(outcome.data)) {
+        startPolling('resume');
+      } else {
+        setPollStopReason(terminalReasonFromState(outcome.data));
+        setPollNotice(null);
+      }
+      return;
+    }
+
+    if (outcome.kind === 'unauthorized') {
+      setPollStopReason('unauthenticated');
+      setPollNotice(outcome.message);
+      return;
+    }
+
+    if (outcome.kind === 'temporary') {
+      setPollStopReason('network-degraded');
+      setPollNotice(outcome.message);
+      return;
+    }
+
+    if (outcome.kind === 'error') {
+      setError(outcome.message);
+    }
+  }
 
   async function triggerGeneration(regenerate: boolean) {
-    if (!canRequest) {
+    const currentState = stateRef.current;
+    const latestRunStatus = currentState?.latestRun?.status ?? null;
+    const latestRunErrorCode = currentState?.latestRun?.errorCode ?? null;
+    const localRecoveredState = Boolean(
+      !loading
+      && currentState?.state === 'empty'
+      && !currentState?.latestRun
+      && !currentState?.review
+      && currentState?.recoveredFromLegacyOutputFailure,
+    );
+
+    const blockReason = getGenerationBlockReason({
+      ideaId,
+      canRequest,
+      isLoading: loading || requesting,
+      isPolling: shouldPollState(currentState) || pollingActiveRef.current,
+    });
+    const infoReason = getGenerationInfoReason({
+      hasRecoveredLegacyEmptyState: localRecoveredState,
+    });
+    const disabled = isGenerationButtonDisabled(blockReason);
+    const requestBlocked = isGenerationActionBlocked(blockReason);
+
+    // eslint-disable-next-line no-console
+    console.info('[founder-feedback] click triggered', {
+      ideaId,
+      regenerate,
+    });
+
+    // eslint-disable-next-line no-console
+    console.info('[founder-feedback] click', {
+      ideaId,
+      canRequest,
+      disabled,
+      latestRunStatus,
+      latestRunErrorCode,
+      gateReason: blockReason,
+      infoReason,
+    });
+
+    if (requestBlocked) {
+      const message = getGenerationBlockReasonMessage(blockReason);
+      // eslint-disable-next-line no-console
+      console.warn('[founder-feedback] aborted before request', {
+        reason: blockReason,
+        ideaId,
+      });
+
+      if (message) {
+        setPollNotice(message);
+      }
+
       return;
     }
 
@@ -268,26 +998,74 @@ export function FounderIdeaFeedbackPanel({
     setError(null);
 
     try {
+      const shouldForceNewRun = regenerate
+        || stateRef.current?.state === 'failed'
+        || stateRef.current?.latestRun?.status === 'failed';
+      const requestPayload = {
+        regenerate: shouldForceNewRun,
+        forceNewRun: shouldForceNewRun,
+      };
+
+      // eslint-disable-next-line no-console
+      console.info('[founder-feedback] post triggered', {
+        ideaId,
+        url: `/api/v1/ideas/${ideaId}/ai-feedback`,
+        payload: requestPayload,
+      });
+
+      // eslint-disable-next-line no-console
+      console.info('[founder-feedback] about to POST /ai-feedback', {
+        ideaId,
+        url: `/api/v1/ideas/${ideaId}/ai-feedback`,
+        method: 'POST',
+        payload: requestPayload,
+      });
+
       const response = await fetch(`/api/v1/ideas/${ideaId}/ai-feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ regenerate }),
+        body: JSON.stringify(requestPayload),
       });
 
-      const payload = (await response.json().catch(() => null)) as FounderFeedbackCreateResponse | null;
+      // eslint-disable-next-line no-console
+      console.info('[founder-feedback] POST completed', {
+        status: response.status,
+      });
 
-      if (!response.ok || !payload?.data?.run) {
-        throw new Error(payload?.error?.message ?? 'Could not start founder feedback generation.');
+      const responsePayload = (await response.json().catch(() => null)) as FounderFeedbackCreateResponse | null;
+
+      if (!response.ok || !responsePayload?.data?.run) {
+        // eslint-disable-next-line no-console
+        console.warn('[founder-feedback] aborted before request', {
+          reason: 'post_response_invalid',
+          status: response.status,
+          errorCode: responsePayload?.error?.code ?? null,
+        });
+        throw new Error(responsePayload?.error?.message ?? 'Could not start founder feedback generation.');
       }
 
-      setState((current) => ({
-        latestRun: payload.data?.run ?? null,
-        review: current?.review ?? null,
-        stale: current?.stale ?? false,
-      }));
+      const optimisticState: FounderFeedbackState = {
+        state: 'queued',
+        terminal: false,
+        shouldPoll: true,
+        latestRun: responsePayload.data?.run ?? null,
+        review: stateRef.current?.review ?? null,
+        stale: stateRef.current?.stale ?? false,
+      };
 
-      await loadState();
+      applyLoadedState(optimisticState);
+      startPolling('trigger');
+
+      const refreshOutcome = await refreshState('manual');
+      if (refreshOutcome.kind === 'success' && !shouldPollState(refreshOutcome.data)) {
+        stopPolling(terminalReasonFromState(refreshOutcome.data));
+      }
     } catch (requestError) {
+      // eslint-disable-next-line no-console
+      console.warn('[founder-feedback] aborted before request', {
+        reason: 'request_exception',
+        message: requestError instanceof Error ? requestError.message : String(requestError),
+      });
       setError(requestError instanceof Error ? requestError.message : 'Could not start founder feedback generation.');
     } finally {
       setRequesting(false);
@@ -363,6 +1141,30 @@ export function FounderIdeaFeedbackPanel({
   }, [state?.review]);
 
   const statusInlineMessage = useMemo(() => {
+    if (pollNotice) {
+      return pollNotice;
+    }
+
+    if (isPartialRecoveredSuccess) {
+      return 'AI review completed with partial structure recovery after output-format issues.';
+    }
+
+    if (state?.state === 'failed') {
+      return resolveRunErrorMessage(state.latestRun) ?? 'The latest run failed. Retry when ready.';
+    }
+
+    if (pollStopReason === 'unauthenticated') {
+      return 'Session is unavailable. Sign in again, then resume polling.';
+    }
+
+    if (pollStopReason === 'network-degraded') {
+      return 'Temporarily unable to refresh AI review. Use Resume Polling when ready.';
+    }
+
+    if (pollStopReason === 'max-attempts') {
+      return 'Polling paused after a bounded window to avoid endless network activity.';
+    }
+
     if (runStatus === 'queued') {
       return 'Queued for analysis. You can keep working while this run processes.';
     }
@@ -372,15 +1174,24 @@ export function FounderIdeaFeedbackPanel({
     }
 
     if (runStatus === 'failed') {
-      return state?.latestRun?.errorMessage ?? 'The latest run failed. Retry when ready.';
+      return resolveRunErrorMessage(state?.latestRun) ?? 'The latest run failed. Retry when ready.';
     }
 
     if (runStatus === 'succeeded') {
-      return 'Latest AI review is ready.';
+      return state?.review ? 'Latest AI review is ready.' : 'Run completed. Waiting for review payload to settle.';
     }
 
     return null;
-  }, [runStatus, state?.latestRun?.errorMessage]);
+  }, [
+    isPartialRecoveredSuccess,
+    pollNotice,
+    pollStopReason,
+    runStatus,
+    state?.latestRun?.errorCode,
+    state?.latestRun?.errorMessage,
+    state?.latestRun?.providerMetadata,
+    state?.review,
+  ]);
 
   const primaryActionLabel = state?.review ? 'Regenerate AI Review' : 'Get AI Feedback';
 
@@ -405,7 +1216,8 @@ export function FounderIdeaFeedbackPanel({
                 type="button"
                 size="sm"
                 onClick={() => void triggerGeneration(Boolean(state?.review))}
-                disabled={requesting || isProcessing}
+                title={generationBlockMessage ?? generationInfoMessage ?? undefined}
+                aria-disabled={generationDisabled}
               >
                 {requesting || isProcessing ? 'Working...' : primaryActionLabel}
               </Button>
@@ -413,9 +1225,65 @@ export function FounderIdeaFeedbackPanel({
           </div>
         </div>
 
+        {generationBlockMessage ? (
+          <div
+            className="rounded-2xl border border-border-subtle bg-bg-base/70 px-4 py-3 text-xs text-text-secondary"
+            data-testid="founder-feedback-generation-block-reason"
+          >
+            Generation gate: {generationBlockMessage}
+          </div>
+        ) : null}
+
+        {!generationBlockMessage && generationInfoMessage ? (
+          <div
+            className="rounded-2xl border border-border-subtle/70 bg-bg-base/40 px-4 py-3 text-xs text-text-secondary"
+            data-testid="founder-feedback-generation-info-reason"
+          >
+            {generationInfoMessage}
+          </div>
+        ) : null}
+
         {statusInlineMessage ? (
           <div className="rounded-2xl border border-border-subtle bg-bg-base/70 px-4 py-3 text-sm text-text-secondary">
             {statusInlineMessage}
+          </div>
+        ) : null}
+
+        {canRequest && (
+          pollStopReason === 'unauthenticated'
+          || pollStopReason === 'network-degraded'
+          || pollStopReason === 'max-attempts'
+          || pollStopReason === 'hidden-tab'
+        ) ? (
+          <div className="rounded-2xl border border-border-subtle bg-bg-base/70 px-4 py-3 text-sm text-text-secondary">
+            <p>
+              {pollStopReason === 'unauthenticated'
+                ? 'Session issue detected during polling.'
+                : pollStopReason === 'hidden-tab'
+                  ? 'Polling is paused because the tab is hidden.'
+                  : 'Polling is paused to avoid repeated failed requests.'}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  void resumePolling();
+                }}
+              >
+                Resume Polling
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void retryRefresh();
+                }}
+              >
+                Retry Refresh
+              </Button>
+            </div>
           </div>
         ) : null}
 
@@ -444,7 +1312,8 @@ export function FounderIdeaFeedbackPanel({
               <Button
                 type="button"
                 onClick={() => void triggerGeneration(false)}
-                disabled={requesting || isProcessing}
+                title={generationBlockMessage ?? generationInfoMessage ?? undefined}
+                aria-disabled={generationDisabled}
               >
                 {requesting || isProcessing ? 'Starting...' : runStatus === 'failed' ? 'Retry AI Feedback' : 'Get AI Feedback'}
               </Button>
@@ -461,6 +1330,12 @@ export function FounderIdeaFeedbackPanel({
 
         {state?.review ? (
           <div className="space-y-5">
+            {isPartialRecoveredSuccess ? (
+              <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+                Partial success: output formatting recovery was applied to build this review. Regenerate for a cleaner structured run.
+              </div>
+            ) : null}
+
             {state.stale ? (
               <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
                 This report is stale because the idea changed after the last run.
@@ -621,14 +1496,18 @@ export function FounderIdeaFeedbackPanel({
 
             <div className="flex flex-wrap gap-2">
               {canRequest ? (
-                <AiRegenerateControl
-                  onRegenerate={() => {
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
                     void triggerGeneration(true);
                   }}
-                  loading={requesting || isProcessing}
-                  disabled={requesting || isProcessing}
-                  label="Regenerate"
-                />
+                  title={generationBlockMessage ?? generationInfoMessage ?? undefined}
+                  aria-disabled={generationDisabled}
+                >
+                  {requesting || isProcessing ? 'Regenerating...' : 'Regenerate'}
+                </Button>
               ) : null}
               {reportText ? <AiCopyButton value={reportText} label="Copy report" /> : null}
             </div>
@@ -637,7 +1516,7 @@ export function FounderIdeaFeedbackPanel({
 
         {!loading && runStatus === 'failed' && !state?.review && canRequest ? (
           <div className="rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
-            {state?.latestRun?.errorMessage ?? 'Founder feedback generation failed.'}
+            {resolveRunErrorMessage(state?.latestRun) ?? 'Founder feedback generation failed.'}
           </div>
         ) : null}
       </div>

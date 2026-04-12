@@ -11,6 +11,7 @@ const AiEnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().trim().min(1).optional(),
   GROQ_API_KEY: z.string().trim().min(1).optional(),
   AI_GROQ_API_KEY: z.string().trim().min(1).optional(),
+  RESUME_EXTRACTOR_GROQ_API_KEY: z.string().trim().min(1).optional(),
   GROQ_KEY: z.string().trim().min(1).optional(),
   GROQ_TOKEN: z.string().trim().min(1).optional(),
   LLM_API_KEY: z.string().trim().min(1).optional(),
@@ -25,6 +26,7 @@ const AiEnvSchema = z.object({
   AI_GROQ_MODEL: z.string().trim().min(1).optional(),
   GROQ_MODEL: z.string().trim().min(1).optional(),
   AI_PROVIDER_TIMEOUT_MS: z.coerce.number().int().positive().max(120000).optional(),
+  AI_PROVIDER_MAX_RETRIES: z.coerce.number().int().min(0).max(5).optional(),
   AI_PROMPT_VERSION_FOUNDER: z.string().trim().min(1).max(80).optional(),
   AI_PROMPT_VERSION_CAREER: z.string().trim().min(1).max(80).optional(),
   AI_PROMPT_VERSION_MODERATION: z.string().trim().min(1).max(80).optional(),
@@ -37,6 +39,7 @@ const AiEnvSchema = z.object({
   AI_WORKER_TIMEOUT_MS: z.coerce.number().int().positive().max(300000).optional(),
   AI_WORKER_BACKOFF_BASE_MS: z.coerce.number().int().positive().max(60000).optional(),
   AI_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().positive().max(60000).optional(),
+  AI_WORKER_PARALLELISM: z.coerce.number().int().positive().max(32).optional(),
   AI_WORKER_SECRET: z.string().trim().min(1).optional(),
 });
 
@@ -44,11 +47,15 @@ export type AiProvider = z.infer<typeof AiProviderSchema>;
 type ParsedAiEnv = z.infer<typeof AiEnvSchema>;
 
 const GROQ_API_KEY_ENV_PRIORITY: ReadonlyArray<keyof ParsedAiEnv> = [
-  'GROQ_API_KEY',
   'AI_GROQ_API_KEY',
+];
+
+const GROQ_LEGACY_API_KEY_ENV_NAMES: ReadonlyArray<keyof ParsedAiEnv> = [
+  'GROQ_API_KEY',
   'GROQ_KEY',
   'GROQ_TOKEN',
   'LLM_API_KEY',
+  'RESUME_EXTRACTOR_GROQ_API_KEY',
 ];
 
 const GROQ_BASE_URL_ENV_PRIORITY: ReadonlyArray<keyof ParsedAiEnv> = [
@@ -61,8 +68,25 @@ const GROQ_BASE_URL_ENV_PRIORITY: ReadonlyArray<keyof ParsedAiEnv> = [
 
 const GROQ_MODEL_ENV_PRIORITY: ReadonlyArray<keyof ParsedAiEnv> = [
   'AI_GROQ_MODEL',
+];
+
+const GROQ_LEGACY_MODEL_ENV_NAMES: ReadonlyArray<keyof ParsedAiEnv> = [
   'GROQ_MODEL',
 ];
+
+const GROQ_DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+
+const GROQ_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  'llama-3.3-70b': GROQ_DEFAULT_MODEL,
+};
+
+const GROQ_ALLOWED_MODELS = [
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+] as const;
+
+const GROQ_USER_FACING_CONFIG_ERROR =
+  'AI review is not configured yet. Groq is selected, but no API key is available to process this request.';
 
 export interface AiEnvResolution {
   value: string | null;
@@ -77,6 +101,7 @@ export interface ResolvedAiRuntimeConfig {
   model: string;
   baseUrl: string;
   timeoutMs: number;
+  maxRetries: number;
   warnings: string[];
 }
 
@@ -96,6 +121,7 @@ function parseAiEnv() {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     GROQ_API_KEY: process.env.GROQ_API_KEY,
     AI_GROQ_API_KEY: process.env.AI_GROQ_API_KEY,
+    RESUME_EXTRACTOR_GROQ_API_KEY: process.env.RESUME_EXTRACTOR_GROQ_API_KEY,
     GROQ_KEY: process.env.GROQ_KEY,
     GROQ_TOKEN: process.env.GROQ_TOKEN,
     LLM_API_KEY: process.env.LLM_API_KEY,
@@ -110,6 +136,7 @@ function parseAiEnv() {
     AI_GROQ_MODEL: process.env.AI_GROQ_MODEL,
     GROQ_MODEL: process.env.GROQ_MODEL,
     AI_PROVIDER_TIMEOUT_MS: process.env.AI_PROVIDER_TIMEOUT_MS,
+    AI_PROVIDER_MAX_RETRIES: process.env.AI_PROVIDER_MAX_RETRIES,
     AI_PROMPT_VERSION_FOUNDER: process.env.AI_PROMPT_VERSION_FOUNDER,
     AI_PROMPT_VERSION_CAREER: process.env.AI_PROMPT_VERSION_CAREER,
     AI_PROMPT_VERSION_MODERATION: process.env.AI_PROMPT_VERSION_MODERATION,
@@ -122,6 +149,7 @@ function parseAiEnv() {
     AI_WORKER_TIMEOUT_MS: process.env.AI_WORKER_TIMEOUT_MS,
     AI_WORKER_BACKOFF_BASE_MS: process.env.AI_WORKER_BACKOFF_BASE_MS,
     AI_WORKER_POLL_INTERVAL_MS: process.env.AI_WORKER_POLL_INTERVAL_MS,
+    AI_WORKER_PARALLELISM: process.env.AI_WORKER_PARALLELISM,
     AI_WORKER_SECRET: process.env.AI_WORKER_SECRET,
   });
 }
@@ -164,6 +192,16 @@ function resolveByPriority(
   };
 }
 
+function findPopulatedEnvNames(
+  env: ParsedAiEnv,
+  names: ReadonlyArray<keyof ParsedAiEnv>,
+) {
+  return names.filter((name) => {
+    const value = env[name];
+    return typeof value === 'string' && value.trim().length > 0;
+  });
+}
+
 function resolveGroqApiKey(env: ParsedAiEnv): AiEnvResolution {
   return resolveByPriority(env, GROQ_API_KEY_ENV_PRIORITY);
 }
@@ -174,6 +212,30 @@ function resolveGroqBaseUrl(env: ParsedAiEnv): AiEnvResolution {
 
 function resolveGroqModel(env: ParsedAiEnv): AiEnvResolution {
   return resolveByPriority(env, GROQ_MODEL_ENV_PRIORITY);
+}
+
+function normalizeGroqModel(model: string) {
+  const trimmed = model.trim();
+  const mapped = GROQ_MODEL_ALIASES[trimmed.toLowerCase()];
+  return mapped ?? trimmed;
+}
+
+function assertSupportedGroqModel(model: string) {
+  if (GROQ_ALLOWED_MODELS.includes(model as (typeof GROQ_ALLOWED_MODELS)[number])) {
+    return model;
+  }
+
+  throw new AiRuntimeError(
+    'AI_PROVIDER_NOT_CONFIGURED',
+    `Unsupported Groq model for app AI runtime: ${model}.`,
+    503,
+    {
+      provider: 'groq',
+      setting: 'AI_GROQ_MODEL',
+      allowedModels: GROQ_ALLOWED_MODELS,
+    },
+    `Set AI_GROQ_MODEL to one of: ${GROQ_ALLOWED_MODELS.join(', ')}`,
+  );
 }
 
 function getProviderApiKeyEnvNames(provider: AiProvider): string[] {
@@ -242,7 +304,9 @@ export function resolveAiModel(provider: AiProvider): string {
     return env.AI_ANTHROPIC_MODEL ?? 'claude-3-5-sonnet-latest';
   }
 
-  return resolveGroqModel(env).value ?? 'llama-3.3-70b';
+  const resolvedGroqModel = resolveGroqModel(env).value ?? GROQ_DEFAULT_MODEL;
+  const normalized = normalizeGroqModel(resolvedGroqModel);
+  return assertSupportedGroqModel(normalized);
 }
 
 export function resolveAiProviderBaseUrl(provider: AiProvider): string {
@@ -278,6 +342,12 @@ export function resolveAiTimeoutMs() {
   return env.AI_PROVIDER_TIMEOUT_MS ?? 30000;
 }
 
+export function resolveAiProviderMaxRetries() {
+  const env = parseAiEnv();
+  const configuredRetries = env.AI_PROVIDER_MAX_RETRIES ?? 2;
+  return Math.max(0, Math.min(2, configuredRetries));
+}
+
 export function resolvePromptVersion(feature: AiFeature): string {
   const env = parseAiEnv();
 
@@ -308,14 +378,24 @@ export function isAiFeatureEnabled(feature: AiFeature): boolean {
 
 export function getAiWorkerConfig() {
   const env = parseAiEnv();
+  const configuredBatchSize = env.AI_WORKER_BATCH_SIZE ?? 2;
+  const configuredMaxRetries = env.AI_WORKER_MAX_RETRIES ?? 2;
+  const configuredPollIntervalMs = env.AI_WORKER_POLL_INTERVAL_MS ?? 10000;
+  const configuredParallelism = env.AI_WORKER_PARALLELISM ?? 1;
+
+  const batchSize = Math.min(2, Math.max(1, configuredBatchSize));
+  const maxRetries = Math.min(2, Math.max(1, configuredMaxRetries));
+  const pollIntervalMs = Math.min(12000, Math.max(8000, configuredPollIntervalMs));
+  const parallelism = Math.min(batchSize, Math.min(2, Math.max(1, configuredParallelism)));
 
   return {
-    batchSize: env.AI_WORKER_BATCH_SIZE ?? 5,
+    batchSize,
     leaseSeconds: env.AI_WORKER_LEASE_SECONDS ?? 45,
-    maxRetries: env.AI_WORKER_MAX_RETRIES ?? 3,
+    maxRetries,
     timeoutMs: env.AI_WORKER_TIMEOUT_MS ?? 45000,
     backoffBaseMs: env.AI_WORKER_BACKOFF_BASE_MS ?? 2000,
-    pollIntervalMs: env.AI_WORKER_POLL_INTERVAL_MS ?? 3000,
+    pollIntervalMs,
+    parallelism,
   } as const;
 }
 
@@ -387,26 +467,32 @@ export function resolveAiRuntimeConfigOrThrow(): ResolvedAiRuntimeConfig {
         providerSetting: 'AI_PROVIDER',
         recommendedProvider: 'groq',
         requiredEnvVars: [
-          'GROQ_API_KEY',
+          'AI_GROQ_API_KEY',
           'OPENAI_API_KEY',
           'ANTHROPIC_API_KEY',
         ],
       },
-      'Set AI_PROVIDER=groq and configure GROQ_API_KEY.',
+      'Set AI_PROVIDER=groq and configure AI_GROQ_API_KEY.',
     );
   }
 
   const apiKey = resolveAiApiKey(provider);
   if (!apiKey) {
+    const missingEnvNames = getProviderApiKeyEnvNames(provider);
+    const missingPrimaryEnv = missingEnvNames[0] ?? 'AI_GROQ_API_KEY';
+    const message = provider === 'groq'
+      ? GROQ_USER_FACING_CONFIG_ERROR
+      : `Provider ${provider} is selected but no API key is configured.`;
+
     throw new AiRuntimeError(
       'AI_PROVIDER_NOT_CONFIGURED',
-      `Provider ${provider} is selected but no API key is configured.`,
+      message,
       503,
       {
         provider,
-        requiredEnvVars: getProviderApiKeyEnvNames(provider),
+        requiredEnvVars: missingEnvNames,
       },
-      `Configure ${getProviderApiKeyEnvNames(provider)[0]} and retry.`,
+      `Configure ${missingPrimaryEnv} and retry.`,
     );
   }
 
@@ -415,11 +501,25 @@ export function resolveAiRuntimeConfigOrThrow(): ResolvedAiRuntimeConfig {
 
   if (provider === 'groq') {
     const resolution = resolveGroqApiKey(env);
-    apiKeySource = resolution.source ?? 'GROQ_API_KEY';
+    apiKeySource = resolution.source ?? 'AI_GROQ_API_KEY';
+    const populatedLegacyKeySources = findPopulatedEnvNames(env, GROQ_LEGACY_API_KEY_ENV_NAMES);
+    const populatedLegacyModelSources = findPopulatedEnvNames(env, GROQ_LEGACY_MODEL_ENV_NAMES);
 
     if (resolution.populatedSources.length > 1) {
       warnings.push(
         `Multiple Groq API key env vars are set. Using ${resolution.source}.`,
+      );
+    }
+
+    if (populatedLegacyKeySources.length > 0) {
+      warnings.push(
+        `Legacy Groq key env vars are ignored by app AI runtime: ${populatedLegacyKeySources.join(', ')}.`,
+      );
+    }
+
+    if (populatedLegacyModelSources.length > 0 && !env.AI_GROQ_MODEL) {
+      warnings.push(
+        `GROQ_MODEL is set but ignored by app AI runtime. Use AI_GROQ_MODEL instead.`,
       );
     }
   } else if (provider === 'openai') {
@@ -435,6 +535,7 @@ export function resolveAiRuntimeConfigOrThrow(): ResolvedAiRuntimeConfig {
     model: resolveAiModel(provider),
     baseUrl: resolveAiProviderBaseUrl(provider),
     timeoutMs: resolveAiTimeoutMs(),
+    maxRetries: resolveAiProviderMaxRetries(),
     warnings,
   };
 }

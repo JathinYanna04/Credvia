@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FounderIdeaFeedbackPanel } from '@/components/ai/founder/FounderIdeaFeedbackPanel';
@@ -102,11 +102,38 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
+  vi.clearAllTimers();
+  vi.useRealTimers();
   global.fetch = originalFetch;
 });
 
 describe('FounderIdeaFeedbackPanel', () => {
+  it('logs panel mount diagnostics with debug version marker', async () => {
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ data: { latestRun: null, review: null, stale: false } }));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    await screen.findByRole('button', { name: 'Get AI Feedback' });
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[founder-feedback] panel mounted',
+      expect.objectContaining({ version: 'debug-1', ideaId: 'idea-1' }),
+    );
+  });
+
   it('clicking Get AI Feedback starts a request', async () => {
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response({ data: { latestRun: null, review: null, stale: false } }))
@@ -129,14 +156,192 @@ describe('FounderIdeaFeedbackPanel', () => {
       const postCall = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST');
       expect(postCall).toBeDefined();
       expect(postCall?.[0]).toBe('/api/v1/ideas/idea-1/ai-feedback');
-      expect(postCall?.[1]?.body).toBe(JSON.stringify({ regenerate: false }));
+      expect(postCall?.[1]?.body).toBe(
+        JSON.stringify({ regenerate: false, forceNewRun: false }),
+      );
+    });
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[founder-feedback] click triggered',
+      expect.objectContaining({ ideaId: 'idea-1', regenerate: false }),
+    );
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[founder-feedback] click',
+      expect.objectContaining({ ideaId: 'idea-1', canRequest: true, disabled: false }),
+    );
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[founder-feedback] post triggered',
+      expect.objectContaining({
+        ideaId: 'idea-1',
+        payload: {
+          regenerate: false,
+          forceNewRun: false,
+        },
+      }),
+    );
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[founder-feedback] about to POST /ai-feedback',
+      expect.objectContaining({
+        ideaId: 'idea-1',
+        method: 'POST',
+        payload: {
+          regenerate: false,
+          forceNewRun: false,
+        },
+      }),
+    );
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[founder-feedback] POST completed',
+      expect.objectContaining({ status: 200 }),
+    );
+  });
+
+  it('click blocked by guard logs explicit reason', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('running'),
+          review: null,
+          stale: false,
+          state: 'processing',
+          shouldPoll: true,
+          terminal: false,
+        },
+      }));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    const button = await screen.findByRole('button', { name: 'Working...' });
+  expect(button.getAttribute('aria-disabled')).toBe('true');
+    await userEvent.click(button);
+
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === 'POST')).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[founder-feedback] aborted before request',
+      expect.objectContaining({ reason: 'already_polling', ideaId: 'idea-1' }),
+    );
+    expect(await screen.findByTestId('founder-feedback-generation-block-reason')).toBeTruthy();
+  });
+
+  it('legacy recovered empty state is informational and still allows fresh POST generation', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: null,
+          review: null,
+          stale: false,
+          state: 'empty',
+          terminal: true,
+          shouldPoll: false,
+          recoveredFromLegacyOutputFailure: true,
+        },
+      }))
+      .mockResolvedValueOnce(response({ data: { run: buildRun('queued'), reused: false } }))
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('queued'),
+          review: null,
+          stale: false,
+          state: 'queued',
+          terminal: false,
+          shouldPoll: true,
+        },
+      }));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    expect(await screen.findByText('No founder AI review yet')).toBeTruthy();
+    expect(screen.queryByTestId('founder-feedback-generation-block-reason')).toBeNull();
+
+    const info = await screen.findByTestId('founder-feedback-generation-info-reason');
+    expect(info.textContent).toContain('fresh AI review');
+
+    const buttons = await screen.findAllByRole('button', { name: 'Get AI Feedback' });
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) {
+      expect(button.getAttribute('aria-disabled')).not.toBe('true');
+    }
+    const firstButton = buttons[0];
+    if (!firstButton) {
+      throw new Error('Expected at least one Get AI Feedback button.');
+    }
+    await userEvent.click(firstButton);
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+      expect(postCall?.[0]).toBe('/api/v1/ideas/idea-1/ai-feedback');
+    });
+  });
+
+  it('does not start polling when shouldPoll is true but no run exists, and still POSTs on click', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: null,
+          review: null,
+          stale: false,
+          state: 'empty',
+          terminal: false,
+          shouldPoll: true,
+        },
+      }))
+      .mockResolvedValueOnce(response({ data: { run: buildRun('queued'), reused: false } }))
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('queued'),
+          review: null,
+          stale: false,
+          state: 'queued',
+          terminal: false,
+          shouldPoll: true,
+        },
+      }));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    const button = await screen.findByRole('button', { name: 'Get AI Feedback' });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+      expect(postCall?.[0]).toBe('/api/v1/ideas/idea-1/ai-feedback');
     });
   });
 
   it('shows processing status when run is queued or running', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(response({ data: { latestRun: buildRun('running'), review: null, stale: false } }));
+      .mockResolvedValue(response({ data: { latestRun: buildRun('running'), review: null, stale: false } }));
 
     global.fetch = fetchMock as unknown as typeof fetch;
 
@@ -208,6 +413,350 @@ describe('FounderIdeaFeedbackPanel', () => {
     expect(screen.getAllByText(/latest run failed/i).length).toBeGreaterThan(0);
   });
 
+  it('forces regenerate=true when retrying from terminal failed state', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({
+          data: {
+            latestRun: {
+              ...buildRun('failed'),
+              errorCode: 'AI_PROVIDER_NOT_CONFIGURED',
+              errorMessage: 'AI review is not configured yet. Groq is selected, but no API key is available to process this request.',
+            },
+            review: null,
+            stale: false,
+            state: 'failed',
+            terminal: true,
+            shouldPoll: false,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(response({ data: { run: buildRun('queued'), reused: false } }))
+      .mockResolvedValueOnce(
+        response({
+          data: {
+            latestRun: buildRun('queued'),
+            review: null,
+            stale: false,
+            state: 'queued',
+            terminal: false,
+            shouldPoll: true,
+          },
+        }),
+      );
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    const retryButton = await screen.findByRole('button', { name: 'Retry AI Feedback' });
+    await userEvent.click(retryButton);
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+      expect(postCall?.[1]?.body).toBe(
+        JSON.stringify({ regenerate: true, forceNewRun: true }),
+      );
+    });
+  });
+
+  it('renders rate-limited user message and exits loading state', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      response({
+        data: {
+          latestRun: {
+            ...buildRun('failed'),
+            errorCode: 'RATE_LIMITED',
+            errorMessage: 'AI review is temporarily rate-limited. Please retry in a few seconds.',
+          },
+          review: null,
+          stale: false,
+        },
+      }),
+    );
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    expect(await screen.findByText('AI review is temporarily rate-limited. Please retry in a few seconds.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Retry AI Feedback' })).toBeTruthy();
+  });
+
+  it('prefers latest AI_OUTPUT_REPAIR_FAILED message over stale provider 429 copy', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      response({
+        data: {
+          latestRun: {
+            ...buildRun('failed'),
+            errorCode: 'AI_OUTPUT_REPAIR_FAILED',
+            errorMessage: 'Provider groq rejected the request (429).',
+            providerMetadata: {
+              errorCode: 'RATE_LIMITED',
+              validationIssues: ['summary: Required'],
+            },
+          },
+          review: null,
+          stale: false,
+          state: 'failed',
+          shouldPoll: false,
+          terminal: true,
+        },
+      }),
+    );
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    expect(await screen.findByText(/output needed recovery and was returned as partial success/i)).toBeTruthy();
+    expect(screen.queryByText(/temporarily rate-limited/i)).toBeNull();
+  });
+
+  it('shows partial success banner when best-effort recovery mode is used', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      response({
+        data: {
+          latestRun: {
+            ...buildRun('succeeded'),
+            providerMetadata: {
+              structuredMode: 'best_effort_raw_fallback',
+              outputRecovery: 'best_effort_raw_mapping',
+            },
+          },
+          review: buildReview(),
+          stale: false,
+          state: 'succeeded',
+          shouldPoll: false,
+          terminal: true,
+        },
+      }),
+    );
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    expect(await screen.findByText(/partial success: output formatting recovery was applied/i)).toBeTruthy();
+  });
+
+  it('recovered empty state still allows fresh POST generation', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: null,
+          review: null,
+          stale: false,
+          state: 'empty',
+          terminal: true,
+          shouldPoll: false,
+        },
+      }))
+      .mockResolvedValueOnce(response({ data: { run: buildRun('queued'), reused: false } }))
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('queued'),
+          review: null,
+          stale: false,
+          state: 'queued',
+          terminal: false,
+          shouldPoll: true,
+        },
+      }));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    const button = await screen.findByRole('button', { name: 'Get AI Feedback' });
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+    });
+  });
+
+  it('partial-success mode still allows regenerate and sends POST', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: {
+            ...buildRun('succeeded'),
+            providerMetadata: {
+              structuredMode: 'best_effort_raw_fallback',
+              outputRecovery: 'best_effort_raw_mapping',
+            },
+          },
+          review: buildReview(),
+          stale: false,
+          state: 'succeeded',
+          terminal: true,
+          shouldPoll: false,
+        },
+      }))
+      .mockResolvedValueOnce(response({ data: { run: buildRun('queued'), reused: false } }))
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('queued'),
+          review: buildReview(),
+          stale: false,
+          state: 'queued',
+          terminal: false,
+          shouldPoll: true,
+        },
+      }));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    expect(await screen.findByText(/partial success: output formatting recovery was applied/i)).toBeTruthy();
+    expect(screen.queryByTestId('founder-feedback-generation-block-reason')).toBeNull();
+
+    const regenerateButton = await screen.findByRole('button', { name: 'Regenerate AI Review' });
+    expect(regenerateButton.getAttribute('aria-disabled')).not.toBe('true');
+    await userEvent.click(regenerateButton);
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+      expect(postCall?.[1]?.body).toBe(
+        JSON.stringify({ regenerate: true, forceNewRun: true }),
+      );
+    });
+  });
+
+  it('does not show contradictory empty-state hard block messaging when requesting is allowed', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: null,
+          review: null,
+          stale: false,
+          state: 'empty',
+          terminal: true,
+          shouldPoll: false,
+          recoveredFromLegacyOutputFailure: true,
+        },
+      }));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    expect(await screen.findByText('No founder AI review yet')).toBeTruthy();
+    expect(screen.queryByTestId('founder-feedback-generation-block-reason')).toBeNull();
+
+    const buttons = await screen.findAllByRole('button', { name: 'Get AI Feedback' });
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) {
+      expect(button.getAttribute('aria-disabled')).not.toBe('true');
+    }
+  });
+
+  it('button gate reason is exposed deterministically in UI copy', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('running'),
+          review: null,
+          stale: false,
+          state: 'processing',
+          terminal: false,
+          shouldPoll: true,
+        },
+      }));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    const gate = await screen.findByTestId('founder-feedback-generation-block-reason');
+    expect(gate.textContent).toContain('already_polling');
+  });
+
+  it('honors terminal shouldPoll=false even when latest run status is queued', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      response({
+        data: {
+          latestRun: {
+            ...buildRun('queued'),
+            errorCode: 'AI_PROVIDER_NOT_CONFIGURED',
+            errorMessage: 'AI review is not configured yet. Groq is selected, but no API key is available to process this request.',
+          },
+          review: null,
+          stale: false,
+          state: 'failed',
+          shouldPoll: false,
+          terminal: true,
+        },
+      }),
+    );
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    expect(await screen.findByText('AI review is not configured yet. Groq is selected, but no API key is available to process this request.')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Get AI Feedback' }).length).toBeGreaterThan(0);
+
+    const settledCallCount = fetchMock.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    expect(fetchMock.mock.calls.length).toBe(settledCallCount);
+  });
+
   it('sends regenerate=true from regenerate controls', async () => {
     const fetchMock = vi
       .fn()
@@ -246,7 +795,9 @@ describe('FounderIdeaFeedbackPanel', () => {
     await waitFor(() => {
       const postCall = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST');
       expect(postCall).toBeDefined();
-      expect(postCall?.[1]?.body).toBe(JSON.stringify({ regenerate: true }));
+      expect(postCall?.[1]?.body).toBe(
+        JSON.stringify({ regenerate: true, forceNewRun: true }),
+      );
     });
   });
 
@@ -317,4 +868,261 @@ describe('FounderIdeaFeedbackPanel', () => {
     expect(screen.getByText('Market Signals')).toBeTruthy();
     expect(screen.getByText('Reasoning Trail')).toBeTruthy();
   });
+
+  it('polling is bounded and stops after succeeded terminal state', async () => {
+    const succeededState = {
+      data: {
+        latestRun: buildRun('succeeded'),
+        review: buildReview(),
+        stale: false,
+        state: 'succeeded',
+        shouldPoll: false,
+        terminal: true,
+      },
+    };
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('queued'),
+          review: null,
+          stale: false,
+          state: 'queued',
+          shouldPoll: true,
+          terminal: false,
+        },
+      }))
+      .mockResolvedValue(response(succeededState));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Latest AI review is ready.')).toBeTruthy();
+    }, { timeout: 8000 });
+
+    const callCountAfterSuccess = fetchMock.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    expect(fetchMock.mock.calls.length - callCountAfterSuccess).toBeLessThanOrEqual(1);
+  }, 15000);
+
+  it('pauses polling after repeated temporary failures', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('queued'),
+          review: null,
+          stale: false,
+          state: 'queued',
+          shouldPoll: true,
+          terminal: false,
+        },
+      }))
+      .mockResolvedValue(response({
+        error: {
+          code: 'ANALYSIS_SERVICE_UNAVAILABLE',
+          message: 'Temporary outage',
+        },
+      }, 503));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Polling is paused to avoid repeated failed requests.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Resume Polling' })).toBeTruthy();
+    }, { timeout: 12000 });
+
+    const callCountAfterPause = fetchMock.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const callCountAfterSettling = fetchMock.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    expect(fetchMock.mock.calls.length - callCountAfterSettling).toBeLessThanOrEqual(1);
+    expect(callCountAfterSettling).toBeGreaterThanOrEqual(callCountAfterPause);
+  }, 15000);
+
+  it('stops polling and shows session guidance on repeated unauthorized responses', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('queued'),
+          review: null,
+          stale: false,
+          state: 'queued',
+          shouldPoll: true,
+          terminal: false,
+        },
+      }))
+      .mockResolvedValue(response({
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You need to sign in.',
+        },
+      }, 401));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Session issue detected during polling/i)).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Resume Polling' })).toBeTruthy();
+    }, { timeout: 8000 });
+
+    const callCountAfterUnauthorized = fetchMock.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    expect(fetchMock.mock.calls.length - callCountAfterUnauthorized).toBeLessThanOrEqual(1);
+  }, 15000);
+
+  it('does not overlap poll requests while a poll fetch is still in flight', async () => {
+    let inFlight = 0;
+    let overlapped = false;
+    let callNumber = 0;
+
+    let resolvePendingPoll: ((value: MockFetchResponse) => void) | undefined;
+    const pendingPoll = new Promise<MockFetchResponse>((resolve) => {
+      resolvePendingPoll = (value: MockFetchResponse) => {
+        resolve(value);
+      };
+    });
+
+    const fetchMock = vi.fn(() => {
+      callNumber += 1;
+      if (callNumber > 2 && inFlight > 0) {
+        overlapped = true;
+      }
+      inFlight += 1;
+
+      const settle = (promise: Promise<MockFetchResponse>) =>
+        promise.finally(() => {
+          inFlight -= 1;
+        }) as unknown as Promise<Response>;
+
+      if (callNumber === 1) {
+        return settle(Promise.resolve(response({
+          data: {
+            latestRun: buildRun('queued'),
+            review: null,
+            stale: false,
+            state: 'queued',
+            shouldPoll: true,
+            terminal: false,
+          },
+        })));
+      }
+
+      if (callNumber === 2) {
+        return settle(pendingPoll);
+      }
+
+      return settle(Promise.resolve(response({
+        data: {
+          latestRun: buildRun('failed'),
+          review: null,
+          stale: false,
+          state: 'failed',
+          shouldPoll: false,
+          terminal: true,
+        },
+      })));
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    }, { timeout: 8000 });
+
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    expect(overlapped).toBe(false);
+
+    resolvePendingPoll?.(response({
+      data: {
+        latestRun: buildRun('failed'),
+        review: null,
+        stale: false,
+        state: 'failed',
+        shouldPoll: false,
+        terminal: true,
+      },
+    }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Retry AI Feedback' })).toBeTruthy();
+    });
+  }, 15000);
+
+  it('keeps last successful review visible while refresh runs after regenerate', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('succeeded'),
+          review: buildReview(),
+          stale: false,
+          state: 'succeeded',
+          shouldPoll: false,
+          terminal: true,
+        },
+      }))
+      .mockResolvedValueOnce(response({ data: { run: buildRun('queued'), reused: false } }))
+      .mockResolvedValueOnce(response({
+        data: {
+          latestRun: buildRun('queued'),
+          review: null,
+          stale: false,
+          state: 'queued',
+          shouldPoll: true,
+          terminal: false,
+        },
+      }));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    const regenerateButton = await screen.findByRole('button', { name: 'Regenerate AI Review' });
+    await userEvent.click(regenerateButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Hero Verdict')).toBeTruthy();
+      expect(screen.getByText('Rewrite Block')).toBeTruthy();
+    });
+  }, 15000);
 });

@@ -23,10 +23,13 @@ import {
   type CreateOrReuseAiRunResult,
 } from '@/lib/ai/runs-repo';
 import { runStructuredOutput } from '@/lib/ai/structured-runner';
-import type { Database } from '@/lib/supabase/types';
+import type { Database, Json } from '@/lib/supabase/types';
 import type { AiRunSummary } from '@/lib/types';
+import { withSupabasePersistenceRetry } from '@/lib/ai/persistence/retry';
 
 type CareerInsightRow = Database['public']['Tables']['career_copilot_insights']['Row'];
+type CareerSessionInsert = Database['public']['Tables']['career_copilot_sessions']['Insert'];
+type CareerInsightInsert = Database['public']['Tables']['career_copilot_insights']['Insert'];
 
 interface ResolvedSession {
   id: string;
@@ -43,6 +46,10 @@ function toStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
+}
+
+function toJsonSafe(value: unknown): Json {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function toCareerInsightPayload(row: CareerInsightRow) {
@@ -109,7 +116,7 @@ async function resolveSession(args: {
       metadata: {
         mode: args.mode,
       },
-    })
+    } satisfies CareerSessionInsert)
     .select('id, user_id')
     .single();
 
@@ -288,6 +295,8 @@ export async function processCareerCopilotRun(args: {
   supabase: SupabaseClient<Database>;
   run: AiRunSummary;
 }) {
+  const { requestedBy } = args.run;
+
   if (args.run.feature !== 'career_copilot') {
     throw new AiRuntimeError('AI_FEATURE_UNSUPPORTED', 'Run is not a career copilot run.', 400);
   }
@@ -296,7 +305,7 @@ export async function processCareerCopilotRun(args: {
     throw new AiRuntimeError('AI_SUBJECT_MISMATCH', 'Career Copilot requires resume subject.', 400);
   }
 
-  if (!args.run.requestedBy) {
+  if (!requestedBy) {
     throw new AiRuntimeError('VALIDATION_ERROR', 'Career run is missing requester id.', 400);
   }
 
@@ -306,7 +315,7 @@ export async function processCareerCopilotRun(args: {
 
   const context = await buildCareerCopilotContext({
     supabase: args.supabase,
-    userId: args.run.requestedBy,
+    userId: requestedBy,
     mode,
     resumeId: args.run.subjectId,
     matchId,
@@ -321,19 +330,20 @@ export async function processCareerCopilotRun(args: {
     }),
     userPrompt: buildCareerCopilotUserPrompt(context),
     responseFormatInstructions: CAREER_RESPONSE_FORMAT_INSTRUCTIONS[mode],
-    maxRepairAttempts: 1,
+    maxRepairAttempts: 2,
     traceId: args.run.traceId ?? undefined,
   });
 
   const mapped = buildCareerOutputMapping(mode, structured.data as CareerCopilotOutputByMode[CareerCopilotMode]);
 
-  const insightInsert = await args.supabase
-    .from('career_copilot_insights')
-    .upsert(
-      {
+  const insightId = await withSupabasePersistenceRetry({
+    operationName: 'Career insight persistence',
+    runId: args.run.id,
+    operation: async () => {
+      const insightPayload = {
         session_id: sessionId,
         run_id: args.run.id,
-        user_id: args.run.requestedBy,
+        user_id: requestedBy,
         insight_type: mode,
         headline: mapped.headline,
         summary: mapped.summary,
@@ -342,7 +352,7 @@ export async function processCareerCopilotRun(args: {
         next_steps: mapped.nextSteps,
         suggested_roles: mapped.suggestedRoles,
         metadata: {
-          output: structured.data,
+          output: toJsonSafe(structured.data),
           mode,
           promptVersion: args.run.promptVersion,
           promptKey: args.run.promptKey ?? null,
@@ -351,42 +361,64 @@ export async function processCareerCopilotRun(args: {
           traceId: args.run.traceId ?? null,
           modelVersion: structured.modelVersion,
           providerRequestId: structured.requestId,
+          runtimeConfidence: structured.confidence,
+          runtimeConfidenceReasoning: structured.confidenceReasoning,
+          qualitySignal: toJsonSafe(structured.qualitySignal),
         },
-      },
-      {
-        onConflict: 'run_id',
-      },
-    )
-    .select('id')
-    .single();
+      } satisfies CareerInsightInsert;
 
-  if (insightInsert.error) {
-    throw new Error(insightInsert.error.message);
-  }
+      const insightInsert = await args.supabase
+        .from('career_copilot_insights')
+        .upsert([insightPayload], {
+          onConflict: 'run_id',
+        })
+        .select('id')
+        .single();
 
-  const sessionUpdate = await args.supabase
-    .from('career_copilot_sessions')
-    .update({
-      run_id: args.run.id,
-      title: mapped.headline,
-      metadata: {
-        mode,
-        lastInsightId: insightInsert.data?.id ?? null,
-      },
-    })
-    .eq('id', sessionId)
-    .eq('user_id', args.run.requestedBy);
+      if (insightInsert.error) {
+        throw new Error(insightInsert.error.message);
+      }
 
-  if (sessionUpdate.error) {
-    throw new Error(sessionUpdate.error.message);
-  }
+      return insightInsert.data?.id ?? null;
+    },
+  });
+
+  await withSupabasePersistenceRetry({
+    operationName: 'Career session update',
+    runId: args.run.id,
+    operation: async () => {
+      const sessionUpdate = await args.supabase
+        .from('career_copilot_sessions')
+        .update({
+          run_id: args.run.id,
+          title: mapped.headline,
+          metadata: {
+            mode,
+            lastInsightId: insightId,
+          },
+        })
+        .eq('id', sessionId)
+        .eq('user_id', requestedBy);
+
+      if (sessionUpdate.error) {
+        throw new Error(sessionUpdate.error.message);
+      }
+    },
+  });
 
   return {
     provider: structured.provider,
     model: structured.model,
     modelVersion: structured.modelVersion,
     latencyMs: structured.latencyMs,
-    providerMetadata: structured.providerMetadata,
+    providerMetadata: {
+      ...structured.providerMetadata,
+      qualitySignal: structured.qualitySignal,
+      runtimeConfidence: structured.confidence,
+      runtimeConfidenceReasoning: structured.confidenceReasoning,
+      repairCount: structured.repairCount,
+    },
+    qualitySignal: structured.qualitySignal,
   };
 }
 

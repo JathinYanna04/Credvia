@@ -39,8 +39,16 @@ class DbBackedAiRunExecutor implements AiRunExecutor {
           maxAttempts: workerConfig.maxRetries,
           timeoutMs: workerConfig.timeoutMs,
           backoffBaseMs: workerConfig.backoffBaseMs,
+          parallelism: workerConfig.parallelism,
         });
       }
+    } else {
+      logInfo('ai-executor', 'AI run awaiting external worker claim', {
+        runId: input.runId,
+        feature: input.feature,
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+      });
     }
 
     return { accepted: true, mode: 'db-backed' };

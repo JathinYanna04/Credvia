@@ -15,6 +15,7 @@ import { fail, handleApiError, ok } from '@/lib/api';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { logError, logInfo } from '@/lib/utils/logger';
 
 export async function GET(request: Request) {
   try {
@@ -23,6 +24,12 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const query = CareerCopilotQuerySchema.parse({
       sessionId: url.searchParams.get('sessionId') ?? undefined,
+    });
+
+    logInfo('career-copilot-route', 'Career Copilot GET requested', {
+      method: 'GET',
+      userId: user.id,
+      sessionId: query.sessionId ?? null,
     });
 
     const state = await getCareerCopilotState({
@@ -45,6 +52,11 @@ export async function GET(request: Request) {
       return fail('VALIDATION_ERROR', error.issues[0]?.message ?? 'Validation error.', 400);
     }
 
+    logError('career-copilot-route', 'Career Copilot GET failed', {
+      method: 'GET',
+      error: error instanceof Error ? error.message : String(error),
+    });
+
     return handleApiError(error);
   }
 }
@@ -58,6 +70,17 @@ export async function POST(request: Request) {
     const supabase = await createServerSupabaseClient();
     const user = await getRequiredUser(supabase);
     const body = CareerCopilotCreateRequestSchema.parse((await request.json()) as unknown);
+
+    logInfo('career-copilot-route', 'Career Copilot POST requested', {
+      method: 'POST',
+      userId: user.id,
+      mode: body.mode,
+      sessionId: body.sessionId ?? null,
+      resumeId: body.resumeId ?? null,
+      matchId: body.matchId ?? null,
+      regenerate: body.regenerate ?? false,
+    });
+
     const limit = await enforceRateLimit('ai_career_copilot', user.id);
 
     if (!limit.success) {
@@ -106,6 +129,11 @@ export async function POST(request: Request) {
     if (error instanceof ZodError) {
       return fail('VALIDATION_ERROR', error.issues[0]?.message ?? 'Validation error.', 400);
     }
+
+    logError('career-copilot-route', 'Career Copilot POST failed', {
+      method: 'POST',
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     return handleApiError(error);
   }

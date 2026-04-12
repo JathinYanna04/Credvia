@@ -12,6 +12,7 @@ import { fail, handleApiError, ok } from '@/lib/api';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireModeratorAccess } from '@/lib/supabase/moderation';
+import { logError, logInfo } from '@/lib/utils/logger';
 
 const ModerationReviewQuerySchema = z.object({
   reportId: z.string().uuid(),
@@ -26,6 +27,12 @@ export async function GET(request: Request) {
 
     const supabase = await createServerSupabaseClient();
     const access = await requireModeratorAccess();
+
+    logInfo('moderation-ai-route', 'Moderation AI GET requested', {
+      method: 'GET',
+      userId: access.user.id,
+      reportId: query.reportId,
+    });
 
     const state = await getModerationReviewState({
       supabase,
@@ -56,6 +63,11 @@ export async function GET(request: Request) {
       return fail('VALIDATION_ERROR', error.issues[0]?.message ?? 'Validation error.', 400);
     }
 
+    logError('moderation-ai-route', 'Moderation AI GET failed', {
+      method: 'GET',
+      error: error instanceof Error ? error.message : String(error),
+    });
+
     return handleApiError(error);
   }
 }
@@ -69,6 +81,14 @@ export async function POST(request: Request) {
     const body = ModerationReviewRequestSchema.parse((await request.json()) as unknown);
     const supabase = await createServerSupabaseClient();
     const access = await requireModeratorAccess();
+
+    logInfo('moderation-ai-route', 'Moderation AI POST requested', {
+      method: 'POST',
+      userId: access.user.id,
+      reportId: body.reportId,
+      regenerate: body.regenerate ?? false,
+    });
+
     const limit = await enforceRateLimit('ai_moderation_review', access.user.id);
 
     if (!limit.success) {
@@ -117,6 +137,11 @@ export async function POST(request: Request) {
     if (error instanceof ZodError) {
       return fail('VALIDATION_ERROR', error.issues[0]?.message ?? 'Validation error.', 400);
     }
+
+    logError('moderation-ai-route', 'Moderation AI POST failed', {
+      method: 'POST',
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     return handleApiError(error);
   }

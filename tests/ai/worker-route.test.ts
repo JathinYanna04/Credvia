@@ -38,6 +38,7 @@ describe('ai worker route', () => {
       timeoutMs: 45000,
       backoffBaseMs: 2000,
       pollIntervalMs: 3000,
+      parallelism: 4,
     });
   });
 
@@ -117,6 +118,44 @@ describe('ai worker route', () => {
     expect(payload.data.result).toEqual({
       claimed: 2,
       succeeded: 2,
+      retried: 0,
+      failed: 0,
+    });
+  });
+
+  it('runs worker batch for cron-style bearer auth using GET', async () => {
+    createServiceRoleClient.mockReturnValue({});
+    processAiWorkerBatch.mockResolvedValue({
+      claimed: 1,
+      succeeded: 1,
+      retried: 0,
+      failed: 0,
+    });
+
+    const { GET } = await import('@/app/api/v1/ai/worker/route');
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/v1/ai/worker?batchSize=1', {
+        method: 'GET',
+        headers: {
+          Authorization: 'Bearer worker-secret',
+        },
+      }),
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(processAiWorkerBatch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        batchSize: 1,
+        leaseSeconds: 45,
+      }),
+    );
+    expect(payload.data.result).toEqual({
+      claimed: 1,
+      succeeded: 1,
       retried: 0,
       failed: 0,
     });

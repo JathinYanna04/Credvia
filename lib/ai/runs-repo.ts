@@ -36,6 +36,13 @@ export interface CreateAiRunInput {
 export interface CreateOrReuseAiRunResult {
   run: AiRunSummary;
   reused: boolean;
+  decisionReason?:
+    | 'reused_in_progress'
+    | 'reused_success_cache'
+    | 'created_new'
+    | 'force_new_regenerate'
+    | 'skipped_failed_terminal_created_new'
+    | 'skipped_cancelled_created_new';
 }
 
 interface UpdateAiRunInput {
@@ -65,6 +72,7 @@ export interface RequeueAiRunInput {
   errorCode: string;
   errorMessage: string;
   backoffMs: number;
+  providerMetadata?: Record<string, unknown>;
 }
 
 export interface CompleteAiRunInput {
@@ -80,6 +88,28 @@ export interface CompleteAiRunInput {
   errorMessage?: string | null;
 }
 
+const REUSABLE_AI_RUN_STATUSES = new Set<AiRunStatus>([
+  'queued',
+  'running',
+  'succeeded',
+]);
+
+export function isReusableAiRunStatus(status: string | null | undefined) {
+  if (!status) {
+    return false;
+  }
+
+  if (status === 'cancelled' || status === 'canceled') {
+    return false;
+  }
+
+  return REUSABLE_AI_RUN_STATUSES.has(status as AiRunStatus);
+}
+
+function isTerminalNonReusableStatus(status: string | null | undefined) {
+  return status === 'failed' || status === 'cancelled' || status === 'canceled';
+}
+
 function toRecord(value: Database['public']['Tables']['ai_runs']['Row']['metadata']) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -89,6 +119,7 @@ function toRecord(value: Database['public']['Tables']['ai_runs']['Row']['metadat
 export function toAiRunSummary(row: AiRunRow): AiRunSummary {
   return {
     id: row.id,
+    parentRunId: row.parent_run_id,
     feature: row.feature as AiFeature,
     subjectType: row.subject_type as AiSubjectType,
     subjectId: row.subject_id,
@@ -125,6 +156,7 @@ async function insertAiRun(
   supabase: TypedSupabaseClient,
   input: CreateAiRunInput,
 ): Promise<AiRunSummary> {
+  const createdAt = new Date().toISOString();
   const insertResult = await supabase
     .from('ai_runs')
     .insert({
@@ -133,11 +165,17 @@ async function insertAiRun(
       subject_id: input.subjectId,
       requested_by: input.requestedBy,
       status: 'queued',
+      attempt_count: 0,
+      lease_expires_at: null,
+      lease_token: null,
+      processor_id: null,
       prompt_version: input.promptVersion,
       prompt_key: input.promptKey,
       input_hash: input.inputHash,
       run_identity: input.runIdentity,
       max_attempts: input.maxAttempts ?? 3,
+      next_retry_at: createdAt,
+      created_at: createdAt,
       parent_run_id: input.parentRunId ?? null,
       trace_id: input.traceId ?? null,
       request_id: input.requestId ?? null,
@@ -150,7 +188,58 @@ async function insertAiRun(
     throw new Error(insertResult.error?.message ?? 'Failed to create AI run.');
   }
 
-  return toAiRunSummary(insertResult.data);
+  const inserted = toAiRunSummary(insertResult.data);
+
+  if (
+    inserted.status !== 'queued'
+    || inserted.attemptCount !== 0
+    || inserted.leaseExpiresAt !== null
+  ) {
+    throw new AiRuntimeError(
+      'AI_RUN_STATE_INVALID',
+      'Inserted run is not claimable immediately after creation.',
+      500,
+      {
+        runId: inserted.id,
+        status: inserted.status,
+        attemptCount: inserted.attemptCount,
+        leaseExpiresAt: inserted.leaseExpiresAt,
+      },
+    );
+  }
+
+  return inserted;
+}
+
+function isDuplicateInsertError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return normalized.includes('duplicate key') || normalized.includes('23505');
+}
+
+async function findLatestRunByIdentity(
+  supabase: TypedSupabaseClient,
+  requestedBy: string,
+  runIdentity: string,
+): Promise<AiRunSummary | null> {
+  const result = await supabase
+    .from('ai_runs')
+    .select('*')
+    .eq('requested_by', requestedBy)
+    .eq('run_identity', runIdentity)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  if (!result.data) {
+    return null;
+  }
+
+  return toAiRunSummary(result.data);
 }
 
 export async function findReusableSucceededRun(
@@ -179,26 +268,118 @@ export async function findReusableSucceededRun(
   return toAiRunSummary(result.data);
 }
 
+export async function findReusableActiveRun(
+  supabase: TypedSupabaseClient,
+  requestedBy: string,
+  runIdentity: string,
+): Promise<AiRunSummary | null> {
+  const result = await supabase
+    .from('ai_runs')
+    .select('*')
+    .eq('requested_by', requestedBy)
+    .eq('run_identity', runIdentity)
+    .in('status', ['queued', 'running'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  if (!result.data) {
+    return null;
+  }
+
+  return toAiRunSummary(result.data);
+}
+
+function buildRetryRunIdentity(baseRunIdentity: string) {
+  return `${baseRunIdentity}:retry:${Date.now()}`;
+}
+
 export async function createOrReuseAiRun(
   supabase: TypedSupabaseClient,
   input: CreateAiRunInput,
 ): Promise<CreateOrReuseAiRunResult> {
   if (!input.forceRegenerate) {
+    const activeRun = await findReusableActiveRun(supabase, input.requestedBy, input.runIdentity);
+
+    if (activeRun) {
+      return {
+        run: activeRun,
+        reused: true,
+        decisionReason: 'reused_in_progress',
+      };
+    }
+
     const reusable = await findReusableSucceededRun(supabase, input.requestedBy, input.runIdentity);
 
     if (reusable) {
       return {
         run: reusable,
         reused: true,
+        decisionReason: 'reused_success_cache',
       };
     }
   }
 
-  const run = await insertAiRun(supabase, input);
-  return {
-    run,
-    reused: false,
-  };
+  try {
+    const run = await insertAiRun(supabase, input);
+    return {
+      run,
+      reused: false,
+      decisionReason: input.forceRegenerate ? 'force_new_regenerate' : 'created_new',
+    };
+  } catch (error) {
+    if (!isDuplicateInsertError(error)) {
+      throw error;
+    }
+
+    if (input.forceRegenerate) {
+      const regenerateRun = await insertAiRun(supabase, {
+        ...input,
+        runIdentity: `${input.runIdentity}:regen:${Date.now()}`,
+      });
+
+      return {
+        run: regenerateRun,
+        reused: false,
+        decisionReason: 'force_new_regenerate',
+      };
+    }
+
+    const latest = await findLatestRunByIdentity(supabase, input.requestedBy, input.runIdentity);
+    if (!latest) {
+      throw error;
+    }
+
+    if (isTerminalNonReusableStatus(latest.status)) {
+      const retryRun = await insertAiRun(supabase, {
+        ...input,
+        runIdentity: buildRetryRunIdentity(input.runIdentity),
+        parentRunId: latest.id,
+      });
+
+      return {
+        run: retryRun,
+        reused: false,
+        decisionReason: latest.status === 'failed'
+          ? 'skipped_failed_terminal_created_new'
+          : 'skipped_cancelled_created_new',
+      };
+    }
+
+    if (isReusableAiRunStatus(latest.status)) {
+      return {
+        run: latest,
+        reused: true,
+        decisionReason: latest.status === 'succeeded' ? 'reused_success_cache' : 'reused_in_progress',
+      };
+    }
+
+    throw error;
+  }
 }
 
 export async function createAiRun(
@@ -355,6 +536,7 @@ export async function requeueAiRun(
       status: 'queued',
       error_code: input.errorCode,
       error_message: input.errorMessage,
+      provider_metadata: (input.providerMetadata ?? {}) as AiRunUpdate['provider_metadata'],
       next_retry_at: nextRetryAt,
       processor_id: null,
       lease_token: null,

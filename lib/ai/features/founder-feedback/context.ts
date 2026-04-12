@@ -133,14 +133,14 @@ export async function buildFounderIdeaPromptContext(
       .select('revision_number, title, body_md, change_summary, created_at')
       .eq('post_id', postId)
       .order('revision_number', { ascending: false })
-      .limit(6),
+      .limit(1),
     supabase
       .from('comments')
       .select('body_md, vote_score, created_at')
       .eq('post_id', postId)
       .eq('status', 'published')
       .order('vote_score', { ascending: false })
-      .limit(8),
+      .limit(2),
   ]);
 
   if (postResult.error) {

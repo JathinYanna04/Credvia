@@ -21,8 +21,11 @@ import {
   type CreateOrReuseAiRunResult,
 } from '@/lib/ai/runs-repo';
 import { runStructuredOutput } from '@/lib/ai/structured-runner';
-import type { Database } from '@/lib/supabase/types';
+import type { Database, Json } from '@/lib/supabase/types';
 import type { AiRunSummary } from '@/lib/types';
+import { withSupabasePersistenceRetry } from '@/lib/ai/persistence/retry';
+
+type ModerationReviewInsert = Database['public']['Tables']['moderation_ai_reviews']['Insert'];
 
 function isCommunityAllowed(context: ModerationPromptContext, allowedCommunityIds: string[]) {
   if (!context.communityId) {
@@ -36,6 +39,10 @@ function toRecord(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function toJsonSafe(value: unknown): Json {
+  return JSON.parse(JSON.stringify(value));
 }
 
 export async function queueModerationReviewRun(args: {
@@ -105,6 +112,8 @@ export async function processModerationReviewRun(args: {
   supabase: SupabaseClient<Database>;
   run: AiRunSummary;
 }) {
+  const { requestedBy } = args.run;
+
   if (args.run.feature !== 'moderation_review') {
     throw new AiRuntimeError('AI_FEATURE_UNSUPPORTED', 'Run is not a moderation review run.', 400);
   }
@@ -113,7 +122,7 @@ export async function processModerationReviewRun(args: {
     throw new AiRuntimeError('AI_SUBJECT_MISMATCH', 'Moderation review requires report subject.', 400);
   }
 
-  if (!args.run.requestedBy) {
+  if (!requestedBy) {
     throw new AiRuntimeError('VALIDATION_ERROR', 'Moderation run is missing requester id.', 400);
   }
 
@@ -131,20 +140,21 @@ export async function processModerationReviewRun(args: {
     systemPrompt: buildModerationSystemPrompt(args.run.promptVersion),
     userPrompt: buildModerationUserPrompt(context),
     responseFormatInstructions: MODERATION_RESPONSE_FORMAT_INSTRUCTIONS,
-    maxRepairAttempts: 1,
+    maxRepairAttempts: 2,
     traceId: args.run.traceId ?? undefined,
   });
 
   const output = structured.data as ModerationAiReviewOutput;
   const confidence = Number(output.confidence.toFixed(2));
 
-  const upsertResult = await args.supabase
-    .from('moderation_ai_reviews')
-    .upsert(
-      {
+  await withSupabasePersistenceRetry({
+    operationName: 'Moderation review persistence',
+    runId: args.run.id,
+    operation: async () => {
+      const reviewPayload = {
         run_id: args.run.id,
         report_id: context.reportId,
-        moderator_user_id: args.run.requestedBy,
+        moderator_user_id: requestedBy,
         target_type: context.targetType,
         target_id: context.targetId,
         risk_label: output.riskLabel,
@@ -152,7 +162,7 @@ export async function processModerationReviewRun(args: {
         rationale: output.rationale,
         suggested_action: output.suggestedAction,
         suggested_reason: output.suggestedReason,
-        evidence: output.evidence,
+        evidence: toJsonSafe(output.evidence),
         metadata: {
           promptVersion: args.run.promptVersion,
           promptKey: args.run.promptKey ?? null,
@@ -161,25 +171,39 @@ export async function processModerationReviewRun(args: {
           traceId: args.run.traceId ?? null,
           modelVersion: structured.modelVersion,
           providerRequestId: structured.requestId,
+          runtimeConfidence: structured.confidence,
+          runtimeConfidenceReasoning: structured.confidenceReasoning,
+          qualitySignal: toJsonSafe(structured.qualitySignal),
         },
-      },
-      {
-        onConflict: 'run_id',
-      },
-    )
-    .select('*')
-    .single();
+      } satisfies ModerationReviewInsert;
 
-  if (upsertResult.error || !upsertResult.data) {
-    throw new Error(upsertResult.error?.message ?? 'Failed to persist moderation AI review.');
-  }
+      const upsertResult = await args.supabase
+        .from('moderation_ai_reviews')
+        .upsert([reviewPayload], {
+          onConflict: 'run_id',
+        })
+        .select('*')
+        .single();
+
+      if (upsertResult.error || !upsertResult.data) {
+        throw new Error(upsertResult.error?.message ?? 'Failed to persist moderation AI review.');
+      }
+    },
+  });
 
   return {
     provider: structured.provider,
     model: structured.model,
     modelVersion: structured.modelVersion,
     latencyMs: structured.latencyMs,
-    providerMetadata: structured.providerMetadata,
+    providerMetadata: {
+      ...structured.providerMetadata,
+      qualitySignal: structured.qualitySignal,
+      runtimeConfidence: structured.confidence,
+      runtimeConfidenceReasoning: structured.confidenceReasoning,
+      repairCount: structured.repairCount,
+    },
+    qualitySignal: structured.qualitySignal,
   };
 }
 

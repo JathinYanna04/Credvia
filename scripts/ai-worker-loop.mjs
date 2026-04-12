@@ -1,14 +1,67 @@
 import nextEnv from '@next/env';
+import {
+  resolveWorkerLoopAppUrl,
+  WorkerLoopOriginResolutionError,
+} from './ai-worker-loop-origin.mjs';
+import {
+  MAX_JITTER_MS,
+  MAX_POLL_INTERVAL_MS,
+  MIN_POLL_INTERVAL_MS,
+  resolveWorkerLoopConfig,
+} from './ai-worker-loop-config.mjs';
 
 const { loadEnvConfig } = nextEnv;
 
 loadEnvConfig(process.cwd());
 
-const appUrl = process.env.CREDVIA_APP_URL?.trim() || 'http://localhost:3000';
+let appUrlResolution;
+
+try {
+  appUrlResolution = await resolveWorkerLoopAppUrl({
+    env: process.env,
+  });
+} catch (error) {
+  const normalized = error instanceof Error
+    ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack ?? null,
+      }
+    : {
+        name: null,
+        message: String(error),
+        stack: null,
+      };
+
+  const details = error instanceof WorkerLoopOriginResolutionError
+    ? error.details
+    : null;
+
+  console.error(
+    JSON.stringify({
+      scope: 'ai-worker-loop-startup-fatal',
+      errorName: normalized.name,
+      errorMessage: normalized.message,
+      errorStack: normalized.stack,
+      attemptedUrls: Array.isArray(details?.attemptedUrls) ? details.attemptedUrls : [],
+      probeResults: details?.probeResults ?? [],
+      timestamp: new Date().toISOString(),
+    }),
+  );
+
+  process.exit(1);
+}
+
+const { appUrl } = appUrlResolution;
+const workerEndpoint = `${appUrl}/api/v1/ai/worker`;
 const secret = process.env.AI_WORKER_SECRET?.trim();
-const pollIntervalMs = Number(process.env.AI_WORKER_POLL_INTERVAL_MS || '3000');
-const batchSize = Number(process.env.AI_WORKER_BATCH_SIZE || '5');
-const leaseSeconds = Number(process.env.AI_WORKER_LEASE_SECONDS || '45');
+const {
+  pollIntervalMs,
+  pollJitterMs,
+  batchSize,
+  leaseSeconds,
+  parallelism,
+} = resolveWorkerLoopConfig(process.env);
 
 function resolveProvider() {
   const explicit = process.env.AI_PROVIDER?.trim().toLowerCase();
@@ -16,13 +69,7 @@ function resolveProvider() {
     return explicit;
   }
 
-  const groqKey = process.env.GROQ_API_KEY
-    || process.env.AI_GROQ_API_KEY
-    || process.env.GROQ_KEY
-    || process.env.GROQ_TOKEN
-    || process.env.LLM_API_KEY;
-
-  if (groqKey) {
+  if (process.env.AI_GROQ_API_KEY) {
     return 'groq';
   }
 
@@ -45,7 +92,13 @@ console.info(
     batchSize,
     leaseSeconds,
     pollIntervalMs,
+    pollJitterMs,
+    parallelism,
     appUrl,
+    appUrlSource: appUrlResolution.source,
+    probeTimeoutMs: appUrlResolution.probeTimeoutMs,
+    probeResults: appUrlResolution.probeResults,
+    workerEndpoint,
     timestamp: new Date().toISOString(),
   }),
 );
@@ -62,14 +115,40 @@ function sleep(ms) {
 async function run() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    const requestMethod = 'POST';
+    const requestBody = {
+      batchSize,
+      leaseSeconds,
+      parallelism,
+    };
+    const requestHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${secret}`,
+      'x-ai-worker-secret': secret,
+    };
+
+    const requestHeadersForLog = {
+      'Content-Type': requestHeaders['Content-Type'],
+      Authorization: 'Bearer ***',
+      'x-ai-worker-secret': '***',
+    };
+
+    console.info(
+      JSON.stringify({
+        scope: 'ai-worker-loop-request',
+        url: workerEndpoint,
+        method: requestMethod,
+        headers: requestHeadersForLog,
+        body: requestBody,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+
     try {
-      const response = await fetch(`${appUrl}/api/v1/ai/worker`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-ai-worker-secret': secret,
-        },
-        body: JSON.stringify({}),
+      const response = await fetch(workerEndpoint, {
+        method: requestMethod,
+        headers: requestHeaders,
+        body: JSON.stringify(requestBody),
       });
 
       const payload = await response.json().catch(() => null);
@@ -78,6 +157,8 @@ async function run() {
         console.error(
           JSON.stringify({
             scope: 'ai-worker-loop',
+            url: workerEndpoint,
+            method: requestMethod,
             status: response.status,
             errorCode: payload?.error?.code ?? null,
             errorMessage: payload?.error?.message ?? 'Worker request failed.',
@@ -89,6 +170,8 @@ async function run() {
         console.info(
           JSON.stringify({
             scope: 'ai-worker-loop',
+            url: workerEndpoint,
+            method: requestMethod,
             claimed: result?.claimed ?? 0,
             succeeded: result?.succeeded ?? 0,
             retried: result?.retried ?? 0,
@@ -98,10 +181,52 @@ async function run() {
         );
       }
     } catch (error) {
-      console.error('AI worker loop error', error instanceof Error ? error.message : String(error));
+      const normalizedError = error instanceof Error
+        ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack ?? null,
+          }
+        : {
+            name: null,
+            message: String(error),
+            stack: null,
+          };
+
+      console.error(
+        JSON.stringify({
+          scope: 'ai-worker-loop-error',
+          url: workerEndpoint,
+          method: requestMethod,
+          headers: requestHeadersForLog,
+          errorName: normalizedError.name,
+          errorMessage: normalizedError.message,
+          errorStack: normalizedError.stack,
+          timestamp: new Date().toISOString(),
+        }),
+      );
     }
 
-    await sleep(pollIntervalMs);
+    const jitterDeltaMs = pollJitterMs > 0
+      ? Math.round((Math.random() * 2 - 1) * pollJitterMs)
+      : 0;
+    const nextPollDelayMs = Math.min(
+      MAX_POLL_INTERVAL_MS,
+      Math.max(MIN_POLL_INTERVAL_MS, pollIntervalMs + jitterDeltaMs),
+    );
+
+    console.info(
+      JSON.stringify({
+        scope: 'ai-worker-loop-wait',
+        pollIntervalMs,
+        pollJitterMs,
+        jitterDeltaMs,
+        nextPollDelayMs,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+
+    await sleep(nextPollDelayMs);
   }
 }
 

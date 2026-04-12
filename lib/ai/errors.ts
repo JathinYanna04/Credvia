@@ -18,6 +18,9 @@ export type AiRuntimeErrorCode = Extract<
   | 'AI_RUN_CLAIM_CONFLICT'
   | 'AI_RUN_DUPLICATE'
   | 'AI_RUN_NOT_READY'
+  | 'RATE_LIMITED'
+  | 'ANALYSIS_SERVICE_UNAVAILABLE'
+  | 'INTERNAL_ERROR'
 >;
 
 export class AiRuntimeError extends Error {

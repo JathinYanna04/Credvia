@@ -1,0 +1,18 @@
+{
+  "route": "/api/v1/ideas/[id]/ai-feedback",
+  "method": "GET",
+  "status": 200,
+  "payload": {
+    "data": {
+      "state": "empty",
+      "terminal": true,
+      "shouldPoll": false,
+      "latestRun": null,
+      "review": null,
+      "stale": false,
+      "recoveredFromLegacyOutputFailure": true,
+      "snapshot": null
+    }
+  },
+  "timestamp": "2026-04-12T19:31:22.509Z"
+}
