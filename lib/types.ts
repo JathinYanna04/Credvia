@@ -140,6 +140,12 @@ export interface PostSummary {
     revisionCount: number;
     lastRevisionAt?: string;
     currentRevisionId?: string;
+    aiAssessment?: {
+      verdict: "promising" | "needs_work" | "high_risk";
+      confidence?: number | null;
+      summary?: string;
+      createdAt?: string;
+    };
   };
   feedExplanation?: FeedExplanation;
 }

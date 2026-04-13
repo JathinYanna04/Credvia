@@ -1,23 +1,28 @@
 import { Badge } from "@/components/ui/badge";
+import { getValidationScoreDisplay } from "@/lib/utils/idea-validation-display";
 
 export interface ValidationScoreBadgeProps {
   score: number;
+  hasEnoughData?: boolean;
   compact?: boolean;
-}
-
-function getDisplayScore(score: number) {
-  return Math.max(0, Math.min(10, Math.round(score)));
 }
 
 export function ValidationScoreBadge({
   score,
+  hasEnoughData = true,
   compact = false,
 }: ValidationScoreBadgeProps) {
+  const display = getValidationScoreDisplay({
+    score,
+    hasEnoughData,
+  });
+
   return (
-    <Badge variant="accent" className={compact ? undefined : "px-3 py-1.5"}>
-      {compact
-        ? `🔥 Validation: ${getDisplayScore(score)}/10`
-        : `🔥 Validation: ${getDisplayScore(score)}/10`}
+    <Badge
+      variant={display.pending ? "secondary" : "accent"}
+      className={compact ? undefined : "px-3 py-1.5"}
+    >
+      {display.label}
     </Badge>
   );
 }

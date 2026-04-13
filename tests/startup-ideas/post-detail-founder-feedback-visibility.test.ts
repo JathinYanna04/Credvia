@@ -78,6 +78,62 @@ describe('PostDetail founder ai mount', () => {
     expect(markup).toContain('Get AI Feedback');
   });
 
+  it('shows pending community validation and separate AI assessment when community data is missing', () => {
+    const pendingWithAi: PostSummary = {
+      ...basePost,
+      voteScore: 0,
+      upvoteCount: 0,
+      downvoteCount: 0,
+      commentCount: 0,
+      saveCount: 0,
+      startupIdea: {
+        ...basePost.startupIdea!,
+        validationScore: 0,
+        uniqueCommenters: 0,
+        aiAssessment: {
+          verdict: 'promising',
+          confidence: 0.8,
+        },
+      },
+    };
+
+    const markup = renderToStaticMarkup(
+      React.createElement(PostDetail, {
+        post: pendingWithAi,
+        comments: [],
+        currentUserId: 'founder-1',
+      }),
+    );
+
+    expect(markup).toContain('Community validation pending');
+    expect(markup).toContain('AI assessment: Promising (80% confidence)');
+  });
+
+  it('shows numeric community validation when engagement data exists', () => {
+    const withCommunitySignals: PostSummary = {
+      ...basePost,
+      upvoteCount: 3,
+      downvoteCount: 0,
+      commentCount: 2,
+      saveCount: 1,
+      startupIdea: {
+        ...basePost.startupIdea!,
+        validationScore: 7,
+        uniqueCommenters: 2,
+      },
+    };
+
+    const markup = renderToStaticMarkup(
+      React.createElement(PostDetail, {
+        post: withCommunitySignals,
+        comments: [],
+        currentUserId: 'founder-1',
+      }),
+    );
+
+    expect(markup).toContain('Community validation: 7/10');
+  });
+
   it('does not show founder AI review section for non-startup posts', () => {
     const nonStartup: PostSummary = {
       ...basePost,

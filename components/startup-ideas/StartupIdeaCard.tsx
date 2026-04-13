@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { AiAssessmentBadge } from "@/components/startup-ideas/AiAssessmentBadge";
 import { Badge } from "@/components/ui/badge";
 import { VoteButtons } from "@/components/voting/VoteButtons";
 import { ValidationScoreBadge } from "@/components/startup-ideas/ValidationScoreBadge";
 import type { PostSummary } from "@/lib/types";
+import { hasEnoughCommunityValidationData } from "@/lib/utils/idea-validation-display";
 import { formatRelativeTime } from "@/lib/utils/format";
 
 export interface StartupIdeaCardProps {
@@ -28,6 +30,15 @@ export function StartupIdeaCard({ idea }: StartupIdeaCardProps) {
   if (!idea.startupIdea) {
     return null;
   }
+
+  const hasEnoughCommunityData = hasEnoughCommunityValidationData({
+    voteScore: idea.voteScore,
+    upvoteCount: idea.upvoteCount,
+    downvoteCount: idea.downvoteCount,
+    commentCount: idea.commentCount,
+    saveCount: idea.saveCount,
+    uniqueCommenters: idea.startupIdea.uniqueCommenters,
+  });
 
   return (
     <article className="surface-panel p-4 sm:p-5">
@@ -66,8 +77,15 @@ export function StartupIdeaCard({ idea }: StartupIdeaCardProps) {
             </Link>
             <ValidationScoreBadge
               score={idea.startupIdea.validationScore}
+              hasEnoughData={hasEnoughCommunityData}
               compact
             />
+            {idea.startupIdea.aiAssessment ? (
+              <AiAssessmentBadge
+                assessment={idea.startupIdea.aiAssessment}
+                compact
+              />
+            ) : null}
           </div>
 
           <p className="mt-3 line-clamp-2 text-sm text-text-secondary">

@@ -32,9 +32,14 @@ type CommunityReputationRow =
 type StartupIdeaRow = Database["public"]["Tables"]["startup_ideas"]["Row"];
 type StartupIdeaRevisionRow =
   Database["public"]["Tables"]["startup_idea_revisions"]["Row"];
+type FounderIdeaReviewRow =
+  Database["public"]["Tables"]["founder_idea_reviews"]["Row"];
 type NotificationRow = Database["public"]["Tables"]["notifications"]["Row"];
 type StartupIdeaStage = NonNullable<PostSummary["startupIdea"]>["stage"];
 type VoteRow = Database["public"]["Tables"]["votes"]["Row"];
+type FounderIdeaAssessment = NonNullable<
+  NonNullable<PostSummary["startupIdea"]>["aiAssessment"]
+>;
 
 interface VoteCounterSummary {
   upvoteCount: number;
@@ -197,6 +202,60 @@ export async function getStartupIdeaRevisionsByPostIds(
   });
 
   return revisions;
+}
+
+function toFounderIdeaVerdict(value: string): FounderIdeaAssessment["verdict"] | null {
+  if (value === "promising" || value === "needs_work" || value === "high_risk") {
+    return value;
+  }
+
+  return null;
+}
+
+export async function getLatestFounderIdeaReviewsByPostIds(
+  supabase: TypedSupabaseClient,
+  postIds: string[],
+) {
+  const ids = unique(postIds);
+
+  if (ids.length === 0) {
+    return new Map<string, FounderIdeaAssessment>();
+  }
+
+  const { data, error } = await supabase
+    .from("founder_idea_reviews")
+    .select("post_id, verdict, confidence, summary, created_at")
+    .in("post_id", ids)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const reviews = new Map<string, FounderIdeaAssessment>();
+
+  for (const row of (data ?? []) as Pick<
+    FounderIdeaReviewRow,
+    "post_id" | "verdict" | "confidence" | "summary" | "created_at"
+  >[]) {
+    if (reviews.has(row.post_id)) {
+      continue;
+    }
+
+    const verdict = toFounderIdeaVerdict(row.verdict);
+    if (!verdict) {
+      continue;
+    }
+
+    reviews.set(row.post_id, {
+      verdict,
+      confidence: row.confidence,
+      summary: row.summary,
+      createdAt: row.created_at,
+    });
+  }
+
+  return reviews;
 }
 
 export async function getCurrentUserVotesByEntityIds(
@@ -417,6 +476,7 @@ export async function toPostSummaries(
     communities,
     communityRep,
     startupIdeas,
+    founderIdeaReviews,
     uniqueCommenterCounts,
     currentUserVotes,
     voteCounters,
@@ -435,6 +495,10 @@ export async function toPostSummaries(
       posts.map((post) => post.community_id),
     ),
     getStartupIdeasByPostIds(
+      supabase,
+      posts.map((post) => post.id),
+    ),
+    getLatestFounderIdeaReviewsByPostIds(
       supabase,
       posts.map((post) => post.id),
     ),
@@ -459,6 +523,7 @@ export async function toPostSummaries(
     const community = communities.get(post.community_id);
     const authorProfile = profiles.get(post.author_id);
     const startupIdea = startupIdeas.get(post.id);
+    const founderIdeaReview = founderIdeaReviews.get(post.id);
     const uniqueCommenters = uniqueCommenterCounts.get(post.id) ?? 0;
     const voteCounter = voteCounters.get(post.id);
 
@@ -510,13 +575,13 @@ export async function toPostSummaries(
               commentCount: post.comment_count,
               saveCount: post.save_count,
               uniqueCommenters,
-              createdAt: post.created_at,
             }),
             uniqueCommenters,
             followerCount: startupIdea.follower_count ?? 0,
             revisionCount: startupIdea.revision_count ?? 1,
             lastRevisionAt: startupIdea.last_revision_at ?? undefined,
             currentRevisionId: startupIdea.current_revision_id ?? undefined,
+            aiAssessment: founderIdeaReview,
           }
         : undefined,
     };

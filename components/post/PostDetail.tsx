@@ -9,6 +9,7 @@ import { PostTypeBadge } from "@/components/post/PostTypeBadge";
 import { IdeaFollowButton } from "@/components/startup-ideas/IdeaFollowButton";
 import { IdeaRevisionForm } from "@/components/startup-ideas/IdeaRevisionForm";
 import { IdeaRevisionTimeline } from "@/components/startup-ideas/IdeaRevisionTimeline";
+import { AiAssessmentBadge } from "@/components/startup-ideas/AiAssessmentBadge";
 import { ReportIdeaButton } from "@/components/startup-ideas/ReportIdeaButton";
 import { ValidationScoreBadge } from "@/components/startup-ideas/ValidationScoreBadge";
 import { VoteButtons } from "@/components/voting/VoteButtons";
@@ -17,6 +18,7 @@ import type {
   PostSummary,
   StartupIdeaRevisionSummary,
 } from "@/lib/types";
+import { hasEnoughCommunityValidationData } from "@/lib/utils/idea-validation-display";
 import { toVoteEntityTypeFromPostType } from '@/lib/voting';
 import { formatRelativeTime } from "@/lib/utils/format";
 
@@ -44,6 +46,16 @@ export function PostDetail({
     post.postType === 'startup_idea'
       ? `/api/v1/startup-ideas/${post.id}/vote`
       : `/api/v1/posts/${post.id}/vote`;
+  const hasEnoughCommunityData = post.startupIdea
+    ? hasEnoughCommunityValidationData({
+        voteScore: post.voteScore,
+        upvoteCount: post.upvoteCount,
+        downvoteCount: post.downvoteCount,
+        commentCount: post.commentCount,
+        saveCount: post.saveCount,
+        uniqueCommenters: post.startupIdea.uniqueCommenters,
+      })
+    : false;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -61,7 +73,13 @@ export function PostDetail({
             {post.title}
           </h1>
           {post.startupIdea ? (
-            <ValidationScoreBadge score={post.startupIdea.validationScore} />
+            <ValidationScoreBadge
+              score={post.startupIdea.validationScore}
+              hasEnoughData={hasEnoughCommunityData}
+            />
+          ) : null}
+          {post.startupIdea?.aiAssessment ? (
+            <AiAssessmentBadge assessment={post.startupIdea.aiAssessment} />
           ) : null}
         </div>
         <div className="surface-panel flex flex-col gap-4 p-4 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">

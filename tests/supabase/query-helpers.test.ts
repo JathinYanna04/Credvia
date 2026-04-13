@@ -79,6 +79,27 @@ describe("toPostSummaries", () => {
           return chain;
         }
 
+        if (table === "founder_idea_reviews") {
+          const chain = {
+            select: () => chain,
+            in: () => chain,
+            order: async () => ({
+              data: [
+                {
+                  post_id: "post-1",
+                  verdict: "promising",
+                  confidence: 0.82,
+                  summary: "Strong early signal.",
+                  created_at: "2026-04-05T00:00:00.000Z",
+                },
+              ],
+              error: null,
+            }),
+          };
+
+          return chain;
+        }
+
         if (table === "comments") {
           const chain = {
             select: () => chain,
@@ -143,5 +164,9 @@ describe("toPostSummaries", () => {
     expect(summary?.upvoteCount).toBe(1);
     expect(summary?.downvoteCount).toBe(0);
     expect(summary?.voteScore).toBe(3);
+    expect(summary?.startupIdea?.aiAssessment).toMatchObject({
+      verdict: "promising",
+      confidence: 0.82,
+    });
   });
 });

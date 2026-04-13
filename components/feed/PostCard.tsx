@@ -7,10 +7,12 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { StartDirectMessageButton } from '@/components/chat/StartDirectMessageButton';
 import { PostTypeBadge } from "@/components/post/PostTypeBadge";
 import { ReputationBadge } from "@/components/reputation/ReputationBadge";
+import { AiAssessmentBadge } from "@/components/startup-ideas/AiAssessmentBadge";
 import { VoteButtons } from "@/components/voting/VoteButtons";
 import { ValidationScoreBadge } from "@/components/startup-ideas/ValidationScoreBadge";
 import { useVoteSnapshot } from '@/lib/hooks/useVoteSnapshot';
 import type { PostSummary } from "@/lib/types";
+import { hasEnoughCommunityValidationData } from '@/lib/utils/idea-validation-display';
 import { toVoteEntityTypeFromPostType } from '@/lib/voting';
 import { computeIdeaValidationScore } from '@/lib/utils/idea-score';
 import { formatRelativeTime } from "@/lib/utils/format";
@@ -38,9 +40,18 @@ export function PostCard({ post, currentUserId = null }: PostCardProps) {
         commentCount: post.commentCount,
         saveCount: post.saveCount,
         uniqueCommenters: post.startupIdea.uniqueCommenters,
-        createdAt: post.createdAt,
       })
     : null;
+  const hasEnoughCommunityData = post.startupIdea
+    ? hasEnoughCommunityValidationData({
+        voteScore: voteSnapshot.score,
+        upvoteCount: voteSnapshot.upvoteCount,
+        downvoteCount: voteSnapshot.downvoteCount,
+        commentCount: post.commentCount,
+        saveCount: post.saveCount,
+        uniqueCommenters: post.startupIdea.uniqueCommenters,
+      })
+    : false;
 
   const detailHref =
     post.postType === "startup_idea" ? `/ideas/${post.id}` : `/post/${post.id}`;
@@ -123,10 +134,19 @@ export function PostCard({ post, currentUserId = null }: PostCardProps) {
             </h3>
           </Link>
           {post.startupIdea ? (
-            <ValidationScoreBadge
-              score={startupValidationScore ?? post.startupIdea.validationScore}
-              compact
-            />
+            <>
+              <ValidationScoreBadge
+                score={startupValidationScore ?? post.startupIdea.validationScore}
+                hasEnoughData={hasEnoughCommunityData}
+                compact
+              />
+              {post.startupIdea.aiAssessment ? (
+                <AiAssessmentBadge
+                  assessment={post.startupIdea.aiAssessment}
+                  compact
+                />
+              ) : null}
+            </>
           ) : null}
         </div>
 

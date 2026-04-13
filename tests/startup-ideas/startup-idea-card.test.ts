@@ -7,7 +7,7 @@ import type { PostSummary } from "@/lib/types";
 
 (globalThis as { React?: typeof React }).React = React;
 
-const idea: PostSummary = {
+const baseIdea: PostSummary = {
   id: "idea-1",
   title: "Startup validation 1774798703978",
   body: "Founders need better validation workflows.",
@@ -55,17 +55,63 @@ const idea: PostSummary = {
 };
 
 describe("StartupIdeaCard", () => {
-  it("cleans titles and uses improved startup metadata labels", () => {
+  it("cleans titles and shows numeric community validation when engagement data exists", () => {
     const markup = renderToStaticMarkup(
-      React.createElement(StartupIdeaCard, { idea }),
+      React.createElement(StartupIdeaCard, { idea: baseIdea }),
     );
 
     expect(markup).toContain("Startup validation");
     expect(markup).not.toContain("1774798703978");
-    expect(markup).toContain("🔥 Validation: 9/10");
+    expect(markup).toContain("Community validation: 9/10");
     expect(markup).toContain("1 comment");
     expect(markup).toContain("1 contributor");
     expect(markup).toContain("1 update");
     expect(markup).toContain("0 followers");
+  });
+
+  it("shows pending community validation when there are no community signals", () => {
+    const pendingIdea: PostSummary = {
+      ...baseIdea,
+      voteScore: 0,
+      commentCount: 0,
+      saveCount: 0,
+      startupIdea: {
+        ...baseIdea.startupIdea!,
+        validationScore: 0,
+        uniqueCommenters: 0,
+      },
+    };
+
+    const markup = renderToStaticMarkup(
+      React.createElement(StartupIdeaCard, { idea: pendingIdea }),
+    );
+
+    expect(markup).toContain("Community validation pending");
+    expect(markup).not.toContain("AI assessment:");
+  });
+
+  it("shows a separate AI assessment badge when AI feedback exists", () => {
+    const aiReviewedIdea: PostSummary = {
+      ...baseIdea,
+      voteScore: 0,
+      commentCount: 0,
+      saveCount: 0,
+      startupIdea: {
+        ...baseIdea.startupIdea!,
+        validationScore: 0,
+        uniqueCommenters: 0,
+        aiAssessment: {
+          verdict: "needs_work",
+          confidence: 0.71,
+        },
+      },
+    };
+
+    const markup = renderToStaticMarkup(
+      React.createElement(StartupIdeaCard, { idea: aiReviewedIdea }),
+    );
+
+    expect(markup).toContain("Community validation pending");
+    expect(markup).toContain("AI assessment: Needs work (71% confidence)");
   });
 });
