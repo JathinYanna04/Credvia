@@ -250,7 +250,14 @@ SCHEMA_VERSION = read_env_value("RESUME_SCHEMA_VERSION", SCHEMA_VERSION)
 PARSER_VERSION = read_env_value("RESUME_PARSER_VERSION", PARSER_VERSION)
 LLM_ALWAYS_ON = read_env_bool("LLM_ALWAYS_ON", True)
 LLM_PROVIDER = read_env_value("LLM_PROVIDER", "groq")
-GROQ_MODEL = read_env_value("GROQ_MODEL", "llama-3.1-8b-instant")
+RESUME_EXTRACTOR_GROQ_MODEL = read_env_value(
+    "RESUME_EXTRACTOR_GROQ_MODEL",
+    read_env_value("GROQ_MODEL", "llama-3.1-8b-instant"),
+)
+RESUME_EXTRACTOR_GROQ_BASE_URL = read_env_value(
+    "RESUME_EXTRACTOR_GROQ_BASE_URL",
+    read_env_value("GROQ_BASE_URL", GROQ_BASE_URL),
+)
 OPENAI_MODEL = read_env_value("OPENAI_MODEL", "gpt-4.1-mini")
 LLM_TIMEOUT_SECONDS = read_env_float("LLM_TIMEOUT_SECONDS", read_env_float("GROQ_TIMEOUT_SECONDS", 12.0))
 GROQ_FORCE = read_env_bool("GROQ_FORCE", False)
@@ -271,9 +278,10 @@ def log_event(message: str) -> None:
 
 
 def llm_provider_configured() -> bool:
+    groq_key = read_env_value("RESUME_EXTRACTOR_GROQ_API_KEY")
     if LLM_PROVIDER == "openai":
         return bool(read_env_value("OPENAI_API_KEY"))
-    return bool(read_env_value("GROQ_API_KEY")) or bool(read_env_value("OPENAI_API_KEY"))
+    return bool(groq_key) or bool(read_env_value("OPENAI_API_KEY"))
 
 
 @app.on_event("startup")
@@ -1798,9 +1806,9 @@ def call_llm_refiner(cleaned_text: str, payload: Dict[str, Any]) -> Optional[Dic
     call_llm_refiner.last_status = None
     call_llm_refiner.last_raw_present = False
     provider = (LLM_PROVIDER or "groq").lower()
-    api_key = read_env_value("GROQ_API_KEY")
-    base_url = GROQ_BASE_URL
-    model = GROQ_MODEL
+    api_key = read_env_value("RESUME_EXTRACTOR_GROQ_API_KEY")
+    base_url = RESUME_EXTRACTOR_GROQ_BASE_URL or GROQ_BASE_URL
+    model = RESUME_EXTRACTOR_GROQ_MODEL
 
     if provider == "openai" or (provider != "groq" and not api_key):
         api_key = read_env_value("OPENAI_API_KEY")

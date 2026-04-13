@@ -80,10 +80,11 @@ function isPublicPath(pathname: string) {
 
 function isPublicApiRequest(pathname: string, method: string) {
   if (method !== 'GET') {
-    return pathname.startsWith('/api/v1/auth');
+    return pathname.startsWith('/api/v1/auth') || pathname === '/api/v1/ai/worker';
   }
 
   return (
+    pathname === '/api/v1/ai/worker' ||
     pathname === '/api/v1/communities' ||
     pathname === '/api/v1/search' ||
     pathname === '/api/v1/jobs' ||
@@ -111,6 +112,10 @@ function shouldBypassMiddleware(pathname: string) {
 
 function isApiPath(pathname: string) {
   return pathname.startsWith('/api/');
+}
+
+function isFounderFeedbackApiPath(pathname: string) {
+  return /^\/api\/v1\/ideas\/[^/]+\/ai-feedback$/.test(pathname);
 }
 
 function isOnboardingPath(pathname: string) {
@@ -141,6 +146,13 @@ export async function middleware(request: NextRequest) {
 
   if (shouldBypassMiddleware(pathname)) {
     logInfo('middleware', 'Bypassing middleware for asset/system request', {
+      pathname,
+    });
+    return NextResponse.next();
+  }
+
+  if (isFounderFeedbackApiPath(pathname)) {
+    logInfo('middleware', 'Bypassing middleware auth refresh for founder ai-feedback route', {
       pathname,
     });
     return NextResponse.next();

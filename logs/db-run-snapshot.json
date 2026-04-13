@@ -1,0 +1,105 @@
+{
+  "runId": "04603600-a3d7-4bff-b124-372fd9d9b39a",
+  "status": "succeeded",
+  "feature": "founder_idea_feedback",
+  "subjectType": "startup_idea",
+  "subjectId": "1ef7222a-fc0b-4060-b639-44e9e779394c",
+  "requestedBy": "7a180fe3-3d10-4ded-a569-cadafbc17ac7",
+  "promptVersion": "founder-v1",
+  "promptKey": "founder-feedback-core",
+  "inputHash": "9712b05801602cd966f72f1b6a2bb52b9c54f265fdf427290faf0069300ac12f",
+  "runIdentity": "6694f51668596b9120dfc9aba7aec3ad23f3e07008931abce61e9991480757f7",
+  "attemptCount": 1,
+  "maxAttempts": 3,
+  "provider": "groq",
+  "model": "llama-3.3-70b-versatile",
+  "requestId": "req_01kp1p6fknekary0g9mkaqmdq1",
+  "latencyMs": 4808,
+  "providerMetadata": {
+    "requestId": "req_01kp1p6fknekary0g9mkaqmdq1",
+    "finishReason": "stop",
+    "usage": {
+      "inputTokens": 1846,
+      "outputTokens": 533,
+      "totalTokens": 2379
+    },
+    "attemptCount": 1,
+    "structuredMode": "minimal_schema",
+    "qualitySignal": {
+      "confidence": 0.81,
+      "reasoning": [
+        "Repair attempts used: 1.",
+        "Provider returned on first attempt.",
+        "Schema validation failures observed: 1.",
+        "Potentially weak or missing fields detected: 1."
+      ],
+      "stability": "high",
+      "repairCount": 1,
+      "providerAttemptCount": 1,
+      "parseFailureCount": 0,
+      "validationFailureCount": 1,
+      "missingFieldCount": 1,
+      "outputLength": 2627
+    },
+    "runtimeConfidence": 0.81,
+    "runtimeConfidenceReasoning": [
+      "Repair attempts used: 1.",
+      "Provider returned on first attempt.",
+      "Schema validation failures observed: 1.",
+      "Potentially weak or missing fields detected: 1."
+    ],
+    "repairCount": 1,
+    "workflowTrace": {
+      "nodePath": [
+        "validateInput",
+        "chooseStrategy",
+        "invokeModel",
+        "persistResult",
+        "markSucceeded"
+      ],
+      "nodeTimingsMs": {
+        "validateInput": 3,
+        "chooseStrategy": 5,
+        "invokeModel": 4588,
+        "persistResult": 12,
+        "markSucceeded": 10
+      },
+      "stateTransitions": [
+        {
+          "node": "validateInput",
+          "fromStatus": "queued",
+          "toStatus": "running",
+          "durationMs": 3
+        },
+        {
+          "node": "chooseStrategy",
+          "fromStatus": "running",
+          "toStatus": "running",
+          "durationMs": 5
+        },
+        {
+          "node": "invokeModel",
+          "fromStatus": "running",
+          "toStatus": "running",
+          "durationMs": 4588
+        },
+        {
+          "node": "persistResult",
+          "fromStatus": "running",
+          "toStatus": "running",
+          "durationMs": 12
+        },
+        {
+          "node": "markSucceeded",
+          "fromStatus": "running",
+          "toStatus": "succeeded",
+          "durationMs": 10
+        }
+      ],
+      "totalDurationMs": 4638,
+      "retryCount": 0,
+      "inputHash": "9712b05801602cd966f72f1b6a2bb52b9c54f265fdf427290faf0069300ac12f"
+    }
+  },
+  "timestamp": "2026-04-12T20:30:13.471Z"
+}

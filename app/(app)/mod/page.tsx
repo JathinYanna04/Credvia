@@ -48,7 +48,7 @@ export default async function ModeratorPage() {
               {report.details ? (
                 <p className="text-sm text-text-secondary">{report.details}</p>
               ) : null}
-              <ModerationActionButtons reportId={report.id} />
+              <ModerationActionButtons reportId={report.id} aiReview={report.aiReview ?? null} />
             </article>
           ))
         )}

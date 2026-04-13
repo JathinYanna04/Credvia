@@ -4,7 +4,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type { CookieOptions } from '@supabase/ssr';
 import { getRequiredSupabaseBrowserConfig } from '@/lib/supabase/env';
 import type { Database } from '@/lib/supabase/types';
-import { isSchemaCompatibilityError } from '@/lib/supabase/helpers';
+import { isSchemaCompatibilityError, isSupabaseAuthTransportError } from '@/lib/supabase/helpers';
+import { logError } from '@/lib/utils/logger';
 
 export async function updateSession(request: NextRequest) {
   const response = NextResponse.next({ request });
@@ -33,16 +34,44 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user: User | null = null;
+  let authTransportFailure = false;
+
+  try {
+    const {
+      data: { user: resolvedUser },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error) {
+      authTransportFailure = isSupabaseAuthTransportError(error);
+
+      if (authTransportFailure) {
+        logError('supabase-middleware', 'Auth user fetch transport failure', {
+          message: error.message,
+        });
+      }
+    }
+
+    user = resolvedUser ?? null;
+  } catch (error) {
+    authTransportFailure = isSupabaseAuthTransportError(error);
+
+    if (authTransportFailure) {
+      logError('supabase-middleware', 'Auth user fetch threw transport failure', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } else {
+      throw error;
+    }
+  }
 
   if (user) {
     response.cookies.set('sb-user-id', user.id, {
       httpOnly: false,
       path: '/',
     });
-  } else {
+  } else if (!authTransportFailure) {
     response.cookies.delete('sb-user-id');
   }
 

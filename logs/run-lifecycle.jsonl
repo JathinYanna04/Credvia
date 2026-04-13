@@ -1,0 +1,347 @@
+{"runId":"run-queued","status":"queued","timestamp":"2026-04-12T15:56:49.927Z","latencyMs":null,"errorCode":null}
+{"runId":"run-queued-2","status":"queued","timestamp":"2026-04-12T15:56:49.931Z","latencyMs":null,"errorCode":null}
+{"runId":"run-duplicate-existing","status":"queued","timestamp":"2026-04-12T15:56:49.929Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"queued","timestamp":"2026-04-12T15:56:49.943Z","latencyMs":null,"errorCode":null}
+{"runId":"run-reused-1","status":"succeeded","timestamp":"2026-04-12T15:56:50.055Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"running","timestamp":"2026-04-12T16:00:06.931Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"succeeded","timestamp":"2026-04-12T16:00:06.933Z","latencyMs":2,"errorCode":null}
+{"runId":"run-2","status":"running","timestamp":"2026-04-12T16:00:06.945Z","latencyMs":null,"errorCode":null}
+{"runId":"run-rate-limit-1","status":"failed","timestamp":"2026-04-12T16:00:06.951Z","latencyMs":1,"errorCode":"RATE_LIMITED"}
+{"runId":"run-rate-limit-1","status":"running","timestamp":"2026-04-12T16:00:06.950Z","latencyMs":null,"errorCode":null}
+{"runId":"run-3","status":"running","timestamp":"2026-04-12T16:00:06.959Z","latencyMs":null,"errorCode":null}
+{"runId":"run-3","status":"failed","timestamp":"2026-04-12T16:00:06.960Z","latencyMs":null,"errorCode":"INTERNAL_ERROR"}
+{"runId":"run-4","status":"running","timestamp":"2026-04-12T16:00:06.963Z","latencyMs":null,"errorCode":null}
+{"runId":"run-5","status":"running","timestamp":"2026-04-12T16:00:06.963Z","latencyMs":null,"errorCode":null}
+{"runId":"run-4","status":"succeeded","timestamp":"2026-04-12T16:00:06.964Z","latencyMs":1,"errorCode":null}
+{"runId":"run-5","status":"succeeded","timestamp":"2026-04-12T16:00:06.964Z","latencyMs":1,"errorCode":null}
+{"runId":"run-dup-1","status":"running","timestamp":"2026-04-12T16:00:06.969Z","latencyMs":null,"errorCode":null}
+{"runId":"run-dup-2","status":"running","timestamp":"2026-04-12T16:00:06.969Z","latencyMs":null,"errorCode":null}
+{"runId":"run-dup-1","status":"succeeded","timestamp":"2026-04-12T16:00:06.970Z","latencyMs":1,"errorCode":null}
+{"runId":"run-dup-2","status":"succeeded","timestamp":"2026-04-12T16:00:06.970Z","latencyMs":1,"errorCode":null}
+{"runId":"run-conflict-1","status":"running","timestamp":"2026-04-12T16:00:06.974Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"running","timestamp":"2026-04-12T16:00:06.932Z","latencyMs":null,"errorCode":null}
+{"runId":"run-queued","status":"queued","timestamp":"2026-04-12T16:00:07.122Z","latencyMs":null,"errorCode":null}
+{"runId":"run-duplicate-existing","status":"queued","timestamp":"2026-04-12T16:00:07.128Z","latencyMs":null,"errorCode":null}
+{"runId":"run-queued-2","status":"queued","timestamp":"2026-04-12T16:00:07.134Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"queued","timestamp":"2026-04-12T16:00:07.193Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"succeeded","timestamp":"2026-04-12T16:03:13.510Z","latencyMs":2,"errorCode":null}
+{"runId":"run-1","status":"running","timestamp":"2026-04-12T16:03:13.508Z","latencyMs":null,"errorCode":null}
+{"runId":"run-2","status":"running","timestamp":"2026-04-12T16:03:13.519Z","latencyMs":null,"errorCode":null}
+{"runId":"run-rate-limit-1","status":"running","timestamp":"2026-04-12T16:03:13.523Z","latencyMs":null,"errorCode":null}
+{"runId":"run-rate-limit-1","status":"failed","timestamp":"2026-04-12T16:03:13.524Z","latencyMs":1,"errorCode":"RATE_LIMITED"}
+{"runId":"run-3","status":"failed","timestamp":"2026-04-12T16:03:13.530Z","latencyMs":1,"errorCode":"INTERNAL_ERROR"}
+{"runId":"run-3","status":"running","timestamp":"2026-04-12T16:03:13.529Z","latencyMs":null,"errorCode":null}
+{"runId":"run-4","status":"running","timestamp":"2026-04-12T16:03:13.533Z","latencyMs":null,"errorCode":null}
+{"runId":"run-5","status":"running","timestamp":"2026-04-12T16:03:13.534Z","latencyMs":null,"errorCode":null}
+{"runId":"run-4","status":"succeeded","timestamp":"2026-04-12T16:03:13.534Z","latencyMs":1,"errorCode":null}
+{"runId":"run-5","status":"succeeded","timestamp":"2026-04-12T16:03:13.534Z","latencyMs":null,"errorCode":null}
+{"runId":"run-dup-2","status":"running","timestamp":"2026-04-12T16:03:13.540Z","latencyMs":null,"errorCode":null}
+{"runId":"run-dup-1","status":"succeeded","timestamp":"2026-04-12T16:03:13.540Z","latencyMs":null,"errorCode":null}
+{"runId":"run-dup-1","status":"running","timestamp":"2026-04-12T16:03:13.540Z","latencyMs":null,"errorCode":null}
+{"runId":"run-dup-2","status":"succeeded","timestamp":"2026-04-12T16:03:13.540Z","latencyMs":null,"errorCode":null}
+{"runId":"run-conflict-1","status":"running","timestamp":"2026-04-12T16:03:13.544Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"running","timestamp":"2026-04-12T16:03:13.509Z","latencyMs":null,"errorCode":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","status":"queued","timestamp":"2026-04-12T16:23:56.176Z","latencyMs":null,"errorCode":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","status":"queued","timestamp":"2026-04-12T16:23:56.177Z","latencyMs":null,"errorCode":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","status":"running","timestamp":"2026-04-12T16:23:56.951Z","latencyMs":null,"errorCode":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","status":"running","timestamp":"2026-04-12T16:23:56.956Z","latencyMs":null,"errorCode":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","status":"running","timestamp":"2026-04-12T16:24:07.035Z","latencyMs":null,"errorCode":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","status":"running","timestamp":"2026-04-12T16:24:07.036Z","latencyMs":null,"errorCode":null}
+{"runId":"run-duplicate-existing","status":"queued","timestamp":"2026-04-12T16:43:03.159Z","latencyMs":null,"errorCode":null}
+{"runId":"run-queued","status":"queued","timestamp":"2026-04-12T16:43:03.152Z","latencyMs":null,"errorCode":null}
+{"runId":"run-queued-2","status":"queued","timestamp":"2026-04-12T16:43:03.165Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"running","timestamp":"2026-04-12T16:44:40.322Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"succeeded","timestamp":"2026-04-12T16:44:40.324Z","latencyMs":3,"errorCode":null}
+{"runId":"run-2","status":"running","timestamp":"2026-04-12T16:44:40.338Z","latencyMs":null,"errorCode":null}
+{"runId":"run-rate-limit-1","status":"running","timestamp":"2026-04-12T16:44:40.345Z","latencyMs":null,"errorCode":null}
+{"runId":"run-rate-limit-1","status":"failed","timestamp":"2026-04-12T16:44:40.346Z","latencyMs":1,"errorCode":"RATE_LIMITED"}
+{"runId":"run-config-missing-1","status":"failed","timestamp":"2026-04-12T16:44:40.352Z","latencyMs":null,"errorCode":"AI_PROVIDER_NOT_CONFIGURED"}
+{"runId":"run-config-missing-1","status":"running","timestamp":"2026-04-12T16:44:40.351Z","latencyMs":null,"errorCode":null}
+{"runId":"run-3","status":"running","timestamp":"2026-04-12T16:44:40.355Z","latencyMs":null,"errorCode":null}
+{"runId":"run-3","status":"failed","timestamp":"2026-04-12T16:44:40.356Z","latencyMs":1,"errorCode":"INTERNAL_ERROR"}
+{"runId":"run-4","status":"running","timestamp":"2026-04-12T16:44:40.362Z","latencyMs":null,"errorCode":null}
+{"runId":"run-5","status":"running","timestamp":"2026-04-12T16:44:40.363Z","latencyMs":null,"errorCode":null}
+{"runId":"run-5","status":"succeeded","timestamp":"2026-04-12T16:44:40.363Z","latencyMs":1,"errorCode":null}
+{"runId":"run-4","status":"succeeded","timestamp":"2026-04-12T16:44:40.363Z","latencyMs":1,"errorCode":null}
+{"runId":"run-dup-1","status":"running","timestamp":"2026-04-12T16:44:40.367Z","latencyMs":null,"errorCode":null}
+{"runId":"run-dup-2","status":"running","timestamp":"2026-04-12T16:44:40.367Z","latencyMs":null,"errorCode":null}
+{"runId":"run-dup-1","status":"succeeded","timestamp":"2026-04-12T16:44:40.368Z","latencyMs":1,"errorCode":null}
+{"runId":"run-dup-2","status":"succeeded","timestamp":"2026-04-12T16:44:40.368Z","latencyMs":1,"errorCode":null}
+{"runId":"run-conflict-1","status":"running","timestamp":"2026-04-12T16:44:40.372Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"running","timestamp":"2026-04-12T16:44:40.322Z","latencyMs":null,"errorCode":null}
+{"runId":"run-1","status":"succeeded","timestamp":"2026-04-12T16:44:40.324Z","latencyMs":3,"errorCode":null}
+{"runId":"run-queued","status":"queued","timestamp":"2026-04-12T16:44:40.463Z","latencyMs":null,"errorCode":null}
+{"runId":"run-duplicate-existing","status":"queued","timestamp":"2026-04-12T16:44:40.470Z","latencyMs":null,"errorCode":null}
+{"runId":"run-queued-2","status":"queued","timestamp":"2026-04-12T16:44:40.476Z","latencyMs":null,"errorCode":null}
+{"runId":"run-queued","status":"succeeded","timestamp":"2026-04-12T16:44:40.464Z","latencyMs":null,"errorCode":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","status":"queued","timestamp":"2026-04-12T16:57:24.376Z","latencyMs":null,"errorCode":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","status":"queued","timestamp":"2026-04-12T16:57:24.386Z","latencyMs":null,"errorCode":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","status":"queued","timestamp":"2026-04-12T17:01:41.349Z","latencyMs":null,"errorCode":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","status":"queued","timestamp":"2026-04-12T17:01:41.355Z","latencyMs":null,"errorCode":null}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:13:34.118Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T17:13:34.126Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T17:13:34.147Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:13:34.138Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.041Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.043Z","attemptCount":null,"latencyMs":2,"errorCode":null,"errorMessage":null}
+{"runId":"run-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.056Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:13:34.076Z","attemptCount":1,"latencyMs":null,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"AI review is not configured yet. Groq is selected, but no API key is available to process this request."}
+{"runId":"run-config-missing-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.075Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-validation-failure-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.082Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-validation-failure-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:13:34.082Z","attemptCount":1,"latencyMs":null,"errorCode":"VALIDATION_ERROR","errorMessage":"Structured output payload did not satisfy schema constraints."}
+{"runId":"run-rate-limit-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.067Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.090Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:13:34.091Z","attemptCount":3,"latencyMs":1,"errorCode":"RATE_LIMITED","errorMessage":"AI review is temporarily rate-limited. Please retry in a few seconds."}
+{"runId":"run-3","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.097Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-3","traceId":null,"status":"failed","timestamp":"2026-04-12T17:13:34.097Z","attemptCount":3,"latencyMs":null,"errorCode":"INTERNAL_ERROR","errorMessage":"hard failure"}
+{"runId":"run-4","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.102Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.102Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.103Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-4","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.103Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.113Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.114Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.114Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.115Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-conflict-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.120Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.042Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.044Z","attemptCount":1,"latencyMs":3,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.119Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.057Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.067Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.075Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T17:13:34.127Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:13:34.076Z","attemptCount":1,"latencyMs":1,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"AI review is not configured yet. Groq is selected, but no API key is available to process this request."}
+{"runId":"run-validation-failure-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.082Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-validation-failure-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:13:34.083Z","attemptCount":1,"latencyMs":1,"errorCode":"VALIDATION_ERROR","errorMessage":"Structured output payload did not satisfy schema constraints."}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:13:34.138Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.091Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:13:34.092Z","attemptCount":3,"latencyMs":2,"errorCode":"RATE_LIMITED","errorMessage":"AI review is temporarily rate-limited. Please retry in a few seconds."}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T17:13:34.147Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-3","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.097Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-3","traceId":null,"status":"failed","timestamp":"2026-04-12T17:13:34.098Z","attemptCount":3,"latencyMs":1,"errorCode":"INTERNAL_ERROR","errorMessage":"hard failure"}
+{"runId":"run-4","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.102Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.102Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-4","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.103Z","attemptCount":1,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.103Z","attemptCount":1,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.114Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.114Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.114Z","attemptCount":1,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:13:34.115Z","attemptCount":1,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-conflict-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:13:34.120Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:15:03.054Z","attemptCount":null,"latencyMs":2,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.052Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.064Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.071Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.111Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-validation-failure-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.120Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:15:03.112Z","attemptCount":1,"latencyMs":1,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"AI review is not configured yet. Groq is selected, but no API key is available to process this request."}
+{"runId":"run-validation-failure-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:15:03.121Z","attemptCount":1,"latencyMs":1,"errorCode":"VALIDATION_ERROR","errorMessage":"Structured output payload did not satisfy schema constraints."}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.126Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:15:03.127Z","attemptCount":3,"latencyMs":1,"errorCode":"RATE_LIMITED","errorMessage":"AI review is temporarily rate-limited. Please retry in a few seconds."}
+{"runId":"run-3","traceId":null,"status":"failed","timestamp":"2026-04-12T17:15:03.149Z","attemptCount":3,"latencyMs":1,"errorCode":"INTERNAL_ERROR","errorMessage":"hard failure"}
+{"runId":"run-3","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.147Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-4","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.154Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.155Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-4","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:15:03.155Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:15:03.156Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.162Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:15:03.163Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.162Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:15:03.163Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-conflict-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.168Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:15:03.053Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:15:39.267Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:15:39.280Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T17:15:39.274Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T17:15:39.285Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.807Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.810Z","attemptCount":null,"latencyMs":3,"errorCode":null,"errorMessage":null}
+{"runId":"run-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.826Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.836Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.845Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-validation-failure-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.852Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-validation-failure-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:18:48.853Z","attemptCount":1,"latencyMs":1,"errorCode":"VALIDATION_ERROR","errorMessage":"Structured output payload did not satisfy schema constraints."}
+{"runId":"run-config-missing-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:18:48.846Z","attemptCount":1,"latencyMs":1,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"AI review is not configured yet. Groq is selected, but no API key is available to process this request."}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.860Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:18:48.861Z","attemptCount":3,"latencyMs":1,"errorCode":"RATE_LIMITED","errorMessage":"AI review is temporarily rate-limited. Please retry in a few seconds."}
+{"runId":"run-3","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.865Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-3","traceId":null,"status":"failed","timestamp":"2026-04-12T17:18:48.865Z","attemptCount":3,"latencyMs":null,"errorCode":"INTERNAL_ERROR","errorMessage":"hard failure"}
+{"runId":"run-4","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.869Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.870Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-4","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.872Z","attemptCount":null,"latencyMs":3,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.872Z","attemptCount":null,"latencyMs":2,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.878Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.878Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.878Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.879Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-conflict-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.885Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.808Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.811Z","attemptCount":1,"latencyMs":4,"errorCode":null,"errorMessage":null}
+{"runId":"run-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.826Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.836Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.845Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:18:48.847Z","attemptCount":1,"latencyMs":2,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"AI review is not configured yet. Groq is selected, but no API key is available to process this request."}
+{"runId":"run-validation-failure-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.852Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-validation-failure-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:18:48.853Z","attemptCount":1,"latencyMs":1,"errorCode":"VALIDATION_ERROR","errorMessage":"Structured output payload did not satisfy schema constraints."}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.860Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:18:48.861Z","attemptCount":3,"latencyMs":1,"errorCode":"RATE_LIMITED","errorMessage":"AI review is temporarily rate-limited. Please retry in a few seconds."}
+{"runId":"run-3","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.865Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-3","traceId":null,"status":"failed","timestamp":"2026-04-12T17:18:48.865Z","attemptCount":3,"latencyMs":0,"errorCode":"INTERNAL_ERROR","errorMessage":"hard failure"}
+{"runId":"run-4","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.869Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.871Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-4","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.872Z","attemptCount":1,"latencyMs":3,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.872Z","attemptCount":1,"latencyMs":2,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.878Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.878Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.879Z","attemptCount":1,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:18:48.997Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T17:18:49.006Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T17:18:49.025Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:18:49.015Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.879Z","attemptCount":1,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-conflict-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:18:48.885Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:48.998Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T17:18:49.007Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:18:49.015Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T17:18:49.025Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"queued","timestamp":"2026-04-12T17:18:49.260Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-reused-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:18:49.574Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-graph-1","traceId":"trace-graph-1","status":"running","timestamp":"2026-04-12T17:18:51.013Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-graph-1","traceId":"trace-graph-1","status":"succeeded","timestamp":"2026-04-12T17:18:51.027Z","attemptCount":null,"latencyMs":14,"errorCode":null,"errorMessage":null}
+{"runId":"run-graph-1","traceId":"trace-graph-1","status":"running","timestamp":"2026-04-12T17:18:51.014Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-graph-1","traceId":"trace-graph-1","status":"succeeded","timestamp":"2026-04-12T17:18:51.027Z","attemptCount":1,"latencyMs":14,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:55.792Z","attemptCount":null,"latencyMs":3,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.789Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.803Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.808Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.813Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:19:55.814Z","attemptCount":1,"latencyMs":1,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"AI review is not configured yet. Groq is selected, but no API key is available to process this request."}
+{"runId":"run-validation-failure-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.818Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-validation-failure-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:19:55.819Z","attemptCount":1,"latencyMs":1,"errorCode":"VALIDATION_ERROR","errorMessage":"Structured output payload did not satisfy schema constraints."}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.822Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:19:55.822Z","attemptCount":3,"latencyMs":null,"errorCode":"RATE_LIMITED","errorMessage":"AI review is temporarily rate-limited. Please retry in a few seconds."}
+{"runId":"run-3","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.825Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-3","traceId":null,"status":"failed","timestamp":"2026-04-12T17:19:55.826Z","attemptCount":3,"latencyMs":1,"errorCode":"INTERNAL_ERROR","errorMessage":"hard failure"}
+{"runId":"run-4","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.830Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.830Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-4","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:55.831Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:55.831Z","attemptCount":null,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.835Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.835Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:55.835Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:55.835Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-conflict-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.838Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.790Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:55.792Z","attemptCount":1,"latencyMs":3,"errorCode":null,"errorMessage":null}
+{"runId":"run-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.803Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.808Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.813Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-config-missing-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:19:55.815Z","attemptCount":1,"latencyMs":2,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"AI review is not configured yet. Groq is selected, but no API key is available to process this request."}
+{"runId":"run-validation-failure-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.818Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-validation-failure-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:19:55.819Z","attemptCount":1,"latencyMs":1,"errorCode":"VALIDATION_ERROR","errorMessage":"Structured output payload did not satisfy schema constraints."}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.822Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-rate-limit-max-attempts-1","traceId":null,"status":"failed","timestamp":"2026-04-12T17:19:55.823Z","attemptCount":3,"latencyMs":1,"errorCode":"RATE_LIMITED","errorMessage":"AI review is temporarily rate-limited. Please retry in a few seconds."}
+{"runId":"run-3","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.825Z","attemptCount":3,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-3","traceId":null,"status":"failed","timestamp":"2026-04-12T17:19:55.826Z","attemptCount":3,"latencyMs":1,"errorCode":"INTERNAL_ERROR","errorMessage":"hard failure"}
+{"runId":"run-4","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.830Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.830Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-4","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:55.831Z","attemptCount":1,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-5","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:55.831Z","attemptCount":1,"latencyMs":1,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.835Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.835Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:55.835Z","attemptCount":1,"latencyMs":0,"errorCode":null,"errorMessage":null}
+{"runId":"run-dup-2","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:55.835Z","attemptCount":1,"latencyMs":0,"errorCode":null,"errorMessage":null}
+{"runId":"run-conflict-1","traceId":null,"status":"running","timestamp":"2026-04-12T17:19:55.838Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:19:56.112Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:19:56.126Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T17:19:56.134Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T17:19:56.120Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:19:56.112Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T17:19:56.120Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:19:56.127Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T17:19:56.134Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-1","traceId":null,"status":"queued","timestamp":"2026-04-12T17:20:04.009Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-reused-1","traceId":null,"status":"succeeded","timestamp":"2026-04-12T17:20:07.967Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-graph-1","traceId":"trace-graph-1","status":"succeeded","timestamp":"2026-04-12T17:20:16.346Z","attemptCount":null,"latencyMs":27,"errorCode":null,"errorMessage":null}
+{"runId":"run-graph-1","traceId":"trace-graph-1","status":"running","timestamp":"2026-04-12T17:20:16.320Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-graph-1","traceId":"trace-graph-1","status":"running","timestamp":"2026-04-12T17:20:16.320Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"c15384dc-8038-4084-a997-0853bc74fa8d","traceId":null,"status":"queued","timestamp":"2026-04-12T17:23:19.951Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"c15384dc-8038-4084-a997-0853bc74fa8d","traceId":"bb56170e-01a7-41fb-9c3b-9adbe469104e","status":"queued","timestamp":"2026-04-12T17:23:19.959Z","attemptCount":0,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"c15384dc-8038-4084-a997-0853bc74fa8d","traceId":"bb56170e-01a7-41fb-9c3b-9adbe469104e","status":"running","timestamp":"2026-04-12T17:23:23.125Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"c15384dc-8038-4084-a997-0853bc74fa8d","traceId":"bb56170e-01a7-41fb-9c3b-9adbe469104e","status":"running","timestamp":"2026-04-12T17:23:23.141Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"c15384dc-8038-4084-a997-0853bc74fa8d","traceId":"bb56170e-01a7-41fb-9c3b-9adbe469104e","status":"failed","timestamp":"2026-04-12T17:23:28.332Z","attemptCount":1,"latencyMs":5207,"errorCode":"AI_OUTPUT_REPAIR_FAILED","errorMessage":"The model output did not pass schema validation after repair attempts."}
+{"runId":"c15384dc-8038-4084-a997-0853bc74fa8d","traceId":"bb56170e-01a7-41fb-9c3b-9adbe469104e","status":"failed","timestamp":"2026-04-12T17:23:28.336Z","attemptCount":1,"latencyMs":5211,"errorCode":"AI_OUTPUT_REPAIR_FAILED","errorMessage":"The model output did not pass schema validation after repair attempts."}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:32:47.876Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-force-new","traceId":null,"status":"queued","timestamp":"2026-04-12T17:32:47.879Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T17:32:47.887Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T17:32:47.893Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:32:47.890Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:34:17.890Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-force-new","traceId":null,"status":"queued","timestamp":"2026-04-12T17:34:17.895Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:34:17.906Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T17:34:17.908Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T17:34:17.903Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:41:29.478Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-force-new","traceId":null,"status":"queued","timestamp":"2026-04-12T17:41:29.486Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T17:41:29.496Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T17:41:29.506Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T17:41:29.501Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"889cb0c4-81b9-4ccd-9370-fe6643dd4080","traceId":null,"status":"queued","timestamp":"2026-04-12T17:48:31.108Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"889cb0c4-81b9-4ccd-9370-fe6643dd4080","traceId":"9ca5e018-3c2a-4ee1-870c-617677ecd20b","status":"queued","timestamp":"2026-04-12T17:48:31.130Z","attemptCount":0,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"889cb0c4-81b9-4ccd-9370-fe6643dd4080","traceId":"9ca5e018-3c2a-4ee1-870c-617677ecd20b","status":"running","timestamp":"2026-04-12T17:48:33.327Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"889cb0c4-81b9-4ccd-9370-fe6643dd4080","traceId":"9ca5e018-3c2a-4ee1-870c-617677ecd20b","status":"running","timestamp":"2026-04-12T17:48:33.329Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"889cb0c4-81b9-4ccd-9370-fe6643dd4080","traceId":"9ca5e018-3c2a-4ee1-870c-617677ecd20b","status":"failed","timestamp":"2026-04-12T17:48:38.436Z","attemptCount":1,"latencyMs":5109,"errorCode":"AI_OUTPUT_REPAIR_FAILED","errorMessage":"The model output did not pass schema validation after repair attempts."}
+{"runId":"889cb0c4-81b9-4ccd-9370-fe6643dd4080","traceId":"9ca5e018-3c2a-4ee1-870c-617677ecd20b","status":"failed","timestamp":"2026-04-12T17:48:38.437Z","attemptCount":1,"latencyMs":5110,"errorCode":"AI_OUTPUT_REPAIR_FAILED","errorMessage":"The model output did not pass schema validation after repair attempts."}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T18:25:19.631Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-force-new","traceId":null,"status":"queued","timestamp":"2026-04-12T18:25:19.635Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T18:25:19.642Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T18:25:19.650Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T18:25:19.646Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"succeeded","timestamp":"2026-04-12T18:25:19.631Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-force-new","traceId":null,"status":"queued","timestamp":"2026-04-12T18:25:19.635Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T18:25:19.642Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T18:25:19.646Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T18:25:19.650Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":null,"status":"queued","timestamp":"2026-04-12T18:31:54.454Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":"11f78ab8-627c-49aa-a036-baa2eb54550a","status":"queued","timestamp":"2026-04-12T18:31:54.455Z","attemptCount":2,"latencyMs":null,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"Provider groq is selected but no API key is configured."}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":null,"status":"queued","timestamp":"2026-04-12T18:32:09.992Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":"11f78ab8-627c-49aa-a036-baa2eb54550a","status":"queued","timestamp":"2026-04-12T18:32:09.993Z","attemptCount":2,"latencyMs":null,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"Provider groq is selected but no API key is configured."}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T18:40:34.246Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-force-new","traceId":null,"status":"queued","timestamp":"2026-04-12T18:40:34.253Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T18:40:34.274Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T18:40:34.267Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T18:40:34.280Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":null,"status":"queued","timestamp":"2026-04-12T18:43:53.662Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":"11f78ab8-627c-49aa-a036-baa2eb54550a","status":"queued","timestamp":"2026-04-12T18:43:53.663Z","attemptCount":2,"latencyMs":null,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"Provider groq is selected but no API key is configured."}
+{"runId":"run-force-new","traceId":null,"status":"queued","timestamp":"2026-04-12T18:57:57.499Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T18:57:57.528Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T18:57:57.491Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T18:57:57.514Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T18:57:57.522Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T19:01:25.542Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-force-new","traceId":null,"status":"queued","timestamp":"2026-04-12T19:01:25.555Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T19:01:25.582Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T19:01:25.591Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T19:01:25.612Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":null,"status":"queued","timestamp":"2026-04-12T19:04:53.282Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":"11f78ab8-627c-49aa-a036-baa2eb54550a","status":"queued","timestamp":"2026-04-12T19:04:53.289Z","attemptCount":2,"latencyMs":null,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"Provider groq is selected but no API key is configured."}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":null,"status":"queued","timestamp":"2026-04-12T19:05:02.119Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":"11f78ab8-627c-49aa-a036-baa2eb54550a","status":"queued","timestamp":"2026-04-12T19:05:02.120Z","attemptCount":2,"latencyMs":null,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"Provider groq is selected but no API key is configured."}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":null,"status":"queued","timestamp":"2026-04-12T20:19:56.851Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":"11f78ab8-627c-49aa-a036-baa2eb54550a","status":"queued","timestamp":"2026-04-12T20:19:56.853Z","attemptCount":2,"latencyMs":null,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"Provider groq is selected but no API key is configured."}
+{"runId":"run-force-new","traceId":null,"status":"queued","timestamp":"2026-04-12T20:27:29.135Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T20:27:29.132Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T20:27:29.142Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-fresh-queued","traceId":null,"status":"queued","timestamp":"2026-04-12T20:27:29.146Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued-2","traceId":null,"status":"queued","timestamp":"2026-04-12T20:27:29.147Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-queued","traceId":null,"status":"succeeded","timestamp":"2026-04-12T20:27:29.132Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-force-new","traceId":null,"status":"queued","timestamp":"2026-04-12T20:27:29.135Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"run-duplicate-existing","traceId":null,"status":"queued","timestamp":"2026-04-12T20:27:29.142Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":null,"status":"queued","timestamp":"2026-04-12T20:29:39.770Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"801653e7-ebeb-421a-9bd4-4c5ce29391b2","traceId":"11f78ab8-627c-49aa-a036-baa2eb54550a","status":"queued","timestamp":"2026-04-12T20:29:39.776Z","attemptCount":2,"latencyMs":null,"errorCode":"AI_PROVIDER_NOT_CONFIGURED","errorMessage":"Provider groq is selected but no API key is configured."}
+{"runId":"04603600-a3d7-4bff-b124-372fd9d9b39a","traceId":null,"status":"queued","timestamp":"2026-04-12T20:30:05.089Z","attemptCount":null,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"04603600-a3d7-4bff-b124-372fd9d9b39a","traceId":"79c254a1-8963-4770-aa9b-2934f3e4e9b0","status":"queued","timestamp":"2026-04-12T20:30:05.090Z","attemptCount":0,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"04603600-a3d7-4bff-b124-372fd9d9b39a","traceId":"79c254a1-8963-4770-aa9b-2934f3e4e9b0","status":"running","timestamp":"2026-04-12T20:30:08.664Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"04603600-a3d7-4bff-b124-372fd9d9b39a","traceId":"79c254a1-8963-4770-aa9b-2934f3e4e9b0","status":"running","timestamp":"2026-04-12T20:30:08.666Z","attemptCount":1,"latencyMs":null,"errorCode":null,"errorMessage":null}
+{"runId":"04603600-a3d7-4bff-b124-372fd9d9b39a","traceId":"79c254a1-8963-4770-aa9b-2934f3e4e9b0","status":"succeeded","timestamp":"2026-04-12T20:30:13.453Z","attemptCount":null,"latencyMs":4790,"errorCode":null,"errorMessage":null}
+{"runId":"04603600-a3d7-4bff-b124-372fd9d9b39a","traceId":"79c254a1-8963-4770-aa9b-2934f3e4e9b0","status":"succeeded","timestamp":"2026-04-12T20:30:13.470Z","attemptCount":1,"latencyMs":4807,"errorCode":null,"errorMessage":null}
