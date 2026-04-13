@@ -40,7 +40,7 @@ function countMissingSignals(value: unknown): number {
       return 1;
     }
 
-    return value.reduce((total, item) => total + countMissingSignals(item), 0);
+    return value.reduce<number>((total, item) => total + countMissingSignals(item), 0);
   }
 
   if (typeof value === 'object') {
@@ -49,7 +49,7 @@ function countMissingSignals(value: unknown): number {
       return 1;
     }
 
-    return entries.reduce((total, item) => total + countMissingSignals(item), 0);
+    return entries.reduce<number>((total, item) => total + countMissingSignals(item), 0);
   }
 
   return 0;

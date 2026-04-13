@@ -4,36 +4,36 @@
   "status": 200,
   "payload": {
     "data": {
-      "state": "succeeded",
+      "state": "stale",
       "terminal": true,
       "shouldPoll": false,
       "latestRun": {
-        "id": "04603600-a3d7-4bff-b124-372fd9d9b39a",
+        "id": "d503abe0-1e8d-479c-871b-400b0aa573f0",
         "parentRunId": null,
         "feature": "founder_idea_feedback",
         "subjectType": "startup_idea",
         "subjectId": "1ef7222a-fc0b-4060-b639-44e9e779394c",
         "requestedBy": "7a180fe3-3d10-4ded-a569-cadafbc17ac7",
-        "status": "succeeded",
+        "status": "queued",
         "promptVersion": "founder-v1",
         "promptKey": "founder-feedback-core",
-        "inputHash": "9712b05801602cd966f72f1b6a2bb52b9c54f265fdf427290faf0069300ac12f",
-        "runIdentity": "6694f51668596b9120dfc9aba7aec3ad23f3e07008931abce61e9991480757f7",
+        "inputHash": "8f9d778083baab788ca1cb2c8ff5eb541558e928be332908e58cf140aef71632",
+        "runIdentity": "33cd1aecfac36d240f8c47a9e38a17fa2846c4e1dfb5e875fe071d5d5c844f04",
         "maxAttempts": 3,
-        "attemptCount": 1,
-        "latencyMs": 3721,
-        "provider": "groq",
-        "model": "llama-3.3-70b-versatile",
-        "modelVersion": "llama-3.3-70b-versatile",
+        "attemptCount": 0,
+        "latencyMs": null,
+        "provider": null,
+        "model": null,
+        "modelVersion": null,
         "requestId": null,
-        "traceId": "79c254a1-8963-4770-aa9b-2934f3e4e9b0",
+        "traceId": "3e890997-ce47-40a2-b844-cea00df30564",
         "errorCode": null,
         "errorMessage": null,
         "metadata": {
           "contextSnapshot": {
             "stage": "idea",
             "postId": "1ef7222a-fc0b-4060-b639-44e9e779394c",
-            "updatedAt": "2026-04-08T08:05:28.931768+00:00",
+            "updatedAt": "2026-04-13T08:34:35.880239+00:00",
             "commentCount": 0,
             "founderUserId": "7a180fe3-3d10-4ded-a569-cadafbc17ac7",
             "revisionCount": 1,
@@ -41,99 +41,14 @@
             "validationScore": 0
           }
         },
-        "providerMetadata": {
-          "usage": {
-            "inputTokens": 1846,
-            "totalTokens": 2379,
-            "outputTokens": 533
-          },
-          "requestId": "req_01kp1p6fknekary0g9mkaqmdq1",
-          "repairCount": 1,
-          "attemptCount": 1,
-          "finishReason": "stop",
-          "qualitySignal": {
-            "reasoning": [
-              "Repair attempts used: 1.",
-              "Provider returned on first attempt.",
-              "Schema validation failures observed: 1.",
-              "Potentially weak or missing fields detected: 1."
-            ],
-            "stability": "high",
-            "confidence": 0.81,
-            "repairCount": 1,
-            "outputLength": 2627,
-            "missingFieldCount": 1,
-            "parseFailureCount": 0,
-            "providerAttemptCount": 1,
-            "validationFailureCount": 1
-          },
-          "workflowTrace": {
-            "nodePath": [
-              "validateInput",
-              "chooseStrategy",
-              "invokeModel",
-              "persistResult",
-              "markSucceeded"
-            ],
-            "inputHash": "9712b05801602cd966f72f1b6a2bb52b9c54f265fdf427290faf0069300ac12f",
-            "retryCount": 0,
-            "nodeTimingsMs": {
-              "invokeModel": 4588,
-              "markSucceeded": 10,
-              "persistResult": 12,
-              "validateInput": 3,
-              "chooseStrategy": 5
-            },
-            "totalDurationMs": 4638,
-            "stateTransitions": [
-              {
-                "node": "validateInput",
-                "toStatus": "running",
-                "durationMs": 3,
-                "fromStatus": "queued"
-              },
-              {
-                "node": "chooseStrategy",
-                "toStatus": "running",
-                "durationMs": 5,
-                "fromStatus": "running"
-              },
-              {
-                "node": "invokeModel",
-                "toStatus": "running",
-                "durationMs": 4588,
-                "fromStatus": "running"
-              },
-              {
-                "node": "persistResult",
-                "toStatus": "running",
-                "durationMs": 12,
-                "fromStatus": "running"
-              },
-              {
-                "node": "markSucceeded",
-                "toStatus": "succeeded",
-                "durationMs": 10,
-                "fromStatus": "running"
-              }
-            ]
-          },
-          "structuredMode": "minimal_schema",
-          "runtimeConfidence": 0.81,
-          "runtimeConfidenceReasoning": [
-            "Repair attempts used: 1.",
-            "Provider returned on first attempt.",
-            "Schema validation failures observed: 1.",
-            "Potentially weak or missing fields detected: 1."
-          ]
-        },
+        "providerMetadata": {},
         "processorId": null,
         "leaseToken": null,
         "leaseExpiresAt": null,
-        "nextRetryAt": "2026-04-12T20:30:09.182357+00:00",
-        "createdAt": "2026-04-12T20:30:04.813+00:00",
-        "startedAt": "2026-04-12T20:30:09.182357+00:00",
-        "completedAt": "2026-04-12T20:30:13.324+00:00",
+        "nextRetryAt": "2026-04-13T08:35:16.909+00:00",
+        "createdAt": "2026-04-13T08:35:16.909+00:00",
+        "startedAt": null,
+        "completedAt": null,
         "failedAt": null
       },
       "review": {
@@ -194,12 +109,12 @@
         "partial": false,
         "partialReason": null
       },
-      "stale": false,
+      "stale": true,
       "recoveredFromLegacyOutputFailure": false,
       "snapshot": {
         "postId": "1ef7222a-fc0b-4060-b639-44e9e779394c",
         "founderUserId": "7a180fe3-3d10-4ded-a569-cadafbc17ac7",
-        "updatedAt": "2026-04-08T08:05:28.931768+00:00",
+        "updatedAt": "2026-04-13T08:34:35.880239+00:00",
         "revisionCount": 1,
         "lastRevisionAt": "2026-04-08T08:05:35.728+00:00",
         "commentCount": 0,
@@ -208,5 +123,5 @@
       }
     }
   },
-  "timestamp": "2026-04-12T20:30:14.353Z"
+  "timestamp": "2026-04-13T08:35:21.728Z"
 }

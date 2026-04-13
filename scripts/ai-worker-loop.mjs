@@ -63,6 +63,30 @@ const {
   parallelism,
 } = resolveWorkerLoopConfig(process.env);
 
+function isProductionRuntime() {
+  return (process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
+}
+
+function parseAbsoluteUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function isLocalhostUrl(value) {
+  const parsed = parseAbsoluteUrl(value);
+
+  if (!parsed) {
+    return false;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1';
+}
+
 function resolveProvider() {
   const explicit = process.env.AI_PROVIDER?.trim().toLowerCase();
   if (explicit === 'groq' || explicit === 'openai' || explicit === 'anthropic') {
@@ -84,10 +108,80 @@ function resolveProvider() {
   return 'unconfigured';
 }
 
+function resolveModel(provider) {
+  if (provider === 'groq') {
+    const value = process.env.AI_GROQ_MODEL?.trim() || process.env.GROQ_MODEL?.trim() || null;
+    return {
+      model: value,
+      source: process.env.AI_GROQ_MODEL?.trim()
+        ? 'AI_GROQ_MODEL'
+        : process.env.GROQ_MODEL?.trim()
+          ? 'GROQ_MODEL'
+          : null,
+    };
+  }
+
+  if (provider === 'openai') {
+    return {
+      model: process.env.AI_OPENAI_MODEL?.trim() || null,
+      source: process.env.AI_OPENAI_MODEL?.trim() ? 'AI_OPENAI_MODEL' : null,
+    };
+  }
+
+  if (provider === 'anthropic') {
+    return {
+      model: process.env.AI_ANTHROPIC_MODEL?.trim() || null,
+      source: process.env.AI_ANTHROPIC_MODEL?.trim() ? 'AI_ANTHROPIC_MODEL' : null,
+    };
+  }
+
+  return {
+    model: null,
+    source: null,
+  };
+}
+
+if (isProductionRuntime()) {
+  const configuredAppUrl = process.env.CREDVIA_APP_URL?.trim();
+
+  if (!configuredAppUrl) {
+    console.error(
+      JSON.stringify({
+        scope: 'ai-worker-loop-startup-fatal',
+        errorMessage: 'CREDVIA_APP_URL is required in production worker runtime.',
+        resolvedAppUrl: appUrl,
+        resolvedAppUrlSource: appUrlResolution.source,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+
+    process.exit(1);
+  }
+
+  if (isLocalhostUrl(appUrl)) {
+    console.error(
+      JSON.stringify({
+        scope: 'ai-worker-loop-startup-fatal',
+        errorMessage: 'Resolved worker app URL points to localhost in production. Set CREDVIA_APP_URL to your Vercel domain.',
+        resolvedAppUrl: appUrl,
+        resolvedAppUrlSource: appUrlResolution.source,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+
+    process.exit(1);
+  }
+}
+
+const provider = resolveProvider();
+const { model, source: modelSource } = resolveModel(provider);
+
 console.info(
   JSON.stringify({
     scope: 'ai-worker-loop-startup',
-    provider: resolveProvider(),
+    provider,
+    model,
+    modelSource,
     workerSecretConfigured: Boolean(secret),
     batchSize,
     leaseSeconds,

@@ -22,8 +22,8 @@ interface LifecycleEvent {
 }
 
 interface NodeIo {
-  fs: typeof import('node:fs/promises');
-  path: typeof import('node:path');
+  fs: typeof import('fs/promises');
+  path: typeof import('path');
 }
 
 const LOG_DIR_ENV_NAME = 'AI_LOG_DIR';
@@ -84,8 +84,8 @@ async function resolveNodeIo(): Promise<NodeIo | null> {
 
   if (!nodeIoPromise) {
     nodeIoPromise = Promise.all([
-      import('node:fs/promises'),
-      import('node:path'),
+      import(/* webpackIgnore: true */ 'fs/promises'),
+      import(/* webpackIgnore: true */ 'path'),
     ]).then(([fs, path]) => ({ fs, path }))
       .catch(() => null);
   }

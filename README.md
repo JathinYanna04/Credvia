@@ -35,7 +35,6 @@ AI_GROQ_MODEL=llama-3.3-70b-versatile
 AI_PROVIDER_TIMEOUT_MS=30000
 AI_PROVIDER_MAX_RETRIES=2
 AI_WORKER_SECRET=<worker-shared-secret>
-CRON_SECRET=<same-value-as-ai-worker-secret>
 AI_WORKER_BATCH_SIZE=1
 AI_WORKER_PARALLELISM=1
 AI_WORKER_POLL_INTERVAL_MS=10000
@@ -55,11 +54,56 @@ npm run dev
 npm run ai:worker
 ```
 
-Deployed worker runbook (Vercel):
+Production deployment (no cron):
 
-1. keep `AI_WORKER_SECRET` configured
-2. set `CRON_SECRET` to the same value
-3. Vercel Cron calls `GET /api/v1/ai/worker` every minute (configured in `vercel.json`)
+1. keep frontend and API routes on Vercel
+2. run the AI worker as an always-on service on Render (Background Worker)
+3. keep queue state in Supabase (`ai_runs`, review tables, claim flow)
+
+Exact Render start command:
+
+```bash
+npm run ai:worker
+```
+
+Optional web-service wrapper mode (for platforms that require an open health port):
+
+```bash
+npm run ai:worker:web
+```
+
+Required worker environment variables:
+
+```bash
+AI_PROVIDER=groq
+AI_GROQ_API_KEY=<your-groq-key>
+AI_GROQ_MODEL=llama-3.3-70b-versatile
+AI_WORKER_SECRET=<shared-worker-secret>
+CREDVIA_APP_URL=https://<your-vercel-domain>
+NEXT_PUBLIC_SUPABASE_URL=https://<your-supabase-project>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+```
+
+Startup logs include these non-secret fields:
+
+1. `provider`
+2. `model`
+3. `appUrl`
+4. `workerSecretConfigured`
+
+Production verification checklist:
+
+1. Deploy worker service on Render with start command `npm run ai:worker`.
+2. Deploy app on Vercel and confirm `CREDVIA_APP_URL` points to that domain.
+3. Trigger one founder review from the product UI (`Get AI Feedback`).
+4. Verify worker logs show loop cycles and successful `/api/v1/ai/worker` calls.
+5. Verify Supabase run state transitions: `queued -> running -> succeeded`.
+6. Confirm founder feedback UI renders completed review output.
+
+Cron note:
+
+1. Do not use Vercel cron for the continuous worker loop.
+2. `vercel.json` cron config has been removed for worker processing.
 
 Manual worker trigger in any environment:
 

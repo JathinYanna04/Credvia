@@ -13,6 +13,7 @@
     "verify:career-manifest": "node scripts/verify-career-manifest.mjs",
     "verify:career-routes": "node scripts/verify-career-routes.mjs",
     "ai:worker": "node scripts/ai-worker-loop.mjs",
+    "ai:worker:web": "node scripts/ai-worker-web.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write ."

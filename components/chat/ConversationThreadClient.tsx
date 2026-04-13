@@ -953,7 +953,7 @@ export function ConversationThreadClient({
     };
   }, []);
 
-  const reconcileLatestMessages = async () => {
+  const reconcileLatestMessages = useCallback(async () => {
     try {
       const response = await fetch(`/api/v1/chat/conversations/${conversationId}/messages?limit=50`);
       const payload = (await response.json()) as ApiResponse<ChatMessageRecord[]>;
@@ -977,7 +977,7 @@ export function ConversationThreadClient({
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : 'Unable to refresh message state.');
     }
-  };
+  }, [conversationId]);
 
   const upsertReaction = useCallback((reaction: ChatMessageReactionRecord) => {
     setMessageReactions((previous) => {
@@ -1326,7 +1326,14 @@ export function ConversationThreadClient({
       window.clearInterval(typingPruneInterval);
       void supabase.removeChannel(channel);
     };
-  }, [conversationId, currentUserId, removeReaction, summary.counterpart?.userId, upsertReaction]);
+  }, [
+    conversationId,
+    currentUserId,
+    reconcileLatestMessages,
+    removeReaction,
+    summary.counterpart?.userId,
+    upsertReaction,
+  ]);
 
   useEffect(() => {
     const latest = messages[messages.length - 1];
