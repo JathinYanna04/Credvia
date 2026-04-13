@@ -1195,10 +1195,9 @@ export function FounderIdeaFeedbackPanel({
     pollNotice,
     pollStopReason,
     runStatus,
-    state?.latestRun?.errorCode,
-    state?.latestRun?.errorMessage,
-    state?.latestRun?.providerMetadata,
+    state?.latestRun,
     state?.review,
+    state?.state,
   ]);
 
   const primaryActionLabel = state?.review ? 'Regenerate AI Review' : 'Get AI Feedback';

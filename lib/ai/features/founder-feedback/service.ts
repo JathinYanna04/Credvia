@@ -790,7 +790,7 @@ export async function getFounderIdeaFeedbackState(args: {
     throw new Error(latestReviewResult.error.message);
   }
 
-  let latestRun = latestRunResult.data
+  const latestRun = latestRunResult.data
     ? normalizeFounderTerminalRun(toAiRunSummary(latestRunResult.data))
     : null;
   let review = latestReviewResult.data ? toFounderReviewPayload(latestReviewResult.data) : null;

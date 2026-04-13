@@ -4,7 +4,6 @@ const FounderVerdictSchema = z.enum(['promising', 'needs_work', 'high_risk']);
 const FounderEvidenceSourceSchema = z.enum(['idea', 'revision', 'discussion', 'market']);
 
 const FounderShortLineSchema = z.string().trim().min(3).max(320);
-const FounderNarrativeSchema = z.string().trim().min(18).max(900);
 const FounderOptionalNarrativeSchema = z.string().trim().min(8).max(420).nullable().optional();
 
 export const FounderEvidenceItemSchema = z.object({
@@ -257,30 +256,35 @@ function toRawFallbackEvidence(value: unknown): FounderIdeaReviewFallback['evide
     return [];
   }
 
-  return value
-    .map((item) => {
-      const record = toRecord(item);
-      const claim = toStringValue(record.claim);
-      const evidence = toStringValue(record.evidence);
+  const normalized: FounderIdeaReviewFallback['evidence'] = [];
 
-      if (!claim || !evidence) {
-        return null;
-      }
+  for (const item of value) {
+    const record = toRecord(item);
+    const claim = toStringValue(record.claim);
+    const evidence = toStringValue(record.evidence);
 
-      const source = toStringValue(record.source);
-      const confidence = Number(record.confidence);
+    if (!claim || !evidence) {
+      continue;
+    }
 
-      return {
-        claim,
-        evidence,
-        source: source === 'idea' || source === 'revision' || source === 'discussion' || source === 'market'
-          ? source
-          : undefined,
-        confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : undefined,
-      };
-    })
-    .filter((item): item is NonNullable<FounderIdeaReviewFallback['evidence'][number]> => Boolean(item))
-    .slice(0, 10);
+    const source = toStringValue(record.source);
+    const confidence = Number(record.confidence);
+
+    normalized.push({
+      claim,
+      evidence,
+      source: source === 'idea' || source === 'revision' || source === 'discussion' || source === 'market'
+        ? source
+        : undefined,
+      confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : undefined,
+    });
+
+    if (normalized.length >= 10) {
+      break;
+    }
+  }
+
+  return normalized;
 }
 
 function clampConfidence(value: number | null | undefined, fallback = 0.55) {

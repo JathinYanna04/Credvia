@@ -2,8 +2,6 @@ import { z } from 'zod';
 import { AiRuntimeError } from '@/lib/ai/errors';
 import type { AiFeature } from '@/lib/ai/contracts';
 
-const AiProviderSchema = z.enum(['openai', 'anthropic', 'groq']);
-
 const AiEnvSchema = z.object({
   AI_PROVIDER: z.string().trim().optional(),
   LLM_PROVIDER: z.string().trim().optional(),
@@ -43,7 +41,7 @@ const AiEnvSchema = z.object({
   AI_WORKER_SECRET: z.string().trim().min(1).optional(),
 });
 
-export type AiProvider = z.infer<typeof AiProviderSchema>;
+export type AiProvider = 'openai' | 'anthropic' | 'groq';
 type ParsedAiEnv = z.infer<typeof AiEnvSchema>;
 
 const GROQ_API_KEY_ENV_PRIORITY: ReadonlyArray<keyof ParsedAiEnv> = [
