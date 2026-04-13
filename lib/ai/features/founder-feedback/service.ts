@@ -60,6 +60,7 @@ export type FounderIdeaFeedbackStateValue =
   | 'empty'
   | 'queued'
   | 'processing'
+  | 'partial'
   | 'succeeded'
   | 'failed'
   | 'stale';
@@ -121,13 +122,6 @@ function buildStructuredFailureSnapshot(error: AiRuntimeError) {
   };
 }
 
-function isTerminalProviderFailure(error: AiRuntimeError) {
-  return error.code === 'AI_PROVIDER_NOT_CONFIGURED'
-    || error.code === 'AI_PROVIDER_UNAVAILABLE'
-    || error.code === 'RATE_LIMITED'
-    || error.code === 'ANALYSIS_SERVICE_UNAVAILABLE';
-}
-
 function buildBestEffortQualitySignal(args: {
   repairCount: number;
   outputLength: number;
@@ -174,6 +168,10 @@ function deriveFounderFeedbackState(args: {
   review: ReturnType<typeof toFounderReviewPayload> | null;
   stale: boolean;
 }): FounderIdeaFeedbackStateValue {
+  if (args.review?.partial) {
+    return 'partial';
+  }
+
   if (args.review) {
     return args.stale ? 'stale' : 'succeeded';
   }
@@ -206,6 +204,15 @@ function toFounderReviewPayload(
   row: Database['public']['Tables']['founder_idea_reviews']['Row'],
 ) {
   const metadata = toRecord(row.metadata);
+  const structuredMode = toNullableString(metadata.structuredMode);
+  const outputRecovery = toNullableString(metadata.outputRecovery);
+  const partial = Boolean(
+    metadata.syntheticFallback === true
+    || structuredMode === 'best_effort_raw_fallback'
+    || structuredMode === 'local_summary_fallback'
+    || outputRecovery === 'best_effort_raw_mapping'
+    || outputRecovery === 'local_summary_fallback',
+  );
 
   return {
     id: row.id,
@@ -233,6 +240,89 @@ function toFounderReviewPayload(
       inputHash: typeof metadata.inputHash === 'string' ? metadata.inputHash : null,
     },
     createdAt: row.created_at,
+    partial,
+    partialReason: partial
+      ? toNullableString(metadata.partialReason) ?? outputRecovery ?? structuredMode ?? 'output_recovery'
+      : null,
+  };
+}
+
+function ensureOneLinerSummary(summary: string) {
+  const trimmed = summary.trim();
+  if (trimmed.length === 0) {
+    return 'One-liner: AI generated a partial result and recovered only a minimal summary.';
+  }
+
+  if (trimmed.toLowerCase().startsWith('one-liner:')) {
+    return trimmed;
+  }
+
+  return `One-liner: ${trimmed}`;
+}
+
+function buildFounderPartialReviewFromRun(args: {
+  run: AiRunSummary;
+  founderUserId: string;
+  postId: string;
+  reason: 'output_recovery' | 'missing_persisted_review';
+}) {
+  const runMetadata = toRecord(args.run.providerMetadata);
+  const outputFailureSnapshot = toRecord(runMetadata.outputFailureSnapshot);
+  const fallbackSummary = toNullableString(outputFailureSnapshot.lastOutputPreview)
+    ?? toNullableString(outputFailureSnapshot.lastError)
+    ?? toNullableString(args.run.errorMessage)
+    ?? (args.reason === 'output_recovery'
+      ? 'AI output was malformed and recovered as a partial result.'
+      : 'AI run completed but persisted review payload was not available.');
+  const validationIssue = toStringList(outputFailureSnapshot.validationIssues)[0]
+    ?? toStringList(runMetadata.validationIssues)[0]
+    ?? null;
+  const providerConfidence = toNumber(runMetadata.runtimeConfidence);
+  const partialSummary = ensureOneLinerSummary(fallbackSummary);
+
+  return {
+    id: `partial-${args.run.id}`,
+    runId: args.run.id,
+    postId: args.postId,
+    founderUserId: args.founderUserId,
+    verdict: 'needs_work',
+    confidence: providerConfidence ?? 0.42,
+    summary: partialSummary,
+    strengths: [] as string[],
+    risks: [
+      validationIssue
+        ? `Model output required recovery: ${validationIssue}`
+        : 'Model output required structural recovery before display.',
+    ],
+    suggestions: [
+      'Missing answer: Which single user signal confirms this idea is moving in the right direction?',
+      'Next step experiment: Regenerate AI review and compare with current assumptions.',
+    ],
+    marketSignals: [] as string[],
+    rewrite: null,
+    reasoning: [
+      args.reason === 'output_recovery'
+        ? 'This review was reconstructed from partial model output after schema recovery failed.'
+        : 'This review was reconstructed because the run completed without a persisted review row.',
+    ],
+    evidence: [] as Array<{
+      claim: string;
+      evidence: string;
+      source: 'idea' | 'revision' | 'discussion' | 'market';
+      confidence: number;
+    }>,
+    investorPushback: [] as string[],
+    bestNextExperiment: 'Regenerate AI review and validate the strongest claim with a focused customer interview.',
+    communityRead: null,
+    moatConcern: null,
+    version: {
+      promptVersion: args.run.promptVersion,
+      promptKey: args.run.promptKey ?? null,
+      inputHash: args.run.inputHash ?? null,
+    },
+    createdAt: args.run.completedAt ?? args.run.failedAt ?? args.run.createdAt,
+    partial: true,
+    partialReason: args.reason,
   };
 }
 
@@ -494,10 +584,6 @@ export async function processFounderIdeaFeedbackRun(args: {
           qualitySignal,
         };
       } catch (rawFallbackError) {
-        if (isAiRuntimeError(rawFallbackError) && isTerminalProviderFailure(rawFallbackError)) {
-          throw rawFallbackError;
-        }
-
         logError('founder-feedback-run', 'Founder feedback raw fallback call failed, returning local best-effort review', {
           runId: args.run.id,
           traceId: args.run.traceId ?? null,
@@ -707,16 +793,30 @@ export async function getFounderIdeaFeedbackState(args: {
   let latestRun = latestRunResult.data
     ? normalizeFounderTerminalRun(toAiRunSummary(latestRunResult.data))
     : null;
-  const review = latestReviewResult.data ? toFounderReviewPayload(latestReviewResult.data) : null;
+  let review = latestReviewResult.data ? toFounderReviewPayload(latestReviewResult.data) : null;
   let recoveredFromLegacyOutputFailure = false;
 
   if (!review && latestRun?.status === 'failed' && latestRun.errorCode === 'AI_OUTPUT_REPAIR_FAILED') {
-    latestRun = null;
+    review = buildFounderPartialReviewFromRun({
+      run: latestRun,
+      founderUserId: args.founderUserId,
+      postId: args.postId,
+      reason: 'output_recovery',
+    });
     recoveredFromLegacyOutputFailure = true;
   }
 
+  if (!review && latestRun?.status === 'succeeded') {
+    review = buildFounderPartialReviewFromRun({
+      run: latestRun,
+      founderUserId: args.founderUserId,
+      postId: args.postId,
+      reason: 'missing_persisted_review',
+    });
+  }
+
   let snapshot: Awaited<ReturnType<typeof buildFounderIdeaContextSnapshot>> = null;
-  if (review) {
+  if (review && !review.partial) {
     try {
       snapshot = await buildFounderIdeaContextSnapshot(args.supabase, args.postId);
     } catch (error) {

@@ -228,7 +228,7 @@ describe('processFounderIdeaFeedbackRun fallback flow', () => {
     expect(upsert).toHaveBeenCalledTimes(1);
   });
 
-  it('throws terminal provider failures during raw fallback retrieval', async () => {
+  it('persists local fallback review when raw fallback retrieval fails', async () => {
     runStructuredOutput.mockRejectedValueOnce(new AiRuntimeError(
       'AI_OUTPUT_REPAIR_FAILED',
       'The model output did not pass schema validation after repair attempts.',
@@ -253,27 +253,29 @@ describe('processFounderIdeaFeedbackRun fallback flow', () => {
 
     const { supabase, upsert } = createSupabaseMock();
 
-    await expect(
-      processFounderIdeaFeedbackRun({
-        supabase: supabase as never,
-        run: {
-          id: 'run-3',
-          feature: 'founder_idea_feedback',
-          subjectType: 'startup_idea',
-          subjectId: 'idea-1',
-          requestedBy: 'founder-1',
-          status: 'running',
-          promptVersion: 'founder-v1',
-          promptKey: 'founder-feedback-core',
-          inputHash: 'hash-1',
-          createdAt: '2026-04-08T00:00:00.000Z',
-          traceId: 'trace-3',
-        },
-      }),
-    ).rejects.toMatchObject({
-      code: 'AI_PROVIDER_UNAVAILABLE',
+    const result = await processFounderIdeaFeedbackRun({
+      supabase: supabase as never,
+      run: {
+        id: 'run-3',
+        feature: 'founder_idea_feedback',
+        subjectType: 'startup_idea',
+        subjectId: 'idea-1',
+        requestedBy: 'founder-1',
+        status: 'running',
+        promptVersion: 'founder-v1',
+        promptKey: 'founder-feedback-core',
+        inputHash: 'hash-1',
+        createdAt: '2026-04-08T00:00:00.000Z',
+        traceId: 'trace-3',
+      },
     });
 
-    expect(upsert).not.toHaveBeenCalled();
+    expect(result.providerMetadata).toEqual(
+      expect.objectContaining({
+        structuredMode: 'best_effort_raw_fallback',
+        outputRecovery: 'local_summary_fallback',
+      }),
+    );
+    expect(upsert).toHaveBeenCalledTimes(1);
   });
 });

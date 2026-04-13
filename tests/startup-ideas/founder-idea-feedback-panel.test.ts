@@ -562,6 +562,43 @@ describe('FounderIdeaFeedbackPanel', () => {
     expect(await screen.findByText(/partial success: output formatting recovery was applied/i)).toBeTruthy();
   });
 
+  it('renders synthesized partial review payload instead of empty state', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      response({
+        data: {
+          latestRun: {
+            ...buildRun('failed'),
+            errorCode: 'AI_OUTPUT_REPAIR_FAILED',
+          },
+          review: buildReview({
+            id: 'partial-review-1',
+            runId: 'run-failed',
+            partial: true,
+            partialReason: 'output_recovery',
+          }),
+          stale: false,
+          state: 'partial',
+          shouldPoll: false,
+          terminal: true,
+          recoveredFromLegacyOutputFailure: true,
+        },
+      }),
+    );
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      React.createElement(FounderIdeaFeedbackPanel, {
+        ideaId: 'idea-1',
+        canRequest: true,
+      }),
+    );
+
+    expect(await screen.findByText(/AI generated a partial result/i)).toBeTruthy();
+    expect(screen.queryByText('No founder AI review yet')).toBeNull();
+    expect(screen.getByText('Hero Verdict')).toBeTruthy();
+  });
+
   it('recovered empty state still allows fresh POST generation', async () => {
     const fetchMock = vi
       .fn()

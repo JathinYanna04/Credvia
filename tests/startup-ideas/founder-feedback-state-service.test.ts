@@ -223,7 +223,7 @@ describe('getFounderIdeaFeedbackState', () => {
     expect(state?.review).toBeNull();
   });
 
-  it('returns processing state when run succeeded but review is not yet persisted', async () => {
+  it('returns partial state when run succeeded but review row is not yet persisted', async () => {
     const supabase = createSupabaseMock({
       runResult: { data: buildRunRow('succeeded'), error: null },
       reviewResult: { data: null, error: null },
@@ -235,14 +235,16 @@ describe('getFounderIdeaFeedbackState', () => {
       founderUserId: 'founder-1',
     });
 
-    expect(state?.state).toBe('processing');
-    expect(state?.terminal).toBe(false);
-    expect(state?.shouldPoll).toBe(true);
+    expect(state?.state).toBe('partial');
+    expect(state?.terminal).toBe(true);
+    expect(state?.shouldPoll).toBe(false);
     expect(state?.latestRun?.status).toBe('succeeded');
-    expect(state?.review).toBeNull();
+    expect(state?.review).toBeTruthy();
+    expect(state?.review?.partial).toBe(true);
+    expect(state?.review?.partialReason).toBe('missing_persisted_review');
   });
 
-  it('returns empty state when legacy output-repair failure exists without review', async () => {
+  it('returns partial review state when output-repair failure exists without persisted review', async () => {
     const supabase = createSupabaseMock({
       runResult: { data: buildRunRow('failed'), error: null },
       reviewResult: { data: null, error: null },
@@ -254,11 +256,13 @@ describe('getFounderIdeaFeedbackState', () => {
       founderUserId: 'founder-1',
     });
 
-    expect(state?.state).toBe('empty');
+    expect(state?.state).toBe('partial');
     expect(state?.terminal).toBe(true);
     expect(state?.shouldPoll).toBe(false);
-    expect(state?.latestRun).toBeNull();
-    expect(state?.review).toBeNull();
+    expect(state?.latestRun?.status).toBe('failed');
+    expect(state?.review).toBeTruthy();
+    expect(state?.review?.partial).toBe(true);
+    expect(state?.review?.partialReason).toBe('output_recovery');
     expect(state?.recoveredFromLegacyOutputFailure).toBe(true);
   });
 

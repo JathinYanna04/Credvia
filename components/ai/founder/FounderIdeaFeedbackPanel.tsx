@@ -38,10 +38,12 @@ interface FounderIdeaReviewView {
     inputHash: string | null;
   };
   createdAt: string;
+  partial?: boolean;
+  partialReason?: string | null;
 }
 
 interface FounderFeedbackState {
-  state?: 'empty' | 'queued' | 'processing' | 'succeeded' | 'failed' | 'stale';
+  state?: 'empty' | 'queued' | 'processing' | 'partial' | 'succeeded' | 'failed' | 'stale';
   terminal?: boolean;
   shouldPoll?: boolean;
   latestRun: AiRunSummary | null;
@@ -470,6 +472,7 @@ export function FounderIdeaFeedbackPanel({
 
   const runStatus = state?.latestRun?.status ?? null;
   const structuredMode = resolveStructuredMode(state?.latestRun ?? null);
+  const isStateMarkedPartial = Boolean(state?.state === 'partial' || state?.review?.partial);
   const isPartialRecoveredSuccess = Boolean(state?.review && isRecoveredPartialMode(structuredMode));
   const isProcessing = shouldPollState(state);
   const isGenerationLoading = loading || requesting;
@@ -1145,6 +1148,10 @@ export function FounderIdeaFeedbackPanel({
       return pollNotice;
     }
 
+    if (isStateMarkedPartial) {
+      return 'AI generated a partial result. Review it now, then regenerate for a fully structured response.';
+    }
+
     if (isPartialRecoveredSuccess) {
       return 'AI review completed with partial structure recovery after output-format issues.';
     }
@@ -1183,6 +1190,7 @@ export function FounderIdeaFeedbackPanel({
 
     return null;
   }, [
+    isStateMarkedPartial,
     isPartialRecoveredSuccess,
     pollNotice,
     pollStopReason,
