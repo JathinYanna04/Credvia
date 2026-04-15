@@ -41,7 +41,10 @@ function createSupabaseMock() {
     error: null,
   }));
   const select = vi.fn(() => ({ single }));
-  const upsert = vi.fn(() => ({ select }));
+  const upsert = vi.fn((payload: Record<string, unknown>) => {
+    void payload;
+    return { select };
+  });
 
   const supabase = {
     from: vi.fn((table: string) => {
@@ -168,7 +171,11 @@ describe('processFounderIdeaFeedbackRun fallback flow', () => {
       }),
     );
 
-    const insertedPayload = upsert.mock.calls[0]?.[0] as Record<string, unknown>;
+    const insertedPayload = upsert.mock.calls[0]?.[0];
+    if (!insertedPayload) {
+      throw new Error('Expected founder review payload to be upserted');
+    }
+
     const metadata = insertedPayload.metadata as Record<string, unknown>;
 
     expect(insertedPayload.summary).toContain('One-liner:');

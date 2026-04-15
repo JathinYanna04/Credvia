@@ -9,6 +9,7 @@ import {
 describe('worker loop config resolver', () => {
   it('clamps overly aggressive values into safe bounds', () => {
     const config = resolveWorkerLoopConfig({
+      NODE_ENV: 'test',
       AI_WORKER_POLL_INTERVAL_MS: '100',
       AI_WORKER_POLL_JITTER_MS: '99999',
       AI_WORKER_BATCH_SIZE: '50',
@@ -24,6 +25,7 @@ describe('worker loop config resolver', () => {
 
   it('clamps low and invalid values to production-safe minimums', () => {
     const config = resolveWorkerLoopConfig({
+      NODE_ENV: 'test',
       AI_WORKER_POLL_INTERVAL_MS: 'not-a-number',
       AI_WORKER_POLL_JITTER_MS: '-50',
       AI_WORKER_BATCH_SIZE: '0',
@@ -41,6 +43,7 @@ describe('worker loop config resolver', () => {
 
   it('ensures parallelism never exceeds batch size', () => {
     const config = resolveWorkerLoopConfig({
+      NODE_ENV: 'test',
       AI_WORKER_BATCH_SIZE: '1',
       AI_WORKER_PARALLELISM: '2',
     } as NodeJS.ProcessEnv);

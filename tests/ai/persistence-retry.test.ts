@@ -4,7 +4,7 @@ import { withSupabasePersistenceRetry } from '@/lib/ai/persistence/retry';
 describe('persistence retry helper', () => {
   it('retries transient persistence errors and succeeds', async () => {
     const operation = vi
-      .fn<[], Promise<string>>()
+      .fn<() => Promise<string>>()
       .mockRejectedValueOnce(new Error('fetch failed'))
       .mockRejectedValueOnce(new Error('UND_ERR_CONNECT_TIMEOUT'))
       .mockResolvedValue('ok');
@@ -22,7 +22,7 @@ describe('persistence retry helper', () => {
 
   it('throws ANALYSIS_SERVICE_UNAVAILABLE when transient persistence never recovers', async () => {
     const operation = vi
-      .fn<[], Promise<string>>()
+      .fn<() => Promise<string>>()
       .mockRejectedValue(new Error('network connection closed'));
 
     await expect(
@@ -42,7 +42,7 @@ describe('persistence retry helper', () => {
 
   it('throws INTERNAL_ERROR immediately for non-transient persistence failures', async () => {
     const operation = vi
-      .fn<[], Promise<string>>()
+      .fn<() => Promise<string>>()
       .mockRejectedValue(new Error('violates foreign key constraint'));
 
     await expect(
