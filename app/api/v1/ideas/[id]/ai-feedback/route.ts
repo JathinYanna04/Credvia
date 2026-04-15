@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { ZodError } from 'zod';
 import { isAiFeatureEnabled, resolveAiRuntimeConfigOrThrow } from '@/lib/ai/config';
 import { getAiRunExecutor } from '@/lib/ai/executor';
@@ -16,7 +17,6 @@ import { fail, handleApiError, ok } from '@/lib/api';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { getRequiredSupabaseBrowserConfig } from '@/lib/supabase/env';
 import { getRequiredUser } from '@/lib/supabase/helpers';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
 import type { Database } from '@/lib/supabase/types';
 import {
   logError,
@@ -58,6 +58,7 @@ function buildCorsHeaders(request: Request) {
     'Access-Control-Allow-Origin': resolveCorsAllowedOrigin(request),
     'Access-Control-Allow-Headers': 'Authorization, Content-Type, x-credvia-ai-feedback-source',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
 }
@@ -105,7 +106,7 @@ async function createSupabaseClientForRequest(request: Request) {
   const bearerToken = extractBearerToken(request);
 
   if (!bearerToken) {
-    return createServerSupabaseClient();
+    throw new Error('MISSING_BEARER_TOKEN');
   }
 
   const browserConfig = getRequiredSupabaseBrowserConfig();
@@ -163,7 +164,7 @@ interface RunClaimabilityDebugRow {
 }
 
 async function readRunClaimabilityDebug(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  supabase: SupabaseClient<Database>,
   runId: string,
 ): Promise<RunClaimabilityDebugRow | null> {
   const queryClient = supabase as unknown as { from?: unknown };
@@ -227,7 +228,7 @@ function resolveFounderRunDecisionReason(args: {
 }
 
 export async function OPTIONS(request: Request) {
-  return withCors(request, new Response(null, { status: 204 }));
+  return withCors(request, new Response(null, { status: 200 }));
 }
 
 export async function GET(
@@ -273,6 +274,16 @@ export async function GET(
     snapshotResponse('GET', 200, { data: state });
     return okWithCors(request, state);
   } catch (error) {
+    if (error instanceof Error && error.message === 'MISSING_BEARER_TOKEN') {
+      snapshotResponse('GET', 401, {
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Missing bearer token.',
+        },
+      });
+      return failWithCors(request, 'UNAUTHORIZED', 'Missing bearer token.', 401);
+    }
+
     if (error instanceof Error && error.message === 'AUTH_SESSION_UNAVAILABLE') {
       snapshotResponse('GET', 503, {
         error: {
@@ -592,6 +603,16 @@ export async function POST(
       },
     });
   } catch (error) {
+    if (error instanceof Error && error.message === 'MISSING_BEARER_TOKEN') {
+      snapshotResponse('POST', 401, {
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Missing bearer token.',
+        },
+      });
+      return failWithCors(request, 'UNAUTHORIZED', 'Missing bearer token.', 401);
+    }
+
     if (error instanceof SyntaxError) {
       snapshotResponse('POST', 400, {
         error: {
