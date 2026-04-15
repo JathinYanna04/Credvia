@@ -2,7 +2,6 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { requiresPersonaOnboarding } from '@/lib/profile-state';
 import { updateSession } from '@/lib/supabase/middleware';
-import { logInfo } from '@/lib/utils/logger';
 
 const BUILD_SHA = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || 'unknown';
 
@@ -54,6 +53,16 @@ function stripInternalSearchParams(url: URL) {
   const nextUrl = new URL(url.toString());
   nextUrl.searchParams.delete('_rsc');
   return nextUrl;
+}
+
+function logMiddlewareInfo(message: string, meta?: Record<string, unknown>) {
+  console.info(JSON.stringify({
+    level: 'info',
+    scope: 'middleware',
+    message,
+    timestamp: new Date().toISOString(),
+    ...(meta ?? {}),
+  }));
 }
 
 function applyCareerDebugHeaders(response: NextResponse, pathname: string, authDecision: 'public' | 'redirect-login' | 'pass') {
@@ -145,20 +154,20 @@ export async function middleware(request: NextRequest) {
   }
 
   if (shouldBypassMiddleware(pathname)) {
-    logInfo('middleware', 'Bypassing middleware for asset/system request', {
+    logMiddlewareInfo('Bypassing middleware for asset/system request', {
       pathname,
     });
     return NextResponse.next();
   }
 
   if (isFounderFeedbackApiPath(pathname)) {
-    logInfo('middleware', 'Bypassing middleware auth refresh for founder ai-feedback route', {
+    logMiddlewareInfo('Bypassing middleware auth refresh for founder ai-feedback route', {
       pathname,
     });
     return NextResponse.next();
   }
 
-  logInfo('middleware', 'Middleware handling request', {
+  logMiddlewareInfo('Middleware handling request', {
     pathname,
   });
 
@@ -166,7 +175,7 @@ export async function middleware(request: NextRequest) {
 
   if (!user && !isPublicPath(pathname) && !isPublicApiRequest(pathname, method)) {
     if (isApiPath(pathname)) {
-      logInfo('middleware', 'Returning JSON 401 for unauthenticated API request', {
+      logMiddlewareInfo('Returning JSON 401 for unauthenticated API request', {
         pathname,
       });
       return applyCareerDebugHeaders(NextResponse.json(
@@ -180,7 +189,7 @@ export async function middleware(request: NextRequest) {
       ), pathname, 'redirect-login');
     }
 
-    logInfo('middleware', 'Redirecting unauthenticated request to login', {
+    logMiddlewareInfo('Redirecting unauthenticated request to login', {
       pathname,
     });
     return applyCareerDebugHeaders(NextResponse.redirect(new URL('/login', request.url)), pathname, 'redirect-login');
@@ -194,21 +203,21 @@ export async function middleware(request: NextRequest) {
     !isOnboardingPath(pathname) &&
     requiresOnboarding
   ) {
-    logInfo('middleware', 'Redirecting authenticated user into onboarding', {
+    logMiddlewareInfo('Redirecting authenticated user into onboarding', {
       pathname,
     });
     return NextResponse.redirect(new URL('/onboarding', request.url));
   }
 
   if (!isApiPath(pathname) && user && isOnboardingPath(pathname) && !requiresOnboarding) {
-    logInfo('middleware', 'Redirecting fully onboarded user away from onboarding', {
+    logMiddlewareInfo('Redirecting fully onboarded user away from onboarding', {
       pathname,
     });
     return NextResponse.redirect(new URL('/feed', request.url));
   }
 
   if (!isApiPath(pathname) && user && (pathname === '/login' || pathname === '/signup')) {
-    logInfo('middleware', 'Redirecting authenticated user away from auth page', {
+    logMiddlewareInfo('Redirecting authenticated user away from auth page', {
       pathname,
     });
     return NextResponse.redirect(
@@ -216,7 +225,7 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  logInfo('middleware', 'Allowing request to continue', {
+  logMiddlewareInfo('Allowing request to continue', {
     pathname,
     hasUser: Boolean(user),
   });

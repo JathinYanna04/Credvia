@@ -5,7 +5,16 @@ import type { CookieOptions } from '@supabase/ssr';
 import { getRequiredSupabaseBrowserConfig } from '@/lib/supabase/env';
 import type { Database } from '@/lib/supabase/types';
 import { isSchemaCompatibilityError, isSupabaseAuthTransportError } from '@/lib/supabase/helpers';
-import { logError } from '@/lib/utils/logger';
+
+function logSupabaseMiddlewareError(message: string, meta?: Record<string, unknown>) {
+  console.error(JSON.stringify({
+    level: 'error',
+    scope: 'supabase-middleware',
+    message,
+    timestamp: new Date().toISOString(),
+    ...(meta ?? {}),
+  }));
+}
 
 export async function updateSession(request: NextRequest) {
   const response = NextResponse.next({ request });
@@ -47,7 +56,7 @@ export async function updateSession(request: NextRequest) {
       authTransportFailure = isSupabaseAuthTransportError(error);
 
       if (authTransportFailure) {
-        logError('supabase-middleware', 'Auth user fetch transport failure', {
+        logSupabaseMiddlewareError('Auth user fetch transport failure', {
           message: error.message,
         });
       }
@@ -58,7 +67,7 @@ export async function updateSession(request: NextRequest) {
     authTransportFailure = isSupabaseAuthTransportError(error);
 
     if (authTransportFailure) {
-      logError('supabase-middleware', 'Auth user fetch threw transport failure', {
+      logSupabaseMiddlewareError('Auth user fetch threw transport failure', {
         message: error instanceof Error ? error.message : String(error),
       });
     } else {
