@@ -1,105 +1,12 @@
 {
-  "runId": "d503abe0-1e8d-479c-871b-400b0aa573f0",
-  "status": "succeeded",
+  "id": "run-queued-2",
   "feature": "founder_idea_feedback",
   "subjectType": "startup_idea",
-  "subjectId": "1ef7222a-fc0b-4060-b639-44e9e779394c",
-  "requestedBy": "7a180fe3-3d10-4ded-a569-cadafbc17ac7",
-  "promptVersion": "founder-v1",
-  "promptKey": "founder-feedback-core",
-  "inputHash": "8f9d778083baab788ca1cb2c8ff5eb541558e928be332908e58cf140aef71632",
-  "runIdentity": "33cd1aecfac36d240f8c47a9e38a17fa2846c4e1dfb5e875fe071d5d5c844f04",
-  "attemptCount": 1,
-  "maxAttempts": 3,
-  "provider": "groq",
-  "model": "llama-3.3-70b-versatile",
-  "requestId": "req_01kp2zphhaeam87b3wzxsgt1zn",
-  "latencyMs": 4278,
-  "providerMetadata": {
-    "requestId": "req_01kp2zphhaeam87b3wzxsgt1zn",
-    "finishReason": "stop",
-    "usage": {
-      "inputTokens": 1887,
-      "outputTokens": 574,
-      "totalTokens": 2461
-    },
-    "attemptCount": 1,
-    "structuredMode": "minimal_schema",
-    "qualitySignal": {
-      "confidence": 0.81,
-      "reasoning": [
-        "Repair attempts used: 1.",
-        "Provider returned on first attempt.",
-        "Schema validation failures observed: 1.",
-        "Potentially weak or missing fields detected: 1."
-      ],
-      "stability": "high",
-      "repairCount": 1,
-      "providerAttemptCount": 1,
-      "parseFailureCount": 0,
-      "validationFailureCount": 1,
-      "missingFieldCount": 1,
-      "outputLength": 2778
-    },
-    "runtimeConfidence": 0.81,
-    "runtimeConfidenceReasoning": [
-      "Repair attempts used: 1.",
-      "Provider returned on first attempt.",
-      "Schema validation failures observed: 1.",
-      "Potentially weak or missing fields detected: 1."
-    ],
-    "repairCount": 1,
-    "workflowTrace": {
-      "nodePath": [
-        "validateInput",
-        "chooseStrategy",
-        "invokeModel",
-        "persistResult",
-        "markSucceeded"
-      ],
-      "nodeTimingsMs": {
-        "validateInput": 20,
-        "chooseStrategy": 24,
-        "invokeModel": 4016,
-        "persistResult": 7,
-        "markSucceeded": 6
-      },
-      "stateTransitions": [
-        {
-          "node": "validateInput",
-          "fromStatus": "queued",
-          "toStatus": "running",
-          "durationMs": 20
-        },
-        {
-          "node": "chooseStrategy",
-          "fromStatus": "running",
-          "toStatus": "running",
-          "durationMs": 24
-        },
-        {
-          "node": "invokeModel",
-          "fromStatus": "running",
-          "toStatus": "running",
-          "durationMs": 4016
-        },
-        {
-          "node": "persistResult",
-          "fromStatus": "running",
-          "toStatus": "running",
-          "durationMs": 7
-        },
-        {
-          "node": "markSucceeded",
-          "fromStatus": "running",
-          "toStatus": "succeeded",
-          "durationMs": 6
-        }
-      ],
-      "totalDurationMs": 4130,
-      "retryCount": 0,
-      "inputHash": "8f9d778083baab788ca1cb2c8ff5eb541558e928be332908e58cf140aef71632"
-    }
-  },
-  "timestamp": "2026-04-13T08:35:31.525Z"
+  "subjectId": "11111111-1111-1111-1111-111111111111",
+  "status": "queued",
+  "timestamp": "2026-04-15T06:37:24.538Z",
+  "reused": false,
+  "decisionReason": "created_new",
+  "forceNewRun": false,
+  "runClaimability": null
 }

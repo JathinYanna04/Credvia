@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.gitignore
+.vscode
+coverage
+playwright-report
+test-results
+logs
+services/resume-extractor/.venv
+*.log
+.env
+.env.*
+!.env.example
+Dockerfile*
+docker-compose*.yml
+README.md

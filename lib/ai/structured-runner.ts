@@ -378,6 +378,17 @@ export async function runStructuredOutput<TSchema extends ZodTypeAny>(
       });
     }
 
+    logInfo('ai-structured-runner', 'Structured output provider invocation starting', {
+      traceId: input.traceId ?? null,
+      attempt,
+      isRepairAttempt,
+      maxTokens,
+      systemPromptLength: baseSystemPrompt.length,
+      userPromptLength: baseUserPrompt.length,
+      responseFormatLength: input.responseFormatInstructions.trim().length,
+      hasLastOutputContext: Boolean(isRepairAttempt && lastOutputText),
+    });
+
     const result = await invokeProviderForStructuredOutput({
       systemPrompt: [baseSystemPrompt, repairInstructions].filter(Boolean).join('\n\n'),
       userPrompt: isRepairAttempt && lastOutputText

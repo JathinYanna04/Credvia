@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createClient } from '@supabase/supabase-js';
 import { ZodError } from 'zod';
 import { isAiFeatureEnabled, resolveAiRuntimeConfigOrThrow } from '@/lib/ai/config';
 import { getAiRunExecutor } from '@/lib/ai/executor';
@@ -13,8 +14,10 @@ import {
 } from '@/lib/ai/features/founder-feedback/schema';
 import { fail, handleApiError, ok } from '@/lib/api';
 import { enforceRateLimit } from '@/lib/rate-limit';
+import { getRequiredSupabaseBrowserConfig } from '@/lib/supabase/env';
 import { getRequiredUser } from '@/lib/supabase/helpers';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import type { Database } from '@/lib/supabase/types';
 import {
   logError,
   logInfo,
@@ -34,6 +37,95 @@ const TRANSIENT_ROUTE_ERROR_PATTERNS = [
   'connection closed',
   'auth_session_timeout',
 ];
+
+function resolveCorsAllowedOrigin(request: Request) {
+  const configured = process.env.CORS_ALLOWED_ORIGIN?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim() || null;
+  const origin = request.headers.get('origin')?.trim() ?? null;
+
+  if (!origin) {
+    return configured ?? '*';
+  }
+
+  if (configured && origin === configured) {
+    return configured;
+  }
+
+  return configured ?? origin;
+}
+
+function buildCorsHeaders(request: Request) {
+  return {
+    'Access-Control-Allow-Origin': resolveCorsAllowedOrigin(request),
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, x-credvia-ai-feedback-source',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    Vary: 'Origin',
+  };
+}
+
+function withCors(request: Request, response: Response) {
+  const headers = buildCorsHeaders(request);
+  Object.entries(headers).forEach(([key, value]) => {
+    response.headers.set(key, value);
+  });
+  return response;
+}
+
+function okWithCors<T>(request: Request, data: T) {
+  return withCors(request, ok(data));
+}
+
+function failWithCors(
+  request: Request,
+  code: Parameters<typeof fail>[0],
+  message: Parameters<typeof fail>[1],
+  status: Parameters<typeof fail>[2],
+  details?: Parameters<typeof fail>[3],
+  suggestedAction?: Parameters<typeof fail>[4],
+) {
+  return withCors(request, fail(code, message, status, details, suggestedAction));
+}
+
+function handleApiErrorWithCors(request: Request, error: unknown) {
+  return withCors(request, handleApiError(error));
+}
+
+function extractBearerToken(request: Request) {
+  const authorization = request.headers.get('authorization')?.trim() ?? '';
+  const prefix = 'bearer ';
+
+  if (!authorization.toLowerCase().startsWith(prefix)) {
+    return null;
+  }
+
+  const token = authorization.slice(prefix.length).trim();
+  return token.length > 0 ? token : null;
+}
+
+async function createSupabaseClientForRequest(request: Request) {
+  const bearerToken = extractBearerToken(request);
+
+  if (!bearerToken) {
+    return createServerSupabaseClient();
+  }
+
+  const browserConfig = getRequiredSupabaseBrowserConfig();
+
+  return createClient<Database>(
+    browserConfig.url,
+    browserConfig.key,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+      global: {
+        headers: {
+          Authorization: `Bearer ${bearerToken}`,
+        },
+      },
+    },
+  );
+}
 
 function errorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -134,13 +226,17 @@ function resolveFounderRunDecisionReason(args: {
   return args.regenerate ? 'force_new_regenerate' : 'created_new';
 }
 
+export async function OPTIONS(request: Request) {
+  return withCors(request, new Response(null, { status: 204 }));
+}
+
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } },
 ) {
   try {
     const parsed = FounderReviewRouteParamsSchema.parse(params);
-    const supabase = await createServerSupabaseClient();
+    const supabase = await createSupabaseClientForRequest(request);
     const user = await getRequiredUser(supabase, {
       timeoutMs: 2500,
       retries: 1,
@@ -159,7 +255,7 @@ export async function GET(
           message: 'Startup idea not found.',
         },
       });
-      return fail('NOT_FOUND', 'Startup idea not found.', 404);
+      return failWithCors(request, 'NOT_FOUND', 'Startup idea not found.', 404);
     }
 
     if (process.env.NODE_ENV !== 'production') {
@@ -175,7 +271,7 @@ export async function GET(
     }
 
     snapshotResponse('GET', 200, { data: state });
-    return ok(state);
+    return okWithCors(request, state);
   } catch (error) {
     if (error instanceof Error && error.message === 'AUTH_SESSION_UNAVAILABLE') {
       snapshotResponse('GET', 503, {
@@ -184,7 +280,8 @@ export async function GET(
           message: 'Authentication service is temporarily unavailable. Retry in a moment.',
         },
       });
-      return fail(
+      return failWithCors(
+        request,
         'ANALYSIS_SERVICE_UNAVAILABLE',
         'Authentication service is temporarily unavailable. Retry in a moment.',
         503,
@@ -200,7 +297,7 @@ export async function GET(
           message: 'You need to sign in.',
         },
       });
-      return fail('UNAUTHORIZED', 'You need to sign in.', 401);
+      return failWithCors(request, 'UNAUTHORIZED', 'You need to sign in.', 401);
     }
 
     if (isTransientRouteError(error)) {
@@ -210,7 +307,8 @@ export async function GET(
           message: 'Founder feedback is temporarily unavailable. Please retry shortly.',
         },
       });
-      return fail(
+      return failWithCors(
+        request,
         'ANALYSIS_SERVICE_UNAVAILABLE',
         'Founder feedback is temporarily unavailable. Please retry shortly.',
         503,
@@ -227,7 +325,7 @@ export async function GET(
           details: error.details ?? null,
         },
       });
-      return fail(error.code, error.message, error.status, error.details, error.suggestedAction);
+      return failWithCors(request, error.code, error.message, error.status, error.details, error.suggestedAction);
     }
 
     if (error instanceof ZodError) {
@@ -237,7 +335,7 @@ export async function GET(
           message: error.issues[0]?.message ?? 'Validation error.',
         },
       });
-      return fail('VALIDATION_ERROR', error.issues[0]?.message ?? 'Validation error.', 400);
+      return failWithCors(request, 'VALIDATION_ERROR', error.issues[0]?.message ?? 'Validation error.', 400);
     }
 
     if (process.env.NODE_ENV !== 'production') {
@@ -253,7 +351,7 @@ export async function GET(
         message: 'An unexpected error occurred.',
       },
     });
-    return handleApiError(error);
+    return handleApiErrorWithCors(request, error);
   }
 }
 
@@ -269,7 +367,7 @@ export async function POST(
           message: 'Founder AI feedback is currently disabled.',
         },
       });
-      return fail('AI_FEATURE_DISABLED', 'Founder AI feedback is currently disabled.', 503);
+      return failWithCors(request, 'AI_FEATURE_DISABLED', 'Founder AI feedback is currently disabled.', 503);
     }
 
     const runtimeConfig = resolveAiRuntimeConfigOrThrow();
@@ -287,7 +385,7 @@ export async function POST(
     const body = FounderReviewRequestSchema.parse((await request.json()) as unknown);
     const requestedForceNewRun = Boolean(body.forceNewRun || body.regenerate);
 
-    const supabase = await createServerSupabaseClient();
+    const supabase = await createSupabaseClientForRequest(request);
     const user = await getRequiredUser(supabase, {
       timeoutMs: 2500,
       retries: 1,
@@ -301,10 +399,19 @@ export async function POST(
           message: 'Too many AI requests. Try again shortly.',
         },
       });
-      return fail('RATE_LIMITED', 'Too many AI requests. Try again shortly.', 429, {
+      return failWithCors(request, 'RATE_LIMITED', 'Too many AI requests. Try again shortly.', 429, {
         feature: 'founder_idea_feedback',
       });
     }
+
+    logInfo('idea-ai-feedback-post', 'Founder ai-feedback queue attempt started', {
+      method: 'POST',
+      postId: parsed.id,
+      userId: user.id,
+      requestedForceNewRun,
+      aiExecutorInlineEnv: process.env.AI_EXECUTOR_INLINE ?? null,
+      aiProviderEnv: process.env.AI_PROVIDER ?? null,
+    });
 
     let queued = await queueFounderIdeaFeedbackRun({
       supabase,
@@ -312,6 +419,16 @@ export async function POST(
       founderUserId: user.id,
       regenerate: requestedForceNewRun,
       traceId: randomUUID(),
+    });
+
+    logInfo('idea-ai-feedback-post', 'Founder ai-feedback queue attempt completed', {
+      method: 'POST',
+      postId: parsed.id,
+      userId: user.id,
+      runId: queued.run.id,
+      runStatus: queued.run.status,
+      reused: queued.reused,
+      decisionReason: queued.decisionReason ?? null,
     });
     let existingRunId = queued.reused ? queued.run.id : null;
     let existingStatus = queued.reused ? queued.run.status : null;
@@ -384,12 +501,25 @@ export async function POST(
 
     if (!queued.reused) {
       const executor = getAiRunExecutor();
+      logInfo('idea-ai-feedback-post', 'Founder ai-feedback executor enqueue started', {
+        method: 'POST',
+        postId: parsed.id,
+        userId: user.id,
+        runId: queued.run.id,
+        runStatus: queued.run.status,
+      });
       await executor.enqueue({
         runId: queued.run.id,
         feature: queued.run.feature,
         requestedBy: user.id,
         subjectType: queued.run.subjectType,
         subjectId: queued.run.subjectId,
+      });
+      logInfo('idea-ai-feedback-post', 'Founder ai-feedback executor enqueue completed', {
+        method: 'POST',
+        postId: parsed.id,
+        userId: user.id,
+        runId: queued.run.id,
       });
     }
 
@@ -454,7 +584,7 @@ export async function POST(
       },
     });
 
-    return ok({
+    return okWithCors(request, {
       run: queued.run,
       reused: queued.reused,
       debug: {
@@ -469,7 +599,7 @@ export async function POST(
           message: 'Request body must be valid JSON.',
         },
       });
-      return fail('VALIDATION_ERROR', 'Request body must be valid JSON.', 400);
+      return failWithCors(request, 'VALIDATION_ERROR', 'Request body must be valid JSON.', 400);
     }
 
     if (error instanceof Error && error.message === 'AUTH_SESSION_UNAVAILABLE') {
@@ -479,7 +609,8 @@ export async function POST(
           message: 'Authentication service is temporarily unavailable. Retry in a moment.',
         },
       });
-      return fail(
+      return failWithCors(
+        request,
         'ANALYSIS_SERVICE_UNAVAILABLE',
         'Authentication service is temporarily unavailable. Retry in a moment.',
         503,
@@ -495,7 +626,7 @@ export async function POST(
           message: 'You need to sign in.',
         },
       });
-      return fail('UNAUTHORIZED', 'You need to sign in.', 401);
+      return failWithCors(request, 'UNAUTHORIZED', 'You need to sign in.', 401);
     }
 
     if (isTransientRouteError(error)) {
@@ -505,7 +636,8 @@ export async function POST(
           message: 'Founder feedback is temporarily unavailable. Please retry shortly.',
         },
       });
-      return fail(
+      return failWithCors(
+        request,
         'ANALYSIS_SERVICE_UNAVAILABLE',
         'Founder feedback is temporarily unavailable. Please retry shortly.',
         503,
@@ -522,7 +654,7 @@ export async function POST(
           details: error.details ?? null,
         },
       });
-      return fail(error.code, error.message, error.status, error.details, error.suggestedAction);
+      return failWithCors(request, error.code, error.message, error.status, error.details, error.suggestedAction);
     }
 
     if (error instanceof ZodError) {
@@ -532,7 +664,7 @@ export async function POST(
           message: error.issues[0]?.message ?? 'Validation error.',
         },
       });
-      return fail('VALIDATION_ERROR', error.issues[0]?.message ?? 'Validation error.', 400);
+      return failWithCors(request, 'VALIDATION_ERROR', error.issues[0]?.message ?? 'Validation error.', 400);
     }
 
     if (process.env.NODE_ENV !== 'production') {
@@ -548,6 +680,6 @@ export async function POST(
         message: 'An unexpected error occurred.',
       },
     });
-    return handleApiError(error);
+    return handleApiErrorWithCors(request, error);
   }
 }

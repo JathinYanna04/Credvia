@@ -614,6 +614,12 @@ export async function processAiWorkerBatch(
     maxAttempts: options.maxAttempts,
   });
 
+  logInfo('ai-worker-batch', 'AI worker claimed runs snapshot', {
+    processorId: options.processorId,
+    claimedRunsCount: claimedRuns.length,
+    claimedRunIds: claimedRuns.map((run) => run.id),
+  });
+
   logInfo('ai-worker-batch', 'AI worker claim attempt completed', {
     processorId: options.processorId,
     totalQueued: claimabilitySummary?.totalQueued ?? null,
@@ -631,6 +637,10 @@ export async function processAiWorkerBatch(
       filteredByLease: claimabilitySummary?.filteredByLease ?? null,
       filteredByAttempts: claimabilitySummary?.filteredByAttempts ?? null,
       claimed: 0,
+      rejectionHint:
+        (claimabilitySummary?.eligible ?? 0) === 0
+          ? 'no eligible queued rows (likely lease/attempt filters)'
+          : 'eligible rows exist but none claimed in this batch',
     });
   }
 

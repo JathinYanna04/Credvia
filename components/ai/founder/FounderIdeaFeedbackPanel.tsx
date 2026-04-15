@@ -11,6 +11,7 @@ import { AiShareButton } from '@/components/ai/AiShareButton';
 import { AiSkeletonCard } from '@/components/ai/AiSkeletonCard';
 import { AiStatusBadge } from '@/components/ai/AiStatusBadge';
 import { Button } from '@/components/ui/button';
+import { createClient as createSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { AiRunSummary } from '@/lib/types';
 
 interface FounderIdeaReviewView {
@@ -102,6 +103,16 @@ const MEDIUM_POLL_DELAY_MS = 3500;
 const SLOW_POLL_DELAY_MS = 7000;
 const FOUNDER_CONFIG_ERROR_MESSAGE =
   'AI review is not configured yet. Groq is selected, but no API key is available to process this request.';
+
+function resolveApiBaseUrl() {
+  const raw = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? '';
+  return raw.replace(/\/+$/, '');
+}
+
+function toApiUrl(pathname: string) {
+  const baseUrl = resolveApiBaseUrl();
+  return baseUrl ? `${baseUrl}${pathname}` : pathname;
+}
 
 function getGenerationBlockReason(args: {
   ideaId: string;
@@ -425,6 +436,7 @@ export function FounderIdeaFeedbackPanel({
   marketCategory = null,
   stage = null,
 }: FounderIdeaFeedbackPanelProps) {
+  const supabaseClientRef = useRef<ReturnType<typeof createSupabaseBrowserClient> | null>(null);
   const [state, setState] = useState<FounderFeedbackState | null>(null);
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
@@ -496,6 +508,27 @@ export function FounderIdeaFeedbackPanel({
   });
   const generationInfoMessage = getGenerationInfoReasonMessage(generationInfoReason);
   const generationDisabled = isGenerationButtonDisabled(generationBlockReason);
+
+  const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    try {
+      if (!supabaseClientRef.current) {
+        supabaseClientRef.current = createSupabaseBrowserClient();
+      }
+
+      const sessionResult = await supabaseClientRef.current.auth.getSession();
+      const accessToken = sessionResult.data.session?.access_token;
+
+      if (!accessToken) {
+        return {};
+      }
+
+      return {
+        Authorization: `Bearer ${accessToken}`,
+      };
+    } catch {
+      return {};
+    }
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -610,11 +643,14 @@ export function FounderIdeaFeedbackPanel({
       signal?: AbortSignal,
     ): Promise<FeedbackLoadResult> => {
       try {
-        const response = await fetch(`/api/v1/ideas/${ideaId}/ai-feedback`, {
+        const authHeaders = await getAuthHeaders();
+        const response = await fetch(toApiUrl(`/api/v1/ideas/${ideaId}/ai-feedback`), {
           cache: 'no-store',
           signal,
+          mode: 'cors',
           headers: {
             'x-credvia-ai-feedback-source': source,
+            ...authHeaders,
           },
         });
 
@@ -665,7 +701,7 @@ export function FounderIdeaFeedbackPanel({
         };
       }
     },
-    [ideaId],
+    [getAuthHeaders, ideaId],
   );
 
   const applyLoadedState = useCallback((nextState: FounderFeedbackState) => {
@@ -1012,21 +1048,27 @@ export function FounderIdeaFeedbackPanel({
       // eslint-disable-next-line no-console
       console.info('[founder-feedback] post triggered', {
         ideaId,
-        url: `/api/v1/ideas/${ideaId}/ai-feedback`,
+        url: toApiUrl(`/api/v1/ideas/${ideaId}/ai-feedback`),
         payload: requestPayload,
       });
 
       // eslint-disable-next-line no-console
       console.info('[founder-feedback] about to POST /ai-feedback', {
         ideaId,
-        url: `/api/v1/ideas/${ideaId}/ai-feedback`,
+        url: toApiUrl(`/api/v1/ideas/${ideaId}/ai-feedback`),
         method: 'POST',
         payload: requestPayload,
       });
 
-      const response = await fetch(`/api/v1/ideas/${ideaId}/ai-feedback`, {
+      const authHeaders = await getAuthHeaders();
+
+      const response = await fetch(toApiUrl(`/api/v1/ideas/${ideaId}/ai-feedback`), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
         body: JSON.stringify(requestPayload),
       });
 

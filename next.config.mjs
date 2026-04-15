@@ -20,6 +20,7 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  output: 'standalone',
   experimental: {
     optimizePackageImports: ["lucide-react", "date-fns"],
     // Next.js 14 requires experimental.serverComponentsExternalPackages

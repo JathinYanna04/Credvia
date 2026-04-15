@@ -672,39 +672,67 @@ async function callAnthropicProvider(
     },
     async () => {
       const timeout = withTimeoutSignal(timeoutMs);
+      const requestUrl = `${baseUrl}/messages`;
+      const requestHeaders = {
+        'x-api-key': runtimeConfig.apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      };
+      const requestPayload = {
+        model,
+        temperature: input.temperature ?? 0.2,
+        max_tokens: resolveRequestedMaxTokens(input.maxTokens),
+        system: [
+          input.systemPrompt.trim(),
+          'Return strict JSON only. Do not include markdown fences.',
+          input.responseFormatInstructions.trim(),
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+        messages: [
+          {
+            role: 'user',
+            content: input.userPrompt,
+          },
+        ],
+      };
+
+      logInfo('ai-provider', 'AI provider HTTP request dispatched', {
+        traceId: input.traceId ?? null,
+        provider,
+        model,
+        method: 'POST',
+        url: requestUrl,
+        headers: {
+          ...requestHeaders,
+          'x-api-key': '***',
+        },
+        payload: requestPayload,
+      });
 
       try {
-        const response = await fetch(`${baseUrl}/messages`, {
+        const response = await fetch(requestUrl, {
           method: 'POST',
           signal: timeout.signal,
-          headers: {
-            'x-api-key': runtimeConfig.apiKey,
-            'anthropic-version': '2023-06-01',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model,
-            temperature: input.temperature ?? 0.2,
-            max_tokens: resolveRequestedMaxTokens(input.maxTokens),
-            system: [
-              input.systemPrompt.trim(),
-              'Return strict JSON only. Do not include markdown fences.',
-              input.responseFormatInstructions.trim(),
-            ]
-              .filter(Boolean)
-              .join('\n\n'),
-            messages: [
-              {
-                role: 'user',
-                content: input.userPrompt,
-              },
-            ],
-          }),
+          headers: requestHeaders,
+          body: JSON.stringify(requestPayload),
         });
 
         const payload = (await response.json().catch(() => null)) as AnthropicResponse | null;
 
         if (!response.ok || !payload) {
+          logError('ai-provider', 'AI provider HTTP error response', {
+            traceId: input.traceId ?? null,
+            provider,
+            model,
+            method: 'POST',
+            url: requestUrl,
+            status: response.status,
+            statusText: response.statusText,
+            requestId: payload?.id ?? null,
+            responseBody: payload,
+          });
+
           throw toProviderError(provider, model, response.status, extractRequestId(payload));
         }
 
@@ -724,6 +752,18 @@ async function callAnthropicProvider(
         }
 
         const normalizedModel = payload.model ?? model;
+
+        logInfo('ai-provider', 'AI provider HTTP response received', {
+          traceId: input.traceId ?? null,
+          provider,
+          model: normalizedModel,
+          method: 'POST',
+          url: requestUrl,
+          status: response.status,
+          requestId: payload.id ?? null,
+          finishReason: payload.stop_reason ?? null,
+          usage: payload.usage ?? null,
+        });
 
         return {
           provider,

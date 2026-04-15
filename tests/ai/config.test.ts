@@ -51,6 +51,16 @@ describe('ai config resolver', () => {
     expect(resolveAiProvider()).toBeNull();
   });
 
+  it('auto-selects groq when GROQ_API_KEY is set', async () => {
+    process.env = {
+      NODE_ENV: originalEnv.NODE_ENV,
+      GROQ_API_KEY: 'groq-key',
+    };
+
+    const { resolveAiProvider } = await import('@/lib/ai/config');
+    expect(resolveAiProvider()).toBe('groq');
+  });
+
   it('prefers AI_GROQ_API_KEY over GROQ_API_KEY for app ai runtime', async () => {
     process.env = {
       NODE_ENV: originalEnv.NODE_ENV,
@@ -69,12 +79,10 @@ describe('ai config resolver', () => {
 
     const runtime = resolveAiRuntimeConfigOrThrow();
     expect(runtime.apiKeySource).toBe('AI_GROQ_API_KEY');
-    expect(runtime.warnings).toEqual(
-      expect.arrayContaining([
-        'Legacy Groq key env vars are ignored by app AI runtime: GROQ_API_KEY, RESUME_EXTRACTOR_GROQ_API_KEY.',
-      ]),
+    expect(runtime.warnings).toContain('Multiple Groq API key env vars are set. Using AI_GROQ_API_KEY.');
+    expect(runtime.warnings).toContain(
+      'Legacy Groq key env vars are ignored by app AI runtime: RESUME_EXTRACTOR_GROQ_API_KEY.',
     );
-    expect(runtime.warnings).not.toContain('Multiple Groq API key env vars are set. Using AI_GROQ_API_KEY.');
   });
 
   it('maps legacy groq model aliases to supported model IDs', async () => {
@@ -119,7 +127,7 @@ describe('ai config resolver', () => {
     );
   });
 
-  it('does not fall back to GROQ_API_KEY when AI_GROQ_API_KEY is absent', async () => {
+  it('falls back to GROQ_API_KEY when AI_GROQ_API_KEY is absent', async () => {
     process.env = {
       NODE_ENV: originalEnv.NODE_ENV,
       AI_PROVIDER: 'groq',
@@ -128,20 +136,37 @@ describe('ai config resolver', () => {
 
     const { resolveAiApiKey, resolveAiRuntimeConfigOrThrow } = await import('@/lib/ai/config');
 
-    expect(resolveAiApiKey('groq')).toBeNull();
+    expect(resolveAiApiKey('groq')).toBe('fallback-key');
 
-    try {
-      resolveAiRuntimeConfigOrThrow();
-      throw new Error('Expected resolveAiRuntimeConfigOrThrow to throw');
-    } catch (error) {
-      const runtimeError = error as { code?: string; details?: Record<string, unknown> };
-      expect(runtimeError.code).toBe('AI_PROVIDER_NOT_CONFIGURED');
-      expect(runtimeError.details).toEqual(
-        expect.objectContaining({
-          requiredEnvVars: ['AI_GROQ_API_KEY'],
-        }),
-      );
-    }
+    const runtime = resolveAiRuntimeConfigOrThrow();
+    expect(runtime.provider).toBe('groq');
+    expect(runtime.apiKeySource).toBe('GROQ_API_KEY');
+  });
+
+  it('resolves openai from AI_OPENAI_API_KEY alias', async () => {
+    process.env = {
+      NODE_ENV: originalEnv.NODE_ENV,
+      AI_PROVIDER: 'openai',
+      AI_OPENAI_API_KEY: 'openai-alias-key',
+    };
+
+    const { resolveAiApiKey, resolveAiRuntimeConfigOrThrow } = await import('@/lib/ai/config');
+
+    expect(resolveAiApiKey('openai')).toBe('openai-alias-key');
+    expect(resolveAiRuntimeConfigOrThrow().apiKeySource).toBe('AI_OPENAI_API_KEY');
+  });
+
+  it('resolves anthropic from AI_ANTHROPIC_API_KEY alias', async () => {
+    process.env = {
+      NODE_ENV: originalEnv.NODE_ENV,
+      AI_PROVIDER: 'anthropic',
+      AI_ANTHROPIC_API_KEY: 'anthropic-alias-key',
+    };
+
+    const { resolveAiApiKey, resolveAiRuntimeConfigOrThrow } = await import('@/lib/ai/config');
+
+    expect(resolveAiApiKey('anthropic')).toBe('anthropic-alias-key');
+    expect(resolveAiRuntimeConfigOrThrow().apiKeySource).toBe('AI_ANTHROPIC_API_KEY');
   });
 
   it('does not allow app ai runtime to use extractor-oriented legacy groq key env vars', async () => {

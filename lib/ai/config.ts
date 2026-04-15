@@ -6,7 +6,11 @@ const AiEnvSchema = z.object({
   AI_PROVIDER: z.string().trim().optional(),
   LLM_PROVIDER: z.string().trim().optional(),
   OPENAI_API_KEY: z.string().trim().min(1).optional(),
+  AI_OPENAI_API_KEY: z.string().trim().min(1).optional(),
+  OPENAI_KEY: z.string().trim().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().trim().min(1).optional(),
+  AI_ANTHROPIC_API_KEY: z.string().trim().min(1).optional(),
+  ANTHROPIC_KEY: z.string().trim().min(1).optional(),
   GROQ_API_KEY: z.string().trim().min(1).optional(),
   AI_GROQ_API_KEY: z.string().trim().min(1).optional(),
   RESUME_EXTRACTOR_GROQ_API_KEY: z.string().trim().min(1).optional(),
@@ -46,10 +50,22 @@ type ParsedAiEnv = z.infer<typeof AiEnvSchema>;
 
 const GROQ_API_KEY_ENV_PRIORITY: ReadonlyArray<keyof ParsedAiEnv> = [
   'AI_GROQ_API_KEY',
+  'GROQ_API_KEY',
+];
+
+const OPENAI_API_KEY_ENV_PRIORITY: ReadonlyArray<keyof ParsedAiEnv> = [
+  'OPENAI_API_KEY',
+  'AI_OPENAI_API_KEY',
+  'OPENAI_KEY',
+];
+
+const ANTHROPIC_API_KEY_ENV_PRIORITY: ReadonlyArray<keyof ParsedAiEnv> = [
+  'ANTHROPIC_API_KEY',
+  'AI_ANTHROPIC_API_KEY',
+  'ANTHROPIC_KEY',
 ];
 
 const GROQ_LEGACY_API_KEY_ENV_NAMES: ReadonlyArray<keyof ParsedAiEnv> = [
-  'GROQ_API_KEY',
   'GROQ_KEY',
   'GROQ_TOKEN',
   'LLM_API_KEY',
@@ -116,7 +132,11 @@ function parseAiEnv() {
     AI_PROVIDER: process.env.AI_PROVIDER,
     LLM_PROVIDER: process.env.LLM_PROVIDER,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    AI_OPENAI_API_KEY: process.env.AI_OPENAI_API_KEY,
+    OPENAI_KEY: process.env.OPENAI_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    AI_ANTHROPIC_API_KEY: process.env.AI_ANTHROPIC_API_KEY,
+    ANTHROPIC_KEY: process.env.ANTHROPIC_KEY,
     GROQ_API_KEY: process.env.GROQ_API_KEY,
     AI_GROQ_API_KEY: process.env.AI_GROQ_API_KEY,
     RESUME_EXTRACTOR_GROQ_API_KEY: process.env.RESUME_EXTRACTOR_GROQ_API_KEY,
@@ -204,6 +224,14 @@ function resolveGroqApiKey(env: ParsedAiEnv): AiEnvResolution {
   return resolveByPriority(env, GROQ_API_KEY_ENV_PRIORITY);
 }
 
+function resolveOpenAiApiKey(env: ParsedAiEnv): AiEnvResolution {
+  return resolveByPriority(env, OPENAI_API_KEY_ENV_PRIORITY);
+}
+
+function resolveAnthropicApiKey(env: ParsedAiEnv): AiEnvResolution {
+  return resolveByPriority(env, ANTHROPIC_API_KEY_ENV_PRIORITY);
+}
+
 function resolveGroqBaseUrl(env: ParsedAiEnv): AiEnvResolution {
   return resolveByPriority(env, GROQ_BASE_URL_ENV_PRIORITY);
 }
@@ -238,11 +266,11 @@ function assertSupportedGroqModel(model: string) {
 
 function getProviderApiKeyEnvNames(provider: AiProvider): string[] {
   if (provider === 'openai') {
-    return ['OPENAI_API_KEY'];
+    return OPENAI_API_KEY_ENV_PRIORITY.map((name) => String(name));
   }
 
   if (provider === 'anthropic') {
-    return ['ANTHROPIC_API_KEY'];
+    return ANTHROPIC_API_KEY_ENV_PRIORITY.map((name) => String(name));
   }
 
   return GROQ_API_KEY_ENV_PRIORITY.map((name) => String(name));
@@ -280,11 +308,11 @@ export function resolveAiProvider(): AiProvider | null {
     return 'groq';
   }
 
-  if (env.OPENAI_API_KEY) {
+  if (resolveOpenAiApiKey(env).value) {
     return 'openai';
   }
 
-  if (env.ANTHROPIC_API_KEY) {
+  if (resolveAnthropicApiKey(env).value) {
     return 'anthropic';
   }
 
@@ -325,11 +353,11 @@ export function resolveAiApiKey(provider: AiProvider): string | null {
   const env = parseAiEnv();
 
   if (provider === 'openai') {
-    return env.OPENAI_API_KEY ?? null;
+    return resolveOpenAiApiKey(env).value;
   }
 
   if (provider === 'anthropic') {
-    return env.ANTHROPIC_API_KEY ?? null;
+    return resolveAnthropicApiKey(env).value;
   }
 
   return resolveGroqApiKey(env).value;
@@ -442,11 +470,11 @@ export function isAiProviderConfigured(provider: AiProvider): boolean {
   const env = parseAiEnv();
 
   if (provider === 'openai') {
-    return Boolean(env.OPENAI_API_KEY);
+    return Boolean(resolveOpenAiApiKey(env).value);
   }
 
   if (provider === 'anthropic') {
-    return Boolean(env.ANTHROPIC_API_KEY);
+    return Boolean(resolveAnthropicApiKey(env).value);
   }
 
   return Boolean(resolveGroqApiKey(env).value);
@@ -521,9 +549,9 @@ export function resolveAiRuntimeConfigOrThrow(): ResolvedAiRuntimeConfig {
       );
     }
   } else if (provider === 'openai') {
-    apiKeySource = 'OPENAI_API_KEY';
+    apiKeySource = resolveOpenAiApiKey(env).source ?? 'OPENAI_API_KEY';
   } else {
-    apiKeySource = 'ANTHROPIC_API_KEY';
+    apiKeySource = resolveAnthropicApiKey(env).source ?? 'ANTHROPIC_API_KEY';
   }
 
   return {
