@@ -9,6 +9,8 @@ import { buildFeedExplanation } from "@/lib/utils/feed-rank";
 import { logError, logInfo } from '@/lib/utils/logger';
 import type { FeedTab, PostSummary } from "@/lib/types";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   const verboseLogging = process.env.NODE_ENV !== 'production';
   let authUserId: string | null = null;

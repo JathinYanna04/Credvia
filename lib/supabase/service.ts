@@ -1,14 +1,35 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseServiceRoleKey, getSupabaseUrl } from '@/lib/supabase/env';
 import type { Database } from '@/lib/supabase/types';
-import { logError, logInfo } from '@/lib/utils/logger';
+
+function logSupabaseServiceInfo(message: string, meta?: Record<string, unknown>) {
+  // eslint-disable-next-line no-console
+  console.info(JSON.stringify({
+    level: 'info',
+    scope: 'supabase-service-client',
+    message,
+    timestamp: new Date().toISOString(),
+    ...(meta ?? {}),
+  }));
+}
+
+function logSupabaseServiceError(message: string, meta?: Record<string, unknown>) {
+  // eslint-disable-next-line no-console
+  console.error(JSON.stringify({
+    level: 'error',
+    scope: 'supabase-service-client',
+    message,
+    timestamp: new Date().toISOString(),
+    ...(meta ?? {}),
+  }));
+}
 
 export function createServiceRoleClient(): SupabaseClient<Database> | null {
   const serviceRoleKey = getSupabaseServiceRoleKey();
   const url = getSupabaseUrl();
 
   if (!serviceRoleKey || serviceRoleKey === 'your-service-role-key-here' || !url) {
-    logError('supabase-service-client', 'Service role client initialization failed', {
+    logSupabaseServiceError('Service role client initialization failed', {
       hasSupabaseUrl: Boolean(url),
       hasServiceRoleKey: Boolean(serviceRoleKey),
       serviceRoleLooksPlaceholder: serviceRoleKey === 'your-service-role-key-here',
@@ -16,7 +37,7 @@ export function createServiceRoleClient(): SupabaseClient<Database> | null {
     return null;
   }
 
-  logInfo('supabase-service-client', 'Service role client initialized', {
+  logSupabaseServiceInfo('Service role client initialized', {
     hasSupabaseUrl: true,
     hasServiceRoleKey: true,
   });
