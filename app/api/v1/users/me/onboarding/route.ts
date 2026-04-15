@@ -118,7 +118,7 @@ export async function POST(request: Request) {
         if (isSchemaCompatibilityError(profileUpdate.error)) {
           const legacyUpdate = await supabase
             .from('profiles')
-            .update(getLegacyProfileUpdatePayload(profileUpdatePayload))
+            .update(getLegacyProfileUpdatePayload(profileUpdatePayload) as any)
             .eq('user_id', user.id);
 
           if (legacyUpdate.error) {
