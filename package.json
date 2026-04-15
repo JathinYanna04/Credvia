@@ -52,7 +52,7 @@
     "inngest": "^3.39.2",
     "lucide-react": "^0.511.0",
     "mammoth": "^1.12.0",
-    "next": "14.2.25",
+    "next": "^14.2.35",
     "pdf-parse": "^2.4.5",
     "posthog-js": "^1.243.3",
     "posthog-node": "^5.21.2",
