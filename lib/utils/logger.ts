@@ -31,6 +31,11 @@ const LOG_DIR_ENV_NAME = 'AI_LOG_DIR';
 let nodeIoPromise: Promise<NodeIo | null> | null = null;
 let writeQueue: Promise<void> = Promise.resolve();
 
+const runtimeImport = new Function(
+  'specifier',
+  'return import(specifier);',
+) as (specifier: string) => Promise<unknown>;
+
 function isNodeRuntime() {
   return typeof window === 'undefined'
     && typeof process !== 'undefined'
@@ -84,8 +89,8 @@ async function resolveNodeIo(): Promise<NodeIo | null> {
 
   if (!nodeIoPromise) {
     nodeIoPromise = Promise.all([
-      import(/* webpackIgnore: true */ 'fs/promises'),
-      import(/* webpackIgnore: true */ 'path'),
+      runtimeImport('node:fs/promises') as Promise<typeof import('fs/promises')>,
+      runtimeImport('node:path') as Promise<typeof import('path')>,
     ]).then(([fs, path]) => ({ fs, path }))
       .catch(() => null);
   }

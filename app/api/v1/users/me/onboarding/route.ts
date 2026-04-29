@@ -24,8 +24,6 @@ function getLegacyProfileUpdatePayload(input: Record<string, unknown>) {
     'headline',
     'bio',
     'location',
-    'website',
-    'metadata',
     'onboarding_complete',
     'onboarding_completed_at',
   ]) {

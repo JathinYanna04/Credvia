@@ -4,6 +4,7 @@ const createServerSupabaseClient = vi.fn();
 const getRequiredUser = vi.fn();
 const ensureProfileRecord = vi.fn();
 const captureServerEvent = vi.fn().mockResolvedValue(undefined);
+const isSchemaCompatibilityError = vi.fn(() => false);
 
 vi.mock('@/lib/supabase/server', () => ({
   createServerSupabaseClient,
@@ -12,7 +13,7 @@ vi.mock('@/lib/supabase/server', () => ({
 vi.mock('@/lib/supabase/helpers', () => ({
   getRequiredUser,
   ensureProfileRecord,
-  isSchemaCompatibilityError: () => false,
+  isSchemaCompatibilityError,
 }));
 
 vi.mock('@/lib/analytics/capture-server-event', () => ({
@@ -268,5 +269,83 @@ describe('onboarding route', () => {
     expect(deleteMembershipsEq).not.toHaveBeenCalled();
     expect(insertUserSkills).not.toHaveBeenCalled();
     expect(insertMemberships).not.toHaveBeenCalled();
+  });
+
+  it('retries onboarding profile updates without metadata on a legacy schema', async () => {
+    isSchemaCompatibilityError.mockReturnValue(true);
+    const profileUpdateEq = vi
+      .fn()
+      .mockResolvedValueOnce({ error: { message: 'column profiles.metadata does not exist' } })
+      .mockResolvedValueOnce({ error: null });
+    const legacyUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const updateUserEq = vi.fn().mockResolvedValue({ error: null });
+
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === 'profiles') {
+          return {
+            update: vi.fn(() => ({
+              eq: table === 'profiles' ? profileUpdateEq : legacyUpdateEq,
+            })),
+          };
+        }
+
+        if (table === 'users') {
+          return {
+            update: vi.fn(() => ({
+              eq: updateUserEq,
+            })),
+          };
+        }
+
+        if (table === 'user_skills' || table === 'community_memberships') {
+          return {
+            delete: vi.fn(() => ({
+              eq: vi.fn(),
+            })),
+            insert: vi.fn(),
+          };
+        }
+
+        throw new Error(`Unexpected table ${table}`);
+      }),
+    };
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    ensureProfileRecord.mockResolvedValue({
+      user_id: 'user-1',
+      username: 'starter_name',
+      full_name: null,
+      primary_persona: null,
+      metadata: {},
+    });
+
+    const { POST } = await import('@/app/api/v1/users/me/onboarding/route');
+
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/users/me/onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile: {
+            username: 'credvia_builder',
+            full_name: 'Credvia Builder',
+            primary_persona: 'founder',
+          },
+          onboarding_complete: true,
+        }),
+      }),
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data?.saved).toBe(true);
+    expect(profileUpdateEq).toHaveBeenCalled();
+    expect(legacyUpdateEq).not.toHaveBeenCalled();
+    const retryPayload = profileUpdateEq.mock.calls[1]?.[0] as Record<string, unknown> | undefined;
+    expect(retryPayload).toBeDefined();
+    expect(retryPayload).not.toHaveProperty('metadata');
   });
 });

@@ -7,7 +7,7 @@ import { slugify } from '@/lib/utils/format';
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type SupabaseClientLike = SupabaseClient<Database>;
 const LEGACY_PROFILE_SELECT =
-  'user_id, username, full_name, headline, bio, avatar_url, location, website, current_company, education, metadata, profile_visibility, onboarding_complete, onboarding_completed_at, created_at, updated_at';
+  'user_id, username, full_name, headline, bio, avatar_url, location, current_company, education, profile_visibility, onboarding_complete, onboarding_completed_at, created_at, updated_at';
 
 const AUTH_TRANSPORT_ERROR_PATTERNS = [
   'und_err_connect_timeout',
