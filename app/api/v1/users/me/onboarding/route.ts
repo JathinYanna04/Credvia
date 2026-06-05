@@ -13,6 +13,7 @@ import {
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { ensureProfileRecord, getRequiredUser, isSchemaCompatibilityError } from '@/lib/supabase/helpers';
 import { OnboardingSubmissionSchema } from '@/lib/schemas/profile';
+import { logError } from '@/lib/utils/logger';
 
 function getLegacyProfileUpdatePayload(input: Record<string, unknown>) {
   const legacyPayload: Record<string, unknown> = {};
@@ -25,7 +26,6 @@ function getLegacyProfileUpdatePayload(input: Record<string, unknown>) {
     'bio',
     'location',
     'onboarding_complete',
-    'onboarding_completed_at',
   ]) {
     if (key in input) {
       legacyPayload[key] = input[key];
@@ -230,7 +230,9 @@ export async function POST(request: Request) {
         .eq('id', user.id);
 
       if (userUpdate.error) {
-        throw new Error(userUpdate.error.message);
+        if (!isSchemaCompatibilityError(userUpdate.error)) {
+          throw new Error(userUpdate.error.message);
+        }
       }
     }
 
@@ -271,6 +273,10 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
       return fail('UNAUTHORIZED', 'You need to sign in.', 401);
     }
+
+    logError('api-users-me-onboarding', 'Onboarding POST failed', {
+      error: error instanceof Error ? error.message : 'Unknown onboarding error',
+    });
 
     return handleApiError(error);
   }

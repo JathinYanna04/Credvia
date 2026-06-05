@@ -206,7 +206,8 @@ TECHNOLOGY_CANONICAL = {
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_MAX_LLM_TEXT_CHARS = 12000
+DEFAULT_MAX_LLM_TEXT_CHARS = 4000
+DEFAULT_LLM_MAX_OUTPUT_TOKENS = 300
 
 
 def read_env_value(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -264,6 +265,7 @@ GROQ_FORCE = read_env_bool("GROQ_FORCE", False)
 RESUME_CACHE_ENABLED = read_env_bool("RESUME_CACHE_ENABLED", False)
 OCR_ENABLED = read_env_bool("OCR_ENABLED", True)
 MAX_LLM_TEXT_CHARS = read_env_int("MAX_LLM_TEXT_CHARS", DEFAULT_MAX_LLM_TEXT_CHARS)
+LLM_MAX_OUTPUT_TOKENS = read_env_int("LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS)
 MAX_INPUT_SIZE_BYTES = read_env_int("MAX_INPUT_SIZE_BYTES", 10 * 1024 * 1024)
 LOG_LEVEL = read_env_value("LOG_LEVEL", read_env_value("RESUME_LOG_LEVEL", "info"))
 
@@ -543,6 +545,76 @@ def clean_resume_text(raw: str) -> Tuple[str, List[str]]:
         actions.append("normalized_bullets")
     actions.append("normalized_whitespace")
     return cleaned.strip(), actions
+
+
+def prepare_llm_text(cleaned_text: str, max_chars: int) -> str:
+    text = cleaned_text or ""
+    text = re.sub(r"(?im)^\s*page\s+\d+\s*(?:of\s*\d+)?\s*$", "", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    deduped_lines: List[str] = []
+    seen_recent: List[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        normalized = stripped.lower()
+        if normalized in seen_recent[-8:]:
+            continue
+        deduped_lines.append(stripped)
+        seen_recent.append(normalized)
+
+    compact = "\n".join(deduped_lines).strip()
+    if len(compact) <= max_chars:
+        return compact
+
+    # Keep both early identity/contact and later recent experience/projects context.
+    head_budget = int(max_chars * 0.7)
+    tail_budget = max_chars - head_budget
+    head = compact[:head_budget]
+    tail = compact[-tail_budget:] if tail_budget > 0 else ""
+    return f"{head}\n...\n{tail}".strip()
+
+
+def compact_payload_for_llm(payload: Dict[str, Any]) -> Dict[str, Any]:
+    candidate = dict(payload.get("candidate") or {})
+    sections = dict(payload.get("sections") or {})
+
+    compact_skills: Dict[str, List[str]] = {}
+    for key, values in (sections.get("skills") or {}).items():
+        if isinstance(values, list):
+            compact_skills[key] = [str(item)[:80] for item in values[:20]]
+
+    def _compact_entries(entries: Any, max_items: int = 6) -> List[Dict[str, Any]]:
+        if not isinstance(entries, list):
+            return []
+        output: List[Dict[str, Any]] = []
+        for item in entries[:max_items]:
+            if not isinstance(item, dict):
+                continue
+            copy_item: Dict[str, Any] = {}
+            for field, value in item.items():
+                if isinstance(value, list):
+                    copy_item[field] = [str(v)[:160] for v in value[:5]]
+                elif isinstance(value, str):
+                    copy_item[field] = value[:240]
+                else:
+                    copy_item[field] = value
+            output.append(copy_item)
+        return output
+
+    compact_sections = {
+        "skills": compact_skills,
+        "education": _compact_entries(sections.get("education")),
+        "experience": _compact_entries(sections.get("experience")),
+        "projects": _compact_entries(sections.get("projects")),
+    }
+
+    return {
+        "candidate": candidate,
+        "sections": compact_sections,
+    }
 
 
 def reconstruct_resume_text(cleaned: str) -> str:
@@ -1194,84 +1266,16 @@ def should_use_llm_enhancement(
 
 
 def build_llm_prompt(cleaned_text: str, sections: Dict[str, Any]) -> str:
-    schema = {
-        "candidate": {
-            "full_name": None,
-            "current_title": None,
-            "email": None,
-            "phone": None,
-            "location": None,
-            "linkedin": None,
-            "github": None,
-            "portfolio": None,
-            "summary": None,
-        },
-        "skills": {
-            "languages": [],
-            "frameworks": [],
-            "tools": [],
-            "databases": [],
-            "cloud": [],
-            "others": [],
-            "spoken_languages": [],
-        },
-        "education": [
-            {
-                "institution": None,
-                "degree": None,
-                "field_of_study": None,
-                "start_date": None,
-                "end_date": None,
-                "grade": None,
-                "location": None,
-                "description": None,
-            }
-        ],
-        "experience": [
-            {
-                "company": None,
-                "title": None,
-                "location": None,
-                "start_date": None,
-                "end_date": None,
-                "currently_working": False,
-                "bullets": [],
-                "technologies": [],
-            }
-        ],
-        "projects": [
-            {
-                "name": None,
-                "description": None,
-                "technologies": [],
-                "links": [],
-                "bullets": [],
-            }
-        ],
-        "additional": {
-            "certifications": [],
-            "achievements": [],
-            "hackathons": [],
-            "leadership": [],
-            "volunteering": [],
-            "publications": [],
-        },
-    }
-
+    compact_sections = compact_payload_for_llm(sections)
     return (
-        "You are a resume parsing assistant. Return ONLY JSON that matches the schema exactly. "
-        "Do not add fields. Do not hallucinate. Use only information present in the text. "
-        "Only correct candidate basics, skills classification, education grouping, experience grouping, project grouping, "
-        "and additional qualifications. "
-        "Do NOT compute total experience months. "
-        "Do NOT place spoken languages (English, Hindi, etc.) into programming languages. "
-        "Do NOT output date-only project names. "
-        "Do NOT hallucinate technologies not present in the text. "
-        "Certifications must only include real certifications. "
-        "Keep achievements separate from hackathons and leadership.\n\n"
-        f"Resume text:\n{cleaned_text}\n\n"
-        f"Current parsed sections (may be imperfect):\n{json.dumps(sections, ensure_ascii=False)}\n\n"
-        f"JSON schema to follow exactly:\n{json.dumps(schema, ensure_ascii=False)}"
+        "Extract structured resume data as STRICT JSON only. No markdown, no explanation.\n"
+        "Allowed root keys exactly: candidate, skills, education, experience, projects, additional.\n"
+        "Use ONLY evidence in text. Leave unknown fields null/empty.\n"
+        "Keep spoken languages out of programming languages.\n"
+        "Do not output date-only project names.\n"
+        "additional must contain: certifications, achievements, hackathons, leadership, volunteering, publications.\n\n"
+        f"RESUME_TEXT:\n{cleaned_text}\n\n"
+        f"CURRENT_PARSE:\n{json.dumps(compact_sections, ensure_ascii=False, separators=(',', ':'))}"
     )
 
 
@@ -1828,7 +1832,8 @@ def call_llm_refiner(cleaned_text: str, payload: Dict[str, Any]) -> Optional[Dic
     prompt = build_llm_prompt(cleaned_text, payload)
     request_payload = {
         "model": model,
-        "temperature": 0.1,
+        "temperature": 0,
+        "max_tokens": max(64, LLM_MAX_OUTPUT_TOKENS),
         "messages": [
             {"role": "system", "content": "Return ONLY JSON that matches the schema exactly."},
             {"role": "user", "content": prompt},
@@ -2406,9 +2411,14 @@ async def extract(
     llm_raw_present: Optional[bool] = None
     llm_final_source: Optional[str] = None
     llm_attempted = False
-    if cleaned_text.strip() and llm_enabled_for_request:
+    llm_needed_by_heuristic = should_use_llm_enhancement(sections, confidence, section_map)
+    should_attempt_llm = llm_enabled_for_request and cleaned_text.strip() and (
+        requested_force_llm or llm_needed_by_heuristic
+    )
+
+    if should_attempt_llm:
         llm_attempted = True
-        trimmed_text = cleaned_text[:MAX_LLM_TEXT_CHARS]
+        trimmed_text = prepare_llm_text(cleaned_text, MAX_LLM_TEXT_CHARS)
         refined = call_llm_refiner(
             trimmed_text,
             {
@@ -2446,7 +2456,12 @@ async def extract(
             else:
                 llm_action = "llm_invalid_json_fallback"
     else:
-        llm_action = "llm_skipped_empty_text" if not cleaned_text.strip() else "llm_skipped_by_request"
+        if not cleaned_text.strip():
+            llm_action = "llm_skipped_empty_text"
+        elif not llm_enabled_for_request:
+            llm_action = "llm_skipped_by_request"
+        else:
+            llm_action = "llm_skipped_not_needed"
         llm_status = "skipped"
     if llm_status == "skipped":
         llm_raw_present = False

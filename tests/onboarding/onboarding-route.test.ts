@@ -275,7 +275,7 @@ describe('onboarding route', () => {
     isSchemaCompatibilityError.mockReturnValue(true);
     const profileUpdateEq = vi
       .fn()
-      .mockResolvedValueOnce({ error: { message: 'column profiles.metadata does not exist' } })
+      .mockResolvedValueOnce({ error: { message: 'column profiles.onboarding_completed_at does not exist' } })
       .mockResolvedValueOnce({ error: null });
     const legacyUpdateEq = vi.fn().mockResolvedValue({ error: null });
     const updateUserEq = vi.fn().mockResolvedValue({ error: null });
@@ -347,5 +347,77 @@ describe('onboarding route', () => {
     const retryPayload = profileUpdateEq.mock.calls[1]?.[0] as Record<string, unknown> | undefined;
     expect(retryPayload).toBeDefined();
     expect(retryPayload).not.toHaveProperty('metadata');
+    expect(retryPayload).not.toHaveProperty('onboarding_completed_at');
+  });
+
+  it('ignores a missing users.account_type column after saving onboarding data', async () => {
+    const profileUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const updateUserEq = vi.fn().mockResolvedValue({
+      error: { message: 'column users.account_type does not exist' },
+    });
+
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === 'profiles') {
+          return {
+            update: vi.fn(() => ({
+              eq: profileUpdateEq,
+            })),
+          };
+        }
+
+        if (table === 'users') {
+          return {
+            update: vi.fn(() => ({
+              eq: updateUserEq,
+            })),
+          };
+        }
+
+        if (table === 'user_skills' || table === 'community_memberships') {
+          return {
+            delete: vi.fn(() => ({
+              eq: vi.fn(),
+            })),
+            insert: vi.fn(),
+          };
+        }
+
+        throw new Error(`Unexpected table ${table}`);
+      }),
+    };
+
+    createServerSupabaseClient.mockResolvedValue(supabase);
+    getRequiredUser.mockResolvedValue({ id: 'user-1' });
+    ensureProfileRecord.mockResolvedValue({
+      user_id: 'user-1',
+      username: 'starter_name',
+      full_name: null,
+      primary_persona: null,
+      metadata: {},
+    });
+
+    const { POST } = await import('@/app/api/v1/users/me/onboarding/route');
+
+    const response = await POST(
+      new Request('http://localhost:3000/api/v1/users/me/onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile: {
+            username: 'credvia_builder',
+            full_name: 'Credvia Builder',
+            primary_persona: 'founder',
+          },
+          onboarding_complete: true,
+        }),
+      }),
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data?.saved).toBe(true);
+    expect(updateUserEq).toHaveBeenCalled();
   });
 });

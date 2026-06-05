@@ -11,7 +11,7 @@ describe('ensureProfileRecord', () => {
     vi.clearAllMocks();
   });
 
-  it('falls back to a legacy profile select without website or metadata when the schema is incompatible', async () => {
+  it('falls back to a legacy profile select without website, metadata, or onboarding_completed_at when the schema is incompatible', async () => {
     const legacyProfile = {
       user_id: 'user-1',
       username: 'builder_123',
@@ -24,7 +24,6 @@ describe('ensureProfileRecord', () => {
       education: null,
       profile_visibility: {},
       onboarding_complete: false,
-      onboarding_completed_at: null,
       created_at: '2026-04-29T00:00:00.000Z',
       updated_at: '2026-04-29T00:00:00.000Z',
     };
@@ -42,12 +41,16 @@ describe('ensureProfileRecord', () => {
     };
 
     const profileSelect = vi.fn((selectClause: string) => {
-      if (selectClause.includes('website') || selectClause.includes('metadata')) {
+      if (
+        selectClause.includes('website') ||
+        selectClause.includes('metadata') ||
+        selectClause.includes('onboarding_completed_at')
+      ) {
         return {
           eq: () => ({
             maybeSingle: vi.fn().mockResolvedValue({
               data: null,
-              error: { message: 'column profiles.metadata does not exist' },
+              error: { message: 'column profiles.onboarding_completed_at does not exist' },
             }),
           }),
         };
@@ -105,5 +108,6 @@ describe('ensureProfileRecord', () => {
     expect(profileSelect).toHaveBeenCalledTimes(2);
     expect(profileSelect.mock.calls[1]?.[0]).not.toContain('website');
     expect(profileSelect.mock.calls[1]?.[0]).not.toContain('metadata');
+    expect(profileSelect.mock.calls[1]?.[0]).not.toContain('onboarding_completed_at');
   });
 });
